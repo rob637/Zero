@@ -66,15 +66,7 @@ class FileOrganizerSkill(Skill):
             llm_client: LLM client to use. Defaults to auto-detected from env.
         """
         self.llm = llm_client or create_client_from_env()
-        self._default_folder = self._get_downloads_folder()
-    
-    def _get_downloads_folder(self) -> Path:
-        """Get the user's Downloads folder."""
-        # Windows
-        if os.name == 'nt':
-            return Path.home() / "Downloads"
-        # macOS/Linux
-        return Path.home() / "Downloads"
+        self._default_folder = self._find_user_folder("Downloads")
     
     async def analyze(self, request: str, context: dict) -> ActionPlan:
         """
@@ -147,19 +139,56 @@ Generate a safe, well-organized plan. Output valid JSON only."""
     
     def _extract_folder(self, request: str) -> Path | None:
         """Extract folder path from request, if specified."""
-        # Simple extraction - could be made smarter
         request_lower = request.lower()
         
-        if "downloads" in request_lower:
-            return Path.home() / "Downloads"
-        if "documents" in request_lower:
-            return Path.home() / "Documents"
-        if "desktop" in request_lower:
-            return Path.home() / "Desktop"
+        # Known folder names to check
+        folder_keywords = {
+            "downloads": "Downloads",
+            "documents": "Documents", 
+            "desktop": "Desktop",
+            "pictures": "Pictures",
+            "videos": "Videos",
+            "music": "Music",
+        }
         
-        # Check for explicit path
-        # TODO: Better path extraction
+        for keyword, folder_name in folder_keywords.items():
+            if keyword in request_lower:
+                return self._find_user_folder(folder_name)
+        
+        # Check for explicit path (e.g., "organize D:\MyFolder")
+        import re
+        path_match = re.search(r'([A-Za-z]:\\[^\s"\']+|/[^\s"\']+)', request)
+        if path_match:
+            return Path(path_match.group(1))
+        
         return None
+    
+    def _find_user_folder(self, folder_name: str) -> Path:
+        """
+        Find a user folder, checking multiple possible locations.
+        Handles OneDrive folder redirection on Windows.
+        """
+        home = Path.home()
+        
+        # Possible locations in order of preference
+        possible_paths = [
+            home / folder_name,  # Standard: C:\Users\rob\Downloads
+        ]
+        
+        # Check OneDrive locations (Windows folder redirection)
+        if os.name == 'nt':
+            # Check for OneDrive folders
+            for item in home.iterdir():
+                if item.is_dir() and item.name.startswith('OneDrive'):
+                    possible_paths.append(item / folder_name)
+        
+        # Return first existing path
+        for path in possible_paths:
+            if path.exists():
+                return path
+        
+        # Fallback to standard path (will show "not found" error)
+        return home / folder_name
     
     def _scan_folder(self, folder: Path) -> str:
         """Scan folder and return file list as string."""
