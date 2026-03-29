@@ -8,5 +8,7 @@ Each skill is a self-contained capability that:
 """
 
 from .file_organizer import FileOrganizerSkill
+from .duplicate_finder import DuplicateFinderSkill
+from .temp_cleaner import TempCleanerSkill
 
-__all__ = ["FileOrganizerSkill"]
+__all__ = ["FileOrganizerSkill", "DuplicateFinderSkill", "TempCleanerSkill"]

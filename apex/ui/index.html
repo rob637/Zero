@@ -8,11 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -21,406 +17,252 @@
             color: #e4e4e7;
         }
 
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-        }
+        .container { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
 
         /* Header */
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 8px;
-        }
+        .header { text-align: center; margin-bottom: 32px; }
+        .logo { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
 
         .orb {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
+            width: 40px; height: 40px; border-radius: 50%;
             background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
             box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
             animation: pulse 2s ease-in-out infinite;
         }
-
         @keyframes pulse {
             0%, 100% { transform: scale(1); opacity: 1; }
             50% { transform: scale(1.05); opacity: 0.8; }
         }
-
-        .orb.thinking {
-            animation: thinking 0.5s ease-in-out infinite;
-        }
-
+        .orb.thinking { animation: thinking 0.5s ease-in-out infinite; }
         @keyframes thinking {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.1); }
         }
 
         h1 {
-            font-size: 2rem;
-            font-weight: 700;
+            font-size: 2rem; font-weight: 700;
             background: linear-gradient(135deg, #fff, #a5b4fc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .tagline { color: #94a3b8; font-size: 0.9rem; }
+
+        /* Capabilities */
+        .section-title {
+            font-size: 0.85rem; font-weight: 600; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;
         }
 
-        .tagline {
-            color: #94a3b8;
-            font-size: 0.9rem;
-            margin-top: 4px;
-        }
-
-        /* Input Area */
-        .input-area {
+        .capability-card {
             background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden; margin-bottom: 16px;
+        }
+
+        .capability-header {
+            display: flex; align-items: center; gap: 16px;
+            padding: 20px 24px; cursor: pointer; transition: background 0.2s;
+        }
+        .capability-header:hover { background: rgba(255, 255, 255, 0.03); }
+
+        .capability-icon {
+            font-size: 2rem; width: 56px; height: 56px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(139, 92, 246, 0.3));
             border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .capability-info { flex: 1; }
+        .capability-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; }
+        .capability-desc { font-size: 0.85rem; color: #94a3b8; }
+        .capability-expand { font-size: 1.5rem; color: #64748b; transition: transform 0.2s; }
+        .capability-card.expanded .capability-expand { transform: rotate(180deg); }
+
+        .capability-features {
+            display: none; padding: 0 24px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .capability-card.expanded .capability-features { display: block; }
+
+        .feature-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px; margin-top: 16px;
         }
 
-        .input-wrapper {
-            display: flex;
-            gap: 12px;
+        .feature-btn {
+            display: flex; align-items: center; gap: 12px; padding: 16px;
+            background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px; cursor: pointer; transition: all 0.2s; text-align: left;
         }
-
-        #request-input {
-            flex: 1;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 16px 20px;
-            font-size: 1rem;
-            color: #fff;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        #request-input:focus {
-            border-color: #8b5cf6;
-        }
-
-        #request-input::placeholder {
-            color: #64748b;
-        }
-
-        .submit-btn {
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            border: none;
-            border-radius: 12px;
-            padding: 16px 28px;
-            font-size: 1rem;
-            font-weight: 600;
-            color: #fff;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .submit-btn:hover {
+        .feature-btn:hover {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.3);
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
         }
-
-        .submit-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
+        .feature-btn.active {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: #6366f1;
         }
+        .feature-icon { font-size: 1.3rem; }
+        .feature-name { font-weight: 500; font-size: 0.9rem; }
+        .feature-status { font-size: 0.75rem; color: #6ee7b7; }
+        .feature-status.coming { color: #94a3b8; }
 
-        /* Plan Card */
-        .plan-card {
+        /* Action Panel */
+        .action-panel {
             background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            overflow: hidden;
-            display: none;
+            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 24px; margin-bottom: 24px; display: none;
         }
-
-        .plan-card.visible {
-            display: block;
-            animation: slideUp 0.3s ease-out;
-        }
-
+        .action-panel.visible { display: block; animation: slideUp 0.3s ease-out; }
         @keyframes slideUp {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .plan-header {
+        .action-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .action-title { font-size: 1.1rem; font-weight: 600; }
+        .action-close {
+            margin-left: auto; background: none; border: none;
+            color: #64748b; font-size: 1.5rem; cursor: pointer; line-height: 1;
+        }
+        .action-close:hover { color: #f87171; }
+        .action-description { color: #94a3b8; font-size: 0.9rem; margin-bottom: 20px; }
+
+        .quick-folders { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+        .quick-folder {
+            padding: 8px 16px; background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s;
+        }
+        .quick-folder:hover {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .folder-input {
+            width: 100%; background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px; padding: 14px 18px;
+            font-size: 0.95rem; color: #fff; outline: none; margin-bottom: 20px;
+        }
+        .folder-input:focus { border-color: #8b5cf6; }
+        .folder-input::placeholder { color: #64748b; }
+
+        .scan-btn {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none; border-radius: 12px; padding: 14px 28px;
+            font-size: 1rem; font-weight: 600; color: #fff;
+            cursor: pointer; transition: all 0.2s; width: 100%;
+        }
+        .scan-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+        }
+        .scan-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* Results Panel */
+        .results-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden; display: none;
+        }
+        .results-panel.visible { display: block; animation: slideUp 0.3s ease-out; }
+
+        .results-header {
             background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
-            padding: 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
-
-        .plan-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .results-title {
+            font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;
+            display: flex; align-items: center; gap: 10px;
         }
+        .results-summary { color: #94a3b8; font-size: 0.9rem; }
 
-        .plan-reasoning {
-            color: #94a3b8;
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-
-        /* Warnings */
         .warnings {
             background: rgba(251, 146, 60, 0.1);
-            border-left: 3px solid #fb923c;
-            padding: 16px 20px;
-            margin: 0;
+            border-left: 3px solid #fb923c; padding: 16px 20px;
         }
+        .warning-title { font-weight: 600; color: #fb923c; font-size: 0.85rem; margin-bottom: 8px; }
+        .warning-list { color: #fbbf24; font-size: 0.85rem; padding-left: 20px; }
 
-        .warning-title {
-            font-weight: 600;
-            color: #fb923c;
-            font-size: 0.85rem;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .warning-list {
-            color: #fbbf24;
-            font-size: 0.85rem;
-            padding-left: 20px;
-        }
-
-        .warning-list li {
-            margin-bottom: 4px;
-        }
-
-        /* Actions */
-        .actions-section {
-            padding: 24px;
-        }
-
-        .actions-title {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #94a3b8;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 16px;
-        }
-
+        .actions-section { padding: 24px; max-height: 400px; overflow-y: auto; }
         .action-item {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
+            background: rgba(0, 0, 0, 0.2); border-radius: 12px; padding: 16px;
+            margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex; align-items: flex-start; gap: 12px;
         }
+        .action-checkbox { width: 20px; height: 20px; margin-top: 2px; accent-color: #8b5cf6; }
+        .action-icon { font-size: 1.5rem; width: 36px; text-align: center; }
+        .action-content { flex: 1; }
+        .action-type { font-weight: 600; font-size: 0.8rem; text-transform: uppercase; color: #a5b4fc; margin-bottom: 4px; }
+        .action-source { font-family: 'Consolas', monospace; font-size: 0.85rem; color: #e4e4e7; word-break: break-all; }
+        .action-dest { font-family: 'Consolas', monospace; font-size: 0.8rem; color: #6ee7b6; margin-top: 4px; }
+        .action-reason { font-size: 0.8rem; color: #94a3b8; margin-top: 8px; }
+        .action-size { font-size: 0.75rem; color: #f472b6; margin-top: 4px; }
 
-        .action-checkbox {
-            width: 20px;
-            height: 20px;
-            margin-top: 2px;
-            accent-color: #8b5cf6;
+        .stats-bar {
+            display: flex; gap: 24px; padding: 16px 24px;
+            background: rgba(0, 0, 0, 0.2); border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
+        .stat { display: flex; align-items: center; gap: 8px; }
+        .stat-icon { font-size: 1.2rem; }
+        .stat-value { font-weight: 600; }
+        .stat-label { color: #94a3b8; font-size: 0.85rem; }
 
-        .action-icon {
-            font-size: 1.5rem;
-            width: 36px;
-            text-align: center;
+        .results-actions {
+            display: flex; gap: 12px; padding: 24px;
+            background: rgba(0, 0, 0, 0.2); border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
-
-        .action-content {
-            flex: 1;
-        }
-
-        .action-type {
-            font-weight: 600;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            color: #a5b4fc;
-            margin-bottom: 4px;
-        }
-
-        .action-source {
-            font-family: 'Consolas', monospace;
-            font-size: 0.85rem;
-            color: #e4e4e7;
-            word-break: break-all;
-        }
-
-        .action-dest {
-            font-family: 'Consolas', monospace;
-            font-size: 0.8rem;
-            color: #6ee7b7;
-            margin-top: 4px;
-        }
-
-        .action-reason {
-            font-size: 0.8rem;
-            color: #94a3b8;
-            margin-top: 8px;
-        }
-
-        /* Stats */
-        .stats {
-            display: flex;
-            gap: 24px;
-            padding: 16px 24px;
-            background: rgba(0, 0, 0, 0.2);
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .stat {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .stat-icon {
-            font-size: 1.2rem;
-        }
-
-        .stat-value {
-            font-weight: 600;
-        }
-
-        .stat-label {
-            color: #94a3b8;
-            font-size: 0.85rem;
-        }
-
-        /* Action Buttons */
-        .plan-actions {
-            display: flex;
-            gap: 12px;
-            padding: 24px;
-            background: rgba(0, 0, 0, 0.2);
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
         .btn {
-            flex: 1;
-            padding: 16px 24px;
-            border-radius: 12px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: none;
+            flex: 1; padding: 16px 24px; border-radius: 12px;
+            font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none;
         }
-
-        .btn-approve {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: #fff;
-        }
-
-        .btn-approve:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
-        }
-
-        .btn-reject {
-            background: rgba(239, 68, 68, 0.2);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
-
-        .btn-reject:hover {
-            background: rgba(239, 68, 68, 0.3);
-        }
-
-        /* Result */
-        .result-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
-            padding: 24px;
-            margin-top: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: none;
-        }
-
-        .result-card.visible {
-            display: block;
-            animation: slideUp 0.3s ease-out;
-        }
-
-        .result-success {
-            border-color: rgba(16, 185, 129, 0.3);
-            background: rgba(16, 185, 129, 0.1);
-        }
-
-        .result-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .result-detail {
-            color: #94a3b8;
-            font-size: 0.9rem;
-        }
+        .btn-approve { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+        .btn-approve:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4); }
+        .btn-reject { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .btn-reject:hover { background: rgba(239, 68, 68, 0.3); }
 
         /* Loading */
-        .loading {
-            text-align: center;
-            padding: 60px 20px;
-            display: none;
+        .loading-overlay {
+            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7);
+            display: none; align-items: center; justify-content: center; z-index: 100;
         }
-
-        .loading.visible {
-            display: block;
+        .loading-overlay.visible { display: flex; }
+        .loading-card {
+            background: rgba(30, 30, 50, 0.95);
+            border-radius: 20px; padding: 40px 60px; text-align: center;
         }
-
-        .loading-text {
-            color: #94a3b8;
-            margin-top: 16px;
-        }
-
         .spinner {
-            width: 48px;
-            height: 48px;
-            border: 3px solid rgba(139, 92, 246, 0.2);
-            border-top-color: #8b5cf6;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
+            width: 48px; height: 48px;
+            border: 3px solid rgba(139, 92, 246, 0.2); border-top-color: #8b5cf6;
+            border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { color: #94a3b8; }
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 32px; right: 32px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            padding: 16px 24px; border-radius: 12px;
+            display: none; align-items: center; gap: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); z-index: 101;
         }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #64748b;
+        .toast.visible { display: flex; animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
+        .toast-icon { font-size: 1.5rem; }
+        .toast-text { font-weight: 500; }
 
-        .empty-icon {
-            font-size: 3rem;
-            margin-bottom: 16px;
+        .coming-badge {
+            font-size: 0.65rem; background: rgba(100, 116, 139, 0.3);
+            color: #94a3b8; padding: 2px 8px; border-radius: 10px; margin-left: 8px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <header class="header">
             <div class="logo">
                 <div class="orb" id="orb"></div>
@@ -429,33 +271,129 @@
             <p class="tagline">Your Privacy-First Personal AI Assistant</p>
         </header>
 
-        <!-- Input -->
-        <div class="input-area">
-            <div class="input-wrapper">
-                <input 
-                    type="text" 
-                    id="request-input" 
-                    placeholder="What would you like me to help with? (e.g., 'Clean up my downloads')"
-                    autocomplete="off"
-                >
-                <button class="submit-btn" id="submit-btn">Ask Apex</button>
+        <div class="capabilities-section">
+            <div class="section-title">Capabilities</div>
+
+            <!-- PC Cleanup -->
+            <div class="capability-card expanded" id="pc-cleanup-card">
+                <div class="capability-header" onclick="toggleCapability('pc-cleanup-card')">
+                    <div class="capability-icon">🧹</div>
+                    <div class="capability-info">
+                        <div class="capability-title">PC Cleanup</div>
+                        <div class="capability-desc">Organize files, find duplicates, free up space</div>
+                    </div>
+                    <div class="capability-expand">▼</div>
+                </div>
+                <div class="capability-features">
+                    <div class="feature-grid">
+                        <div class="feature-btn" onclick="selectFeature('organize', this)">
+                            <span class="feature-icon">📁</span>
+                            <div>
+                                <div class="feature-name">Organize Files</div>
+                                <div class="feature-status">Ready</div>
+                            </div>
+                        </div>
+                        <div class="feature-btn" onclick="selectFeature('duplicates', this)">
+                            <span class="feature-icon">🔍</span>
+                            <div>
+                                <div class="feature-name">Find Duplicates</div>
+                                <div class="feature-status">Ready</div>
+                            </div>
+                        </div>
+                        <div class="feature-btn" onclick="selectFeature('temp', this)">
+                            <span class="feature-icon">🗑️</span>
+                            <div>
+                                <div class="feature-name">Clear Temp Files</div>
+                                <div class="feature-status">Ready</div>
+                            </div>
+                        </div>
+                        <div class="feature-btn" onclick="selectFeature('photos', this)">
+                            <span class="feature-icon">📸</span>
+                            <div>
+                                <div class="feature-name">Photo Cleanup</div>
+                                <div class="feature-status coming">Coming Soon</div>
+                            </div>
+                        </div>
+                        <div class="feature-btn" onclick="selectFeature('startup', this)">
+                            <span class="feature-icon">🚀</span>
+                            <div>
+                                <div class="feature-name">Startup Manager</div>
+                                <div class="feature-status coming">Coming Soon</div>
+                            </div>
+                        </div>
+                        <div class="feature-btn" onclick="selectFeature('uninstall', this)">
+                            <span class="feature-icon">📦</span>
+                            <div>
+                                <div class="feature-name">Uninstall Advisor</div>
+                                <div class="feature-status coming">Coming Soon</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Productivity (Coming Soon) -->
+            <div class="capability-card" id="productivity-card">
+                <div class="capability-header" onclick="toggleCapability('productivity-card')">
+                    <div class="capability-icon">⚡</div>
+                    <div class="capability-info">
+                        <div class="capability-title">Productivity<span class="coming-badge">Coming Soon</span></div>
+                        <div class="capability-desc">Email management, calendar, task automation</div>
+                    </div>
+                    <div class="capability-expand">▼</div>
+                </div>
+                <div class="capability-features">
+                    <div class="feature-grid">
+                        <div class="feature-btn">
+                            <span class="feature-icon">📧</span>
+                            <div>
+                                <div class="feature-name">Email Cleanup</div>
+                                <div class="feature-status coming">Coming Soon</div>
+                            </div>
+                        </div>
+                        <div class="feature-btn">
+                            <span class="feature-icon">📅</span>
+                            <div>
+                                <div class="feature-name">Smart Scheduling</div>
+                                <div class="feature-status coming">Coming Soon</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Loading -->
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p class="loading-text">Analyzing your request...</p>
+        <!-- Action Panel -->
+        <div class="action-panel" id="action-panel">
+            <div class="action-header">
+                <span id="action-icon">📁</span>
+                <span class="action-title" id="action-title">Organize Files</span>
+                <button class="action-close" onclick="closeActionPanel()">×</button>
+            </div>
+            <p class="action-description" id="action-description">
+                I'll analyze your folder and suggest how to organize it. You'll review everything before I do anything.
+            </p>
+
+            <div class="quick-folders" id="quick-folders">
+                <span class="quick-folder" onclick="setFolder('Downloads')">📥 Downloads</span>
+                <span class="quick-folder" onclick="setFolder('Desktop')">🖥️ Desktop</span>
+                <span class="quick-folder" onclick="setFolder('Documents')">📄 Documents</span>
+                <span class="quick-folder" onclick="setFolder('Pictures')">🖼️ Pictures</span>
+            </div>
+
+            <input type="text" class="folder-input" id="folder-input" placeholder="Or enter a folder path (e.g., D:\MyFolder)">
+
+            <button class="scan-btn" id="scan-btn" onclick="startScan()">🔍 Scan & Analyze</button>
         </div>
 
-        <!-- Plan Card -->
-        <div class="plan-card" id="plan-card">
-            <div class="plan-header">
-                <h2 class="plan-title">
-                    <span>📋</span>
-                    <span id="plan-summary">Plan Summary</span>
+        <!-- Results Panel -->
+        <div class="results-panel" id="results-panel">
+            <div class="results-header">
+                <h2 class="results-title">
+                    <span id="results-icon">📋</span>
+                    <span id="results-summary">Ready to clean up</span>
                 </h2>
-                <p class="plan-reasoning" id="plan-reasoning">Reasoning will appear here.</p>
+                <p class="results-summary" id="results-reasoning">Here's what I found and recommend.</p>
             </div>
 
             <div class="warnings" id="warnings" style="display: none;">
@@ -463,12 +401,9 @@
                 <ul class="warning-list" id="warning-list"></ul>
             </div>
 
-            <div class="actions-section">
-                <div class="actions-title">Proposed Actions</div>
-                <div id="actions-list"></div>
-            </div>
+            <div class="actions-section" id="actions-list"></div>
 
-            <div class="stats">
+            <div class="stats-bar">
                 <div class="stat">
                     <span class="stat-icon">📁</span>
                     <span class="stat-value" id="stat-files">0</span>
@@ -477,117 +412,146 @@
                 <div class="stat">
                     <span class="stat-icon">💾</span>
                     <span class="stat-value" id="stat-space">0 MB</span>
-                    <span class="stat-label">freed</span>
+                    <span class="stat-label">to free</span>
                 </div>
             </div>
 
-            <div class="plan-actions">
-                <button class="btn btn-reject" id="reject-btn">✕ Reject</button>
-                <button class="btn btn-approve" id="approve-btn">✓ Approve & Execute</button>
+            <div class="results-actions">
+                <button class="btn btn-reject" onclick="rejectPlan()">✕ Cancel</button>
+                <button class="btn btn-approve" onclick="approvePlan()">✓ Clean Up Selected</button>
             </div>
-        </div>
-
-        <!-- Result -->
-        <div class="result-card" id="result-card">
-            <div class="result-title" id="result-title">
-                <span>✅</span>
-                <span>Complete!</span>
-            </div>
-            <p class="result-detail" id="result-detail"></p>
-        </div>
-
-        <!-- Empty State -->
-        <div class="empty-state" id="empty-state">
-            <div class="empty-icon">💬</div>
-            <p>Ask Apex to help organize your files.<br>I'll show you exactly what I plan to do before doing it.</p>
         </div>
     </div>
 
+    <!-- Loading -->
+    <div class="loading-overlay" id="loading">
+        <div class="loading-card">
+            <div class="spinner"></div>
+            <p class="loading-text" id="loading-text">Scanning files...</p>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">
+        <span class="toast-icon">✅</span>
+        <span class="toast-text" id="toast-text">Cleanup complete!</span>
+    </div>
+
     <script>
-        // State
-        let currentPlan = null;
+        let currentFeature = null;
         let currentTaskId = null;
-
-        // Elements
-        const orb = document.getElementById('orb');
-        const input = document.getElementById('request-input');
-        const submitBtn = document.getElementById('submit-btn');
-        const loading = document.getElementById('loading');
-        const planCard = document.getElementById('plan-card');
-        const resultCard = document.getElementById('result-card');
-        const emptyState = document.getElementById('empty-state');
-        const approveBtn = document.getElementById('approve-btn');
-        const rejectBtn = document.getElementById('reject-btn');
-
-        // API Base URL
+        let currentPlan = null;
         const API_URL = 'http://localhost:8000';
 
-        // Submit request
-        async function submitRequest() {
-            const request = input.value.trim();
-            if (!request) return;
+        const features = {
+            organize: {
+                icon: '📁', title: 'Organize Files',
+                description: "I'll analyze your folder and suggest how to organize it. You'll review everything before I do anything.",
+                showFolders: true, ready: true
+            },
+            duplicates: {
+                icon: '🔍', title: 'Find Duplicates',
+                description: "I'll find duplicate files wasting space. You choose which copies to remove.",
+                showFolders: true, ready: true
+            },
+            temp: {
+                icon: '🗑️', title: 'Clear Temp Files',
+                description: "I'll find temporary files, caches, and junk that can be safely deleted.",
+                showFolders: false, ready: true
+            },
+            photos: { icon: '📸', title: 'Photo Cleanup', ready: false },
+            startup: { icon: '🚀', title: 'Startup Manager', ready: false },
+            uninstall: { icon: '📦', title: 'Uninstall Advisor', ready: false }
+        };
 
-            // Reset UI
-            emptyState.style.display = 'none';
-            planCard.classList.remove('visible');
-            resultCard.classList.remove('visible');
-            loading.classList.add('visible');
-            orb.classList.add('thinking');
-            submitBtn.disabled = true;
+        function toggleCapability(cardId) {
+            document.getElementById(cardId).classList.toggle('expanded');
+        }
+
+        function selectFeature(featureId, btn) {
+            const feature = features[featureId];
+            if (!feature.ready) {
+                showToast('Coming soon! This feature is under development.');
+                return;
+            }
+
+            document.querySelectorAll('.feature-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            currentFeature = featureId;
+            document.getElementById('action-icon').textContent = feature.icon;
+            document.getElementById('action-title').textContent = feature.title;
+            document.getElementById('action-description').textContent = feature.description;
+            
+            document.getElementById('quick-folders').style.display = feature.showFolders ? 'flex' : 'none';
+            document.getElementById('folder-input').style.display = feature.showFolders ? 'block' : 'none';
+            document.getElementById('folder-input').value = '';
+
+            document.getElementById('action-panel').classList.add('visible');
+            document.getElementById('results-panel').classList.remove('visible');
+        }
+
+        function closeActionPanel() {
+            document.getElementById('action-panel').classList.remove('visible');
+            document.querySelectorAll('.feature-btn').forEach(b => b.classList.remove('active'));
+            currentFeature = null;
+        }
+
+        function setFolder(folder) {
+            document.getElementById('folder-input').value = folder;
+        }
+
+        async function startScan() {
+            const folder = document.getElementById('folder-input').value.trim();
+            if (!folder && features[currentFeature].showFolders) {
+                alert('Please select or enter a folder to scan.');
+                return;
+            }
+
+            showLoading('Analyzing ' + (folder || 'system folders') + '...');
 
             try {
-                const response = await fetch(`${API_URL}/submit`, {
+                const response = await fetch(`${API_URL}/scan/${currentFeature}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ request })
+                    body: JSON.stringify({ folder, feature: currentFeature })
                 });
 
                 const data = await response.json();
-                
+                hideLoading();
+
                 if (data.error) {
-                    showError(data.error);
+                    alert('Error: ' + data.error);
                     return;
                 }
 
                 currentTaskId = data.task_id;
                 currentPlan = data.plan;
-                showPlan(data.plan);
-
+                showResults(data.plan);
             } catch (error) {
-                showError('Failed to connect to Apex. Is the server running?');
-            } finally {
-                loading.classList.remove('visible');
-                orb.classList.remove('thinking');
-                submitBtn.disabled = false;
+                hideLoading();
+                alert('Failed to connect. Is the server running?');
             }
         }
 
-        // Show plan in UI
-        function showPlan(plan) {
-            document.getElementById('plan-summary').textContent = plan.summary;
-            document.getElementById('plan-reasoning').textContent = plan.reasoning;
+        function showResults(plan) {
+            document.getElementById('results-icon').textContent = features[currentFeature].icon;
+            document.getElementById('results-summary').textContent = plan.summary;
+            document.getElementById('results-reasoning').textContent = plan.reasoning;
 
-            // Warnings
             const warningsDiv = document.getElementById('warnings');
             const warningList = document.getElementById('warning-list');
-            if (plan.warnings && plan.warnings.length > 0) {
+            if (plan.warnings?.length > 0) {
                 warningList.innerHTML = plan.warnings.map(w => `<li>${w}</li>`).join('');
                 warningsDiv.style.display = 'block';
             } else {
                 warningsDiv.style.display = 'none';
             }
 
-            // Actions
             const actionsList = document.getElementById('actions-list');
-            const icons = {
-                'move': '📁',
-                'delete': '🗑️',
-                'create_folder': '📂',
-                'rename': '✏️',
-                'copy': '📋'
-            };
+            const icons = { 'move': '📁', 'delete': '🗑️', 'create_folder': '📂', 'rename': '✏️', 'copy': '📋' };
 
-            if (plan.actions && plan.actions.length > 0) {
+            if (plan.actions?.length > 0) {
                 actionsList.innerHTML = plan.actions.map((action, i) => `
                     <div class="action-item">
                         <input type="checkbox" class="action-checkbox" data-index="${i}" checked>
@@ -596,118 +560,70 @@
                             <div class="action-type">${action.type}</div>
                             <div class="action-source">${action.source}</div>
                             ${action.destination ? `<div class="action-dest">→ ${action.destination}</div>` : ''}
+                            ${action.size ? `<div class="action-size">${action.size}</div>` : ''}
                             <div class="action-reason">${action.reason}</div>
                         </div>
                     </div>
                 `).join('');
             } else {
-                actionsList.innerHTML = '<p style="color: #94a3b8; padding: 20px; text-align: center;">No actions proposed</p>';
+                actionsList.innerHTML = '<div style="text-align: center; padding: 40px; color: #94a3b8;">✨ Everything looks clean! No actions needed.</div>';
             }
 
-            // Stats
             document.getElementById('stat-files').textContent = plan.stats?.files || 0;
             document.getElementById('stat-space').textContent = plan.stats?.space || '0 MB';
 
-            planCard.classList.add('visible');
+            document.getElementById('action-panel').classList.remove('visible');
+            document.getElementById('results-panel').classList.add('visible');
         }
 
-        // Approve selected actions
-        async function approveActions() {
+        async function approvePlan() {
             const checkboxes = document.querySelectorAll('.action-checkbox:checked');
             const indices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+            if (indices.length === 0) { alert('Select at least one action.'); return; }
 
-            if (indices.length === 0) {
-                alert('Select at least one action to approve.');
-                return;
-            }
-
-            loading.classList.add('visible');
-            orb.classList.add('thinking');
+            showLoading('Cleaning up...');
 
             try {
                 const response = await fetch(`${API_URL}/approve`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        task_id: currentTaskId,
-                        approved_indices: indices
-                    })
+                    body: JSON.stringify({ task_id: currentTaskId, approved_indices: indices })
                 });
-
                 const data = await response.json();
-                
-                planCard.classList.remove('visible');
-                showResult(data);
+                hideLoading();
 
+                const successCount = data.result?.success?.length || 0;
+                showToast(`Cleanup complete! ${successCount} actions performed.`);
+                document.getElementById('results-panel').classList.remove('visible');
+                document.querySelectorAll('.feature-btn').forEach(b => b.classList.remove('active'));
             } catch (error) {
-                showError('Failed to execute actions.');
-            } finally {
-                loading.classList.remove('visible');
-                orb.classList.remove('thinking');
+                hideLoading();
+                alert('Failed to execute cleanup.');
             }
         }
 
-        // Reject plan
-        async function rejectPlan() {
-            try {
-                await fetch(`${API_URL}/reject`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ task_id: currentTaskId })
-                });
-            } catch (e) {}
-
-            planCard.classList.remove('visible');
-            resultCard.classList.remove('visible');
-            emptyState.style.display = 'block';
-            input.value = '';
-            input.focus();
+        function rejectPlan() {
+            document.getElementById('results-panel').classList.remove('visible');
+            document.getElementById('action-panel').classList.add('visible');
         }
 
-        // Show result
-        function showResult(data) {
-            const resultTitle = document.getElementById('result-title');
-            const resultDetail = document.getElementById('result-detail');
-
-            const successCount = data.result?.success?.length || 0;
-            const failedCount = data.result?.failed?.length || 0;
-
-            if (failedCount === 0) {
-                resultCard.classList.add('result-success');
-                resultTitle.innerHTML = '<span>✅</span><span>Complete!</span>';
-            } else {
-                resultCard.classList.remove('result-success');
-                resultTitle.innerHTML = '<span>⚠️</span><span>Completed with issues</span>';
-            }
-
-            resultDetail.textContent = `${successCount} action${successCount !== 1 ? 's' : ''} completed successfully.${failedCount > 0 ? ` ${failedCount} failed.` : ''}`;
-
-            resultCard.classList.add('visible');
-            input.value = '';
-            input.focus();
+        function showLoading(text) {
+            document.getElementById('loading-text').textContent = text;
+            document.getElementById('loading').classList.add('visible');
+            document.getElementById('orb').classList.add('thinking');
         }
 
-        // Show error
-        function showError(message) {
-            const resultTitle = document.getElementById('result-title');
-            const resultDetail = document.getElementById('result-detail');
-
-            resultCard.classList.remove('result-success');
-            resultTitle.innerHTML = '<span>❌</span><span>Error</span>';
-            resultDetail.textContent = message;
-            resultCard.classList.add('visible');
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('visible');
+            document.getElementById('orb').classList.remove('thinking');
         }
 
-        // Event listeners
-        submitBtn.addEventListener('click', submitRequest);
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') submitRequest();
-        });
-        approveBtn.addEventListener('click', approveActions);
-        rejectBtn.addEventListener('click', rejectPlan);
-
-        // Focus input on load
-        input.focus();
+        function showToast(text) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-text').textContent = text;
+            toast.classList.add('visible');
+            setTimeout(() => toast.classList.remove('visible'), 3000);
+        }
     </script>
 </body>
 </html>

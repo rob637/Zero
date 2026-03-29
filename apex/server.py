@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from src.core import Orchestrator
 from src.core.llm import create_client_from_env
-from src.skills import FileOrganizerSkill
+from src.skills import FileOrganizerSkill, DuplicateFinderSkill, TempCleanerSkill
 
 # Initialize
 app = FastAPI(title="Apex", description="Privacy-First Personal AI Assistant")
@@ -45,6 +45,11 @@ orchestrator = Orchestrator()
 # Request models
 class SubmitRequest(BaseModel):
     request: str
+
+
+class ScanRequest(BaseModel):
+    folder: str = ""
+    feature: str = "organize"
 
 
 class ApproveRequest(BaseModel):
@@ -77,6 +82,53 @@ async def submit_request(req: SubmitRequest):
     
     try:
         task = await orchestrator.submit(req.request)
+        
+        if task.error:
+            return JSONResponse({
+                "error": task.error,
+                "task_id": task.id,
+                "plan": None
+            })
+        
+        # Convert plan to dict for JSON
+        plan_dict = task.plan.to_display_dict() if task.plan else None
+        
+        return JSONResponse({
+            "error": None,
+            "task_id": task.id,
+            "plan": plan_dict
+        })
+        
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "task_id": None,
+            "plan": None
+        })
+
+
+@app.post("/scan/{feature}")
+async def scan_feature(feature: str, req: ScanRequest):
+    """Scan using a specific PC Cleanup feature."""
+    
+    # Check for LLM
+    if not create_client_from_env():
+        return JSONResponse({
+            "error": "No LLM API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.",
+            "task_id": None,
+            "plan": None
+        })
+    
+    try:
+        # Map feature to natural language request
+        feature_requests = {
+            "organize": f"Organize the files in {req.folder}",
+            "duplicates": f"Find duplicate files in {req.folder}",
+            "temp": "Clean up temporary files and cache"
+        }
+        
+        request_text = feature_requests.get(feature, f"Analyze {req.folder}")
+        task = await orchestrator.submit(request_text)
         
         if task.error:
             return JSONResponse({
