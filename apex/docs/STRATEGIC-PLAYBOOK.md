@@ -88,6 +88,8 @@ Before committing to 12 weeks, spend 3-5 days proving the risky technical assump
 
 ### Gate 3: Key Decisions (Make These BEFORE Coding)
 
+**✅ GATE 3 PASSED (March 29, 2026)** — All decisions recorded below.
+
 These decisions are expensive to change later. Decide now, document why, and don't revisit unless you have strong new evidence.
 
 #### Decision 1: Open Source vs. Closed Source
@@ -99,7 +101,7 @@ These decisions are expensive to change later. Decide now, document why, and don
 
 **Recommended:** Open Core (core platform open, premium skills/enterprise closed)
 
-**Your Decision:** _________________ | **Date:** _______ | **Rationale:** _________________
+**Your Decision:** ✅ Open Core | **Date:** 2026-03-29 | **Rationale:** Trust is core to product; open source builds trust + allows security audits
 
 ---
 
@@ -113,7 +115,7 @@ These decisions are expensive to change later. Decide now, document why, and don
 
 **Recommended:** Windows first (larger market, easier to test)
 
-**Your Decision:** _________________ | **Date:** _______ | **Rationale:** _________________
+**Your Decision:** ✅ Windows first | **Date:** 2026-03-29 | **Rationale:** Largest market, personal dev machine, faster iteration
 
 ---
 
@@ -127,7 +129,7 @@ These decisions are expensive to change later. Decide now, document why, and don
 
 **Recommended:** User brings API key + LiteLLM (multi-provider). You're selling the platform, not subsidizing API costs.
 
-**Your Decision:** _________________ | **Date:** _______ | **Rationale:** _________________
+**Your Decision:** ✅ User brings key + multi-provider | **Date:** 2026-03-29 | **Rationale:** No API cost burden, user choice, avoid vendor lock-in
 
 ---
 
@@ -142,7 +144,7 @@ These decisions are expensive to change later. Decide now, document why, and don
 
 **Recommended:** Decide later. For MVP, focus on value. Monetization is a v1.1+ problem.
 
-**Your Decision:** _________________ | **Date:** _______ | **Rationale:** _________________
+**Your Decision:** ✅ Decide later | **Date:** 2026-03-29 | **Rationale:** Focus on building value; revisit after MVP with real user data
 
 ---
 
@@ -154,7 +156,7 @@ These decisions are expensive to change later. Decide now, document why, and don
 | **Co-founder(s)** | Complementary skills, shared load | Alignment challenges |
 | **Hire contractors** | Specific skills on demand | Management overhead, IP concerns |
 
-**Your Decision:** _________________ | **Date:** _______ | **Rationale:** _________________
+**Your Decision:** ✅ Solo founder | **Date:** 2026-03-29 | **Rationale:** Full control, fast decisions, proves concept before scaling team
 
 ---
 
@@ -222,7 +224,12 @@ Document every significant decision for future reference:
 |------|----------|-------------------|-----------|-----------------|
 | 2026-03-29 | Trust = Core Product | Build trust via transparency, not hiding | User research: fear of "AI doing bad things" | Never (foundational) |
 | 2026-03-29 | Claude as primary LLM | Claude, GPT-4, Gemini | Spike #1 passed with 98% score, excellent safety behavior | If safety degrades or costs prohibitive |
-| | | | | |
+| 2026-03-29 | Open Core licensing | Open Core, Fully open, Closed | Trust alignment, community security audits | If unable to monetize |
+| 2026-03-29 | Windows first | Windows, Mac, Both | Largest market, personal dev machine | After MVP if demand |
+| 2026-03-29 | User-provided API keys | Subsidize, User keys, Local only | No cost burden, user choice | If onboarding friction too high |
+| 2026-03-29 | Solo founder start | Solo, Co-founder, Contractors | Speed, full control, prove concept | If burnout or skill gaps block progress |
+
+**✅ GATE 3 PASSED (March 29, 2026)** — All key decisions made. Ready for Phase 0.
 
 ---
 
