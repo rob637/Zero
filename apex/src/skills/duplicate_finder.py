@@ -95,6 +95,15 @@ class DuplicateFinderSkill(Skill):
                 warnings=["Please check the folder path and try again."],
             )
         
+        # Safety check
+        is_safe, safety_msg = self._is_safe_path(folder)
+        if not is_safe:
+            return ActionPlan(
+                summary="Cannot scan this location",
+                reasoning=safety_msg,
+                warnings=["This is a protected system folder."],
+            )
+        
         # Find duplicates
         duplicates, total_scanned, error_count = self._find_duplicates(folder)
         
@@ -208,6 +217,18 @@ class DuplicateFinderSkill(Skill):
         """Extract folder path from request."""
         request_lower = request.lower()
         
+        # Check for drive letters first (C:\, D:\, etc.)
+        import re
+        drive_match = re.search(r'([A-Za-z]):\\', request)
+        if drive_match:
+            path_match = re.search(r'([A-Za-z]:\\[^\s"\']*)', request)
+            if path_match:
+                return Path(path_match.group(1))
+        
+        # Check for OneDrive keyword
+        if 'onedrive' in request_lower:
+            return self._find_onedrive_folder()
+        
         folder_keywords = {
             "downloads": "Downloads",
             "documents": "Documents", 
@@ -221,13 +242,25 @@ class DuplicateFinderSkill(Skill):
             if keyword in request_lower:
                 return self._find_user_folder(folder_name)
         
-        # Check for explicit path
-        import re
-        path_match = re.search(r'([A-Za-z]:\\[^\s"\']+|/[^\s"\']+)', request)
-        if path_match:
-            return Path(path_match.group(1))
-        
         return None
+    
+    def _find_onedrive_folder(self) -> Path | None:
+        """Find the user's OneDrive folder."""
+        home = Path.home()
+        if os.name == 'nt':
+            for item in home.iterdir():
+                if item.is_dir() and item.name.startswith('OneDrive'):
+                    return item
+        return None
+    
+    def _is_safe_path(self, path: Path) -> tuple[bool, str]:
+        """Check if a path is safe to scan."""
+        path_str = str(path).lower()
+        dangerous = ['windows', 'system32', 'syswow64', 'program files', 'programdata', '$recycle.bin']
+        for d in dangerous:
+            if d in path_str:
+                return False, f"Cannot scan system folder: {d}"
+        return True, ""
     
     def _find_user_folder(self, folder_name: str) -> Path:
         """Find a user folder, handling OneDrive redirection."""

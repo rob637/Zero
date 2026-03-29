@@ -89,14 +89,24 @@ class FileOrganizerSkill(Skill):
                 warnings=["Please check the folder path and try again."],
             )
         
+        # Safety check
+        is_safe, safety_msg = self._is_safe_path(folder)
+        if not is_safe:
+            return ActionPlan(
+                summary="Cannot organize this location",
+                reasoning=safety_msg,
+                warnings=["This is a protected system folder. Choose a different location."],
+            )
+        
         # Scan folder
         file_list = self._scan_folder(folder)
+        warnings = [safety_msg] if safety_msg else []
         
         if not file_list:
             return ActionPlan(
                 summary="Folder is empty or contains only hidden files",
                 reasoning="Nothing to organize.",
-                warnings=[],
+                warnings=warnings,
             )
         
         # Get memory context
@@ -141,6 +151,21 @@ Generate a safe, well-organized plan. Output valid JSON only."""
         """Extract folder path from request, if specified."""
         request_lower = request.lower()
         
+        # Check for drive letters first (C:\, D:\, etc.)
+        import re
+        drive_match = re.search(r'([A-Za-z]):\\', request)
+        if drive_match:
+            # Full path provided
+            path_match = re.search(r'([A-Za-z]:\\[^\s"\']*)', request)
+            if path_match:
+                path = Path(path_match.group(1))
+                # If just "C:\" or "D:\", return the drive root
+                return path
+        
+        # Check for OneDrive keyword
+        if 'onedrive' in request_lower:
+            return self._find_onedrive_folder()
+        
         # Known folder names to check
         folder_keywords = {
             "downloads": "Downloads",
@@ -155,13 +180,43 @@ Generate a safe, well-organized plan. Output valid JSON only."""
             if keyword in request_lower:
                 return self._find_user_folder(folder_name)
         
-        # Check for explicit path (e.g., "organize D:\MyFolder")
-        import re
-        path_match = re.search(r'([A-Za-z]:\\[^\s"\']+|/[^\s"\']+)', request)
-        if path_match:
-            return Path(path_match.group(1))
+        return None
+    
+    def _find_onedrive_folder(self) -> Path | None:
+        """Find the user's OneDrive folder."""
+        home = Path.home()
+        
+        if os.name == 'nt':
+            # Look for OneDrive folders
+            for item in home.iterdir():
+                if item.is_dir() and item.name.startswith('OneDrive'):
+                    return item
         
         return None
+    
+    def _is_safe_path(self, path: Path) -> tuple[bool, str]:
+        """
+        Check if a path is safe to organize.
+        Returns (is_safe, reason).
+        """
+        path_str = str(path).lower()
+        
+        # Dangerous system paths - NEVER touch these
+        dangerous = [
+            'windows', 'system32', 'syswow64', 'program files',
+            'programdata', '$recycle.bin', 'recovery', 'boot',
+            'drivers', 'winsxs', 'assembly'
+        ]
+        
+        for d in dangerous:
+            if d in path_str:
+                return False, f"Cannot organize system folder: {d}"
+        
+        # Check if it's a bare drive root - warn but allow
+        if len(path.parts) <= 1:
+            return True, "Warning: Scanning entire drive may take a while"
+        
+        return True, ""
     
     def _find_user_folder(self, folder_name: str) -> Path:
         """

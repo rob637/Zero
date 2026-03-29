@@ -375,13 +375,16 @@
             </p>
 
             <div class="quick-folders" id="quick-folders">
+                <span class="quick-folder" onclick="setFolder('C:\\')">💿 C: Drive</span>
+                <span class="quick-folder" onclick="setFolder('D:\\')">💿 D: Drive</span>
+                <span class="quick-folder" onclick="setFolder('OneDrive')">☁️ OneDrive</span>
                 <span class="quick-folder" onclick="setFolder('Downloads')">📥 Downloads</span>
                 <span class="quick-folder" onclick="setFolder('Desktop')">🖥️ Desktop</span>
                 <span class="quick-folder" onclick="setFolder('Documents')">📄 Documents</span>
                 <span class="quick-folder" onclick="setFolder('Pictures')">🖼️ Pictures</span>
             </div>
 
-            <input type="text" class="folder-input" id="folder-input" placeholder="Or enter a folder path (e.g., D:\MyFolder)">
+            <input type="text" class="folder-input" id="folder-input" placeholder="Any folder path (e.g., D:\Projects or C:\Users\rob\Stuff)">
 
             <button class="scan-btn" id="scan-btn" onclick="startScan()">🔍 Scan & Analyze</button>
         </div>
