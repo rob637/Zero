@@ -1,0 +1,13 @@
+{
+  "name": "apex",
+  "version": "0.1.0",
+  "description": "Privacy-First Personal AI Assistant",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.5.0"
+  }
+}
