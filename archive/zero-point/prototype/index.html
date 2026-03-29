@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zero-Point: Comfort Test</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Zero-Point</h1>
+      <p class="subtitle">Launch the seed into the pot using only the sliders</p>
+    </header>
+    
+    <div id="game-container">
+      <canvas id="game-canvas" width="800" height="600"></canvas>
+      
+      <div id="chaos-table">
+        <h2>Chaos Table</h2>
+        
+        <div class="slider-group">
+          <label>
+            <span class="label-text">Gravity (g)</span>
+            <span class="value" id="gravity-value">50</span>
+          </label>
+          <input type="range" id="gravity" min="0" max="100" value="50">
+          <div class="hint">High: crushing weight | Low: floating</div>
+        </div>
+        
+        <div class="slider-group">
+          <label>
+            <span class="label-text">Friction (μ)</span>
+            <span class="value" id="friction-value">50</span>
+          </label>
+          <input type="range" id="friction" min="0" max="100" value="50">
+          <div class="hint">High: energy → heat | Low: perpetual slide</div>
+        </div>
+        
+        <div class="slider-group">
+          <label>
+            <span class="label-text">Viscosity (η)</span>
+            <span class="value" id="viscosity-value">50</span>
+          </label>
+          <input type="range" id="viscosity" min="0" max="100" value="50">
+          <div class="hint">High: molasses air | Low: vacuum</div>
+        </div>
+        
+        <div class="slider-group">
+          <label>
+            <span class="label-text">Elasticity (e)</span>
+            <span class="value" id="elasticity-value">50</span>
+          </label>
+          <input type="range" id="elasticity" min="0" max="100" value="50">
+          <div class="hint">High: super bouncy | Low: sticky clay</div>
+        </div>
+        
+        <div class="slider-group">
+          <label>
+            <span class="label-text">Time Scale (t)</span>
+            <span class="value" id="timescale-value">50</span>
+          </label>
+          <input type="range" id="timescale" min="0" max="100" value="50">
+          <div class="hint">High: bullet-time | Low: fast-forward</div>
+        </div>
+        
+        <div class="controls">
+          <button id="reset-btn">Reset Seed</button>
+          <button id="launch-btn">Launch!</button>
+        </div>
+        
+        <div id="status">
+          <div id="win-message" class="hidden">🎉 SUCCESS!</div>
+          <div id="timer">Time: <span id="time-display">0.0</span>s</div>
+          <div id="attempts">Attempts: <span id="attempt-count">0</span></div>
+        </div>
+      </div>
+    </div>
+    
+    <div id="instructions">
+      <p><strong>Goal:</strong> Get the glowing seed into the pot on the right.</p>
+      <p><strong>Controls:</strong> Adjust sliders to change physics. Click "Launch!" to give the seed an initial push, or let physics do the work.</p>
+      <p><strong>Tip:</strong> Try extreme values. What happens with zero gravity and max elasticity?</p>
+    </div>
+  </div>
+  
+  <script src="physics.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
