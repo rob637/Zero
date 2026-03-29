@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex - Your Personal AI Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e4e4e7;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .orb {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+
+        .orb.thinking {
+            animation: thinking 0.5s ease-in-out infinite;
+        }
+
+        @keyframes thinking {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .tagline {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            margin-top: 4px;
+        }
+
+        /* Input Area */
+        .input-area {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+        }
+
+        #request-input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px 20px;
+            font-size: 1rem;
+            color: #fff;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #request-input:focus {
+            border-color: #8b5cf6;
+        }
+
+        #request-input::placeholder {
+            color: #64748b;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            border-radius: 12px;
+            padding: 16px 28px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Plan Card */
+        .plan-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            display: none;
+        }
+
+        .plan-card.visible {
+            display: block;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .plan-header {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+            padding: 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .plan-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .plan-reasoning {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        /* Warnings */
+        .warnings {
+            background: rgba(251, 146, 60, 0.1);
+            border-left: 3px solid #fb923c;
+            padding: 16px 20px;
+            margin: 0;
+        }
+
+        .warning-title {
+            font-weight: 600;
+            color: #fb923c;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .warning-list {
+            color: #fbbf24;
+            font-size: 0.85rem;
+            padding-left: 20px;
+        }
+
+        .warning-list li {
+            margin-bottom: 4px;
+        }
+
+        /* Actions */
+        .actions-section {
+            padding: 24px;
+        }
+
+        .actions-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+        }
+
+        .action-item {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .action-checkbox {
+            width: 20px;
+            height: 20px;
+            margin-top: 2px;
+            accent-color: #8b5cf6;
+        }
+
+        .action-icon {
+            font-size: 1.5rem;
+            width: 36px;
+            text-align: center;
+        }
+
+        .action-content {
+            flex: 1;
+        }
+
+        .action-type {
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: #a5b4fc;
+            margin-bottom: 4px;
+        }
+
+        .action-source {
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: #e4e4e7;
+            word-break: break-all;
+        }
+
+        .action-dest {
+            font-family: 'Consolas', monospace;
+            font-size: 0.8rem;
+            color: #6ee7b7;
+            margin-top: 4px;
+        }
+
+        .action-reason {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-top: 8px;
+        }
+
+        /* Stats */
+        .stats {
+            display: flex;
+            gap: 24px;
+            padding: 16px 24px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-icon {
+            font-size: 1.2rem;
+        }
+
+        .stat-value {
+            font-weight: 600;
+        }
+
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.85rem;
+        }
+
+        /* Action Buttons */
+        .plan-actions {
+            display: flex;
+            gap: 12px;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .btn {
+            flex: 1;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-approve {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+        }
+
+        .btn-approve:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-reject {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-reject:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
+        /* Result */
+        .result-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-top: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+        }
+
+        .result-card.visible {
+            display: block;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .result-success {
+            border-color: rgba(16, 185, 129, 0.3);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .result-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .result-detail {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            display: none;
+        }
+
+        .loading.visible {
+            display: block;
+        }
+
+        .loading-text {
+            color: #94a3b8;
+            margin-top: 16px;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid rgba(139, 92, 246, 0.2);
+            border-top-color: #8b5cf6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="orb" id="orb"></div>
+                <h1>Apex</h1>
+            </div>
+            <p class="tagline">Your Privacy-First Personal AI Assistant</p>
+        </header>
+
+        <!-- Input -->
+        <div class="input-area">
+            <div class="input-wrapper">
+                <input 
+                    type="text" 
+                    id="request-input" 
+                    placeholder="What would you like me to help with? (e.g., 'Clean up my downloads')"
+                    autocomplete="off"
+                >
+                <button class="submit-btn" id="submit-btn">Ask Apex</button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p class="loading-text">Analyzing your request...</p>
+        </div>
+
+        <!-- Plan Card -->
+        <div class="plan-card" id="plan-card">
+            <div class="plan-header">
+                <h2 class="plan-title">
+                    <span>📋</span>
+                    <span id="plan-summary">Plan Summary</span>
+                </h2>
+                <p class="plan-reasoning" id="plan-reasoning">Reasoning will appear here.</p>
+            </div>
+
+            <div class="warnings" id="warnings" style="display: none;">
+                <div class="warning-title">⚠️ Heads up</div>
+                <ul class="warning-list" id="warning-list"></ul>
+            </div>
+
+            <div class="actions-section">
+                <div class="actions-title">Proposed Actions</div>
+                <div id="actions-list"></div>
+            </div>
+
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-icon">📁</span>
+                    <span class="stat-value" id="stat-files">0</span>
+                    <span class="stat-label">files</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-icon">💾</span>
+                    <span class="stat-value" id="stat-space">0 MB</span>
+                    <span class="stat-label">freed</span>
+                </div>
+            </div>
+
+            <div class="plan-actions">
+                <button class="btn btn-reject" id="reject-btn">✕ Reject</button>
+                <button class="btn btn-approve" id="approve-btn">✓ Approve & Execute</button>
+            </div>
+        </div>
+
+        <!-- Result -->
+        <div class="result-card" id="result-card">
+            <div class="result-title" id="result-title">
+                <span>✅</span>
+                <span>Complete!</span>
+            </div>
+            <p class="result-detail" id="result-detail"></p>
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="empty-state">
+            <div class="empty-icon">💬</div>
+            <p>Ask Apex to help organize your files.<br>I'll show you exactly what I plan to do before doing it.</p>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let currentPlan = null;
+        let currentTaskId = null;
+
+        // Elements
+        const orb = document.getElementById('orb');
+        const input = document.getElementById('request-input');
+        const submitBtn = document.getElementById('submit-btn');
+        const loading = document.getElementById('loading');
+        const planCard = document.getElementById('plan-card');
+        const resultCard = document.getElementById('result-card');
+        const emptyState = document.getElementById('empty-state');
+        const approveBtn = document.getElementById('approve-btn');
+        const rejectBtn = document.getElementById('reject-btn');
+
+        // API Base URL
+        const API_URL = 'http://localhost:8000';
+
+        // Submit request
+        async function submitRequest() {
+            const request = input.value.trim();
+            if (!request) return;
+
+            // Reset UI
+            emptyState.style.display = 'none';
+            planCard.classList.remove('visible');
+            resultCard.classList.remove('visible');
+            loading.classList.add('visible');
+            orb.classList.add('thinking');
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_URL}/submit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ request })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                currentTaskId = data.task_id;
+                currentPlan = data.plan;
+                showPlan(data.plan);
+
+            } catch (error) {
+                showError('Failed to connect to Apex. Is the server running?');
+            } finally {
+                loading.classList.remove('visible');
+                orb.classList.remove('thinking');
+                submitBtn.disabled = false;
+            }
+        }
+
+        // Show plan in UI
+        function showPlan(plan) {
+            document.getElementById('plan-summary').textContent = plan.summary;
+            document.getElementById('plan-reasoning').textContent = plan.reasoning;
+
+            // Warnings
+            const warningsDiv = document.getElementById('warnings');
+            const warningList = document.getElementById('warning-list');
+            if (plan.warnings && plan.warnings.length > 0) {
+                warningList.innerHTML = plan.warnings.map(w => `<li>${w}</li>`).join('');
+                warningsDiv.style.display = 'block';
+            } else {
+                warningsDiv.style.display = 'none';
+            }
+
+            // Actions
+            const actionsList = document.getElementById('actions-list');
+            const icons = {
+                'move': '📁',
+                'delete': '🗑️',
+                'create_folder': '📂',
+                'rename': '✏️',
+                'copy': '📋'
+            };
+
+            if (plan.actions && plan.actions.length > 0) {
+                actionsList.innerHTML = plan.actions.map((action, i) => `
+                    <div class="action-item">
+                        <input type="checkbox" class="action-checkbox" data-index="${i}" checked>
+                        <div class="action-icon">${icons[action.type] || '•'}</div>
+                        <div class="action-content">
+                            <div class="action-type">${action.type}</div>
+                            <div class="action-source">${action.source}</div>
+                            ${action.destination ? `<div class="action-dest">→ ${action.destination}</div>` : ''}
+                            <div class="action-reason">${action.reason}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                actionsList.innerHTML = '<p style="color: #94a3b8; padding: 20px; text-align: center;">No actions proposed</p>';
+            }
+
+            // Stats
+            document.getElementById('stat-files').textContent = plan.stats?.files || 0;
+            document.getElementById('stat-space').textContent = plan.stats?.space || '0 MB';
+
+            planCard.classList.add('visible');
+        }
+
+        // Approve selected actions
+        async function approveActions() {
+            const checkboxes = document.querySelectorAll('.action-checkbox:checked');
+            const indices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+
+            if (indices.length === 0) {
+                alert('Select at least one action to approve.');
+                return;
+            }
+
+            loading.classList.add('visible');
+            orb.classList.add('thinking');
+
+            try {
+                const response = await fetch(`${API_URL}/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        task_id: currentTaskId,
+                        approved_indices: indices
+                    })
+                });
+
+                const data = await response.json();
+                
+                planCard.classList.remove('visible');
+                showResult(data);
+
+            } catch (error) {
+                showError('Failed to execute actions.');
+            } finally {
+                loading.classList.remove('visible');
+                orb.classList.remove('thinking');
+            }
+        }
+
+        // Reject plan
+        async function rejectPlan() {
+            try {
+                await fetch(`${API_URL}/reject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_id: currentTaskId })
+                });
+            } catch (e) {}
+
+            planCard.classList.remove('visible');
+            resultCard.classList.remove('visible');
+            emptyState.style.display = 'block';
+            input.value = '';
+            input.focus();
+        }
+
+        // Show result
+        function showResult(data) {
+            const resultTitle = document.getElementById('result-title');
+            const resultDetail = document.getElementById('result-detail');
+
+            const successCount = data.result?.success?.length || 0;
+            const failedCount = data.result?.failed?.length || 0;
+
+            if (failedCount === 0) {
+                resultCard.classList.add('result-success');
+                resultTitle.innerHTML = '<span>✅</span><span>Complete!</span>';
+            } else {
+                resultCard.classList.remove('result-success');
+                resultTitle.innerHTML = '<span>⚠️</span><span>Completed with issues</span>';
+            }
+
+            resultDetail.textContent = `${successCount} action${successCount !== 1 ? 's' : ''} completed successfully.${failedCount > 0 ? ` ${failedCount} failed.` : ''}`;
+
+            resultCard.classList.add('visible');
+            input.value = '';
+            input.focus();
+        }
+
+        // Show error
+        function showError(message) {
+            const resultTitle = document.getElementById('result-title');
+            const resultDetail = document.getElementById('result-detail');
+
+            resultCard.classList.remove('result-success');
+            resultTitle.innerHTML = '<span>❌</span><span>Error</span>';
+            resultDetail.textContent = message;
+            resultCard.classList.add('visible');
+        }
+
+        // Event listeners
+        submitBtn.addEventListener('click', submitRequest);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitRequest();
+        });
+        approveBtn.addEventListener('click', approveActions);
+        rejectBtn.addEventListener('click', rejectPlan);
+
+        // Focus input on load
+        input.focus();
+    </script>
+</body>
+</html>
