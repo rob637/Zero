@@ -3,630 +3,425 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apex - Your Personal AI Assistant</title>
+    <title>Apex - Your Personal AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
+        
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
             min-height: 100vh;
             color: #e4e4e7;
+            display: flex;
+            flex-direction: column;
         }
-
-        .container { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
 
         /* Header */
-        .header { text-align: center; margin-bottom: 32px; }
-        .logo { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
-
-        .orb {
-            width: 40px; height: 40px; border-radius: 50%;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
-            box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
-            animation: pulse 2s ease-in-out infinite;
+        .header {
+            padding: 20px 24px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
+        .orb {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+        }
+        .orb.thinking { animation: pulse 0.6s ease-in-out infinite; }
         @keyframes pulse {
             0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.05); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 0.7; }
         }
-        .orb.thinking { animation: thinking 0.5s ease-in-out infinite; }
-        @keyframes thinking {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
+        .title { font-size: 1.1rem; font-weight: 600; }
+        .status { margin-left: auto; font-size: 0.8rem; color: #6ee7b7; }
+
+        /* Chat Area */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
 
-        h1 {
-            font-size: 2rem; font-weight: 700;
-            background: linear-gradient(135deg, #fff, #a5b4fc);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
-        .tagline { color: #94a3b8; font-size: 0.9rem; }
-
-        /* Capabilities */
-        .section-title {
-            font-size: 0.85rem; font-weight: 600; color: #94a3b8;
-            text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;
-        }
-
-        .capability-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
-            overflow: hidden; margin-bottom: 16px;
-        }
-
-        .capability-header {
-            display: flex; align-items: center; gap: 16px;
-            padding: 20px 24px; cursor: pointer; transition: background 0.2s;
-        }
-        .capability-header:hover { background: rgba(255, 255, 255, 0.03); }
-
-        .capability-icon {
-            font-size: 2rem; width: 56px; height: 56px;
-            display: flex; align-items: center; justify-content: center;
-            background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(139, 92, 246, 0.3));
+        .message {
+            max-width: 85%;
+            padding: 16px 20px;
             border-radius: 16px;
+            line-height: 1.5;
         }
-        .capability-info { flex: 1; }
-        .capability-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; }
-        .capability-desc { font-size: 0.85rem; color: #94a3b8; }
-        .capability-expand { font-size: 1.5rem; color: #64748b; transition: transform 0.2s; }
-        .capability-card.expanded .capability-expand { transform: rotate(180deg); }
-
-        .capability-features {
-            display: none; padding: 0 24px 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .capability-card.expanded .capability-features { display: block; }
-
-        .feature-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 12px; margin-top: 16px;
-        }
-
-        .feature-btn {
-            display: flex; align-items: center; gap: 12px; padding: 16px;
-            background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 12px; cursor: pointer; transition: all 0.2s; text-align: left;
-        }
-        .feature-btn:hover {
-            background: rgba(99, 102, 241, 0.15);
-            border-color: rgba(99, 102, 241, 0.3);
-            transform: translateY(-2px);
-        }
-        .feature-btn.active {
-            background: rgba(99, 102, 241, 0.2);
-            border-color: #6366f1;
-        }
-        .feature-icon { font-size: 1.3rem; }
-        .feature-name { font-weight: 500; font-size: 0.9rem; }
-        .feature-status { font-size: 0.75rem; color: #6ee7b7; }
-        .feature-status.coming { color: #94a3b8; }
-
-        /* Action Panel */
-        .action-panel {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 24px; margin-bottom: 24px; display: none;
-        }
-        .action-panel.visible { display: block; animation: slideUp 0.3s ease-out; }
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .action-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-        .action-title { font-size: 1.1rem; font-weight: 600; }
-        .action-close {
-            margin-left: auto; background: none; border: none;
-            color: #64748b; font-size: 1.5rem; cursor: pointer; line-height: 1;
-        }
-        .action-close:hover { color: #f87171; }
-        .action-description { color: #94a3b8; font-size: 0.9rem; margin-bottom: 20px; }
-
-        .quick-folders { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
-        .quick-folder {
-            padding: 8px 16px; background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s;
-        }
-        .quick-folder:hover {
-            background: rgba(99, 102, 241, 0.2);
-            border-color: rgba(99, 102, 241, 0.3);
-        }
-
-        .folder-input {
-            width: 100%; background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px; padding: 14px 18px;
-            font-size: 0.95rem; color: #fff; outline: none; margin-bottom: 20px;
-        }
-        .folder-input:focus { border-color: #8b5cf6; }
-        .folder-input::placeholder { color: #64748b; }
-
-        .scan-btn {
+        .message.user {
+            align-self: flex-end;
             background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            border: none; border-radius: 12px; padding: 14px 28px;
-            font-size: 1rem; font-weight: 600; color: #fff;
-            cursor: pointer; transition: all 0.2s; width: 100%;
+            border-bottom-right-radius: 4px;
         }
-        .scan-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+        .message.assistant {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.08);
+            border-bottom-left-radius: 4px;
         }
-        .scan-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .message.system {
+            align-self: center;
+            background: rgba(251, 146, 60, 0.15);
+            border: 1px solid rgba(251, 146, 60, 0.3);
+            color: #fbbf24;
+            font-size: 0.85rem;
+            text-align: center;
+        }
 
-        /* Results Panel */
-        .results-panel {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
-            overflow: hidden; display: none;
+        /* Plan Display */
+        .plan-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            margin-top: 12px;
+            overflow: hidden;
         }
-        .results-panel.visible { display: block; animation: slideUp 0.3s ease-out; }
+        .plan-header {
+            padding: 16px;
+            background: rgba(99, 102, 241, 0.15);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-weight: 600;
+        }
+        .plan-actions {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .plan-action {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 0.9rem;
+        }
+        .plan-action:last-child { border-bottom: none; }
+        .plan-action input { margin-top: 3px; accent-color: #8b5cf6; }
+        .plan-action-icon { font-size: 1.1rem; }
+        .plan-action-text { flex: 1; }
+        .plan-action-source { color: #e4e4e7; word-break: break-all; }
+        .plan-action-dest { color: #6ee7b7; font-size: 0.85rem; margin-top: 2px; word-break: break-all; }
+        .plan-action-reason { color: #94a3b8; font-size: 0.8rem; margin-top: 4px; }
 
-        .results-header {
-            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
-            padding: 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .results-title {
-            font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;
-            display: flex; align-items: center; gap: 10px;
-        }
-        .results-summary { color: #94a3b8; font-size: 0.9rem; }
-
-        .warnings {
-            background: rgba(251, 146, 60, 0.1);
-            border-left: 3px solid #fb923c; padding: 16px 20px;
-        }
-        .warning-title { font-weight: 600; color: #fb923c; font-size: 0.85rem; margin-bottom: 8px; }
-        .warning-list { color: #fbbf24; font-size: 0.85rem; padding-left: 20px; }
-
-        .actions-section { padding: 24px; max-height: 400px; overflow-y: auto; }
-        .action-item {
-            background: rgba(0, 0, 0, 0.2); border-radius: 12px; padding: 16px;
-            margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.05);
-            display: flex; align-items: flex-start; gap: 12px;
-        }
-        .action-checkbox { width: 20px; height: 20px; margin-top: 2px; accent-color: #8b5cf6; }
-        .action-icon { font-size: 1.5rem; width: 36px; text-align: center; }
-        .action-content { flex: 1; }
-        .action-type { font-weight: 600; font-size: 0.8rem; text-transform: uppercase; color: #a5b4fc; margin-bottom: 4px; }
-        .action-source { font-family: 'Consolas', monospace; font-size: 0.85rem; color: #e4e4e7; word-break: break-all; }
-        .action-dest { font-family: 'Consolas', monospace; font-size: 0.8rem; color: #6ee7b6; margin-top: 4px; }
-        .action-reason { font-size: 0.8rem; color: #94a3b8; margin-top: 8px; }
-        .action-size { font-size: 0.75rem; color: #f472b6; margin-top: 4px; }
-
-        .stats-bar {
-            display: flex; gap: 24px; padding: 16px 24px;
-            background: rgba(0, 0, 0, 0.2); border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .stat { display: flex; align-items: center; gap: 8px; }
-        .stat-icon { font-size: 1.2rem; }
-        .stat-value { font-weight: 600; }
-        .stat-label { color: #94a3b8; font-size: 0.85rem; }
-
-        .results-actions {
-            display: flex; gap: 12px; padding: 24px;
-            background: rgba(0, 0, 0, 0.2); border-top: 1px solid rgba(255, 255, 255, 0.05);
+        .plan-footer {
+            padding: 16px;
+            display: flex;
+            gap: 12px;
+            background: rgba(0,0,0,0.2);
         }
         .btn {
-            flex: 1; padding: 16px 24px; border-radius: 12px;
-            font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none;
+            flex: 1;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            font-size: 0.9rem;
+            transition: all 0.2s;
         }
-        .btn-approve { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
-        .btn-approve:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4); }
-        .btn-reject { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
-        .btn-reject:hover { background: rgba(239, 68, 68, 0.3); }
-
-        /* Loading */
-        .loading-overlay {
-            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7);
-            display: none; align-items: center; justify-content: center; z-index: 100;
-        }
-        .loading-overlay.visible { display: flex; }
-        .loading-card {
-            background: rgba(30, 30, 50, 0.95);
-            border-radius: 20px; padding: 40px 60px; text-align: center;
-        }
-        .spinner {
-            width: 48px; height: 48px;
-            border: 3px solid rgba(139, 92, 246, 0.2); border-top-color: #8b5cf6;
-            border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text { color: #94a3b8; }
-
-        /* Toast */
-        .toast {
-            position: fixed; bottom: 32px; right: 32px;
+        .btn-approve {
             background: linear-gradient(135deg, #10b981, #059669);
-            padding: 16px 24px; border-radius: 12px;
-            display: none; align-items: center; gap: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); z-index: 101;
+            color: white;
         }
-        .toast.visible { display: flex; animation: slideIn 0.3s ease-out; }
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+        .btn-approve:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+        .btn-reject {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
-        .toast-icon { font-size: 1.5rem; }
-        .toast-text { font-weight: 500; }
+        .btn-reject:hover { background: rgba(239, 68, 68, 0.25); }
 
-        .coming-badge {
-            font-size: 0.65rem; background: rgba(100, 116, 139, 0.3);
-            color: #94a3b8; padding: 2px 8px; border-radius: 10px; margin-left: 8px;
+        /* Suggestions */
+        .suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 0 24px 16px;
+            justify-content: center;
+        }
+        .suggestion {
+            padding: 10px 16px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .suggestion:hover {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        /* Input Area */
+        .input-area {
+            padding: 20px 24px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            background: rgba(0,0,0,0.2);
+        }
+        .input-container {
+            display: flex;
+            gap: 12px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .input-field {
+            flex: 1;
+            padding: 14px 20px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            color: #fff;
+            font-size: 0.95rem;
+            outline: none;
+            font-family: inherit;
+        }
+        .input-field:focus {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+        }
+        .input-field::placeholder { color: #64748b; }
+        .send-btn {
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* Welcome State */
+        .welcome {
+            text-align: center;
+            padding: 60px 24px;
+        }
+        .welcome-orb {
+            width: 80px; height: 80px; border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+            box-shadow: 0 0 60px rgba(139, 92, 246, 0.4);
+            margin: 0 auto 24px;
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .welcome h1 {
+            font-size: 1.8rem;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .welcome p { color: #94a3b8; margin-bottom: 32px; }
+
+        /* Stats bar */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            padding: 12px;
+            background: rgba(0,0,0,0.2);
+            margin-top: 12px;
+            border-radius: 8px;
+        }
+        .stat-value { color: #fff; font-weight: 600; }
+        
+        /* Warnings */
+        .warnings {
+            margin-top: 8px;
+            padding: 12px;
+            background: rgba(251, 146, 60, 0.1);
+            border-left: 3px solid #fb923c;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: #fbbf24;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <div class="logo">
-                <div class="orb" id="orb"></div>
-                <h1>Apex</h1>
-            </div>
-            <p class="tagline">Your Privacy-First Personal AI Assistant</p>
-        </header>
+    <header class="header">
+        <div class="orb" id="orb"></div>
+        <span class="title">Apex</span>
+        <span class="status" id="status">● Ready</span>
+    </header>
 
-        <div class="capabilities-section">
-            <div class="section-title">Capabilities</div>
-
-            <!-- PC Cleanup -->
-            <div class="capability-card expanded" id="pc-cleanup-card">
-                <div class="capability-header" onclick="toggleCapability('pc-cleanup-card')">
-                    <div class="capability-icon">🧹</div>
-                    <div class="capability-info">
-                        <div class="capability-title">PC Cleanup</div>
-                        <div class="capability-desc">Organize files, find duplicates, free up space</div>
-                    </div>
-                    <div class="capability-expand">▼</div>
-                </div>
-                <div class="capability-features">
-                    <div class="feature-grid">
-                        <div class="feature-btn" onclick="selectFeature('organize', this)">
-                            <span class="feature-icon">📁</span>
-                            <div>
-                                <div class="feature-name">Organize Files</div>
-                                <div class="feature-status">Ready</div>
-                            </div>
-                        </div>
-                        <div class="feature-btn" onclick="selectFeature('duplicates', this)">
-                            <span class="feature-icon">🔍</span>
-                            <div>
-                                <div class="feature-name">Find Duplicates</div>
-                                <div class="feature-status">Ready</div>
-                            </div>
-                        </div>
-                        <div class="feature-btn" onclick="selectFeature('temp', this)">
-                            <span class="feature-icon">🗑️</span>
-                            <div>
-                                <div class="feature-name">Clear Temp Files</div>
-                                <div class="feature-status">Ready</div>
-                            </div>
-                        </div>
-                        <div class="feature-btn" onclick="selectFeature('photos', this)">
-                            <span class="feature-icon">📸</span>
-                            <div>
-                                <div class="feature-name">Photo Cleanup</div>
-                                <div class="feature-status coming">Coming Soon</div>
-                            </div>
-                        </div>
-                        <div class="feature-btn" onclick="selectFeature('startup', this)">
-                            <span class="feature-icon">🚀</span>
-                            <div>
-                                <div class="feature-name">Startup Manager</div>
-                                <div class="feature-status coming">Coming Soon</div>
-                            </div>
-                        </div>
-                        <div class="feature-btn" onclick="selectFeature('uninstall', this)">
-                            <span class="feature-icon">📦</span>
-                            <div>
-                                <div class="feature-name">Uninstall Advisor</div>
-                                <div class="feature-status coming">Coming Soon</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Productivity (Coming Soon) -->
-            <div class="capability-card" id="productivity-card">
-                <div class="capability-header" onclick="toggleCapability('productivity-card')">
-                    <div class="capability-icon">⚡</div>
-                    <div class="capability-info">
-                        <div class="capability-title">Productivity<span class="coming-badge">Coming Soon</span></div>
-                        <div class="capability-desc">Email management, calendar, task automation</div>
-                    </div>
-                    <div class="capability-expand">▼</div>
-                </div>
-                <div class="capability-features">
-                    <div class="feature-grid">
-                        <div class="feature-btn">
-                            <span class="feature-icon">📧</span>
-                            <div>
-                                <div class="feature-name">Email Cleanup</div>
-                                <div class="feature-status coming">Coming Soon</div>
-                            </div>
-                        </div>
-                        <div class="feature-btn">
-                            <span class="feature-icon">📅</span>
-                            <div>
-                                <div class="feature-name">Smart Scheduling</div>
-                                <div class="feature-status coming">Coming Soon</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <main class="chat-container" id="chat">
+        <div class="welcome" id="welcome">
+            <div class="welcome-orb"></div>
+            <h1>Hey! I'm Apex</h1>
+            <p>Your personal AI assistant. Tell me what you need help with.</p>
         </div>
+    </main>
 
-        <!-- Action Panel -->
-        <div class="action-panel" id="action-panel">
-            <div class="action-header">
-                <span id="action-icon">📁</span>
-                <span class="action-title" id="action-title">Organize Files</span>
-                <button class="action-close" onclick="closeActionPanel()">×</button>
-            </div>
-            <p class="action-description" id="action-description">
-                I'll analyze your folder and suggest how to organize it. You'll review everything before I do anything.
-            </p>
-
-            <div class="quick-folders" id="quick-folders">
-                <span class="quick-folder" onclick="setFolder('C:\\')">💿 C: Drive</span>
-                <span class="quick-folder" onclick="setFolder('D:\\')">💿 D: Drive</span>
-                <span class="quick-folder" onclick="setFolder('OneDrive')">☁️ OneDrive</span>
-                <span class="quick-folder" onclick="setFolder('Downloads')">📥 Downloads</span>
-                <span class="quick-folder" onclick="setFolder('Desktop')">🖥️ Desktop</span>
-                <span class="quick-folder" onclick="setFolder('Documents')">📄 Documents</span>
-                <span class="quick-folder" onclick="setFolder('Pictures')">🖼️ Pictures</span>
-            </div>
-
-            <input type="text" class="folder-input" id="folder-input" placeholder="Any folder path (e.g., D:\Projects or C:\Users\rob\Stuff)">
-
-            <button class="scan-btn" id="scan-btn" onclick="startScan()">🔍 Scan & Analyze</button>
-        </div>
-
-        <!-- Results Panel -->
-        <div class="results-panel" id="results-panel">
-            <div class="results-header">
-                <h2 class="results-title">
-                    <span id="results-icon">📋</span>
-                    <span id="results-summary">Ready to clean up</span>
-                </h2>
-                <p class="results-summary" id="results-reasoning">Here's what I found and recommend.</p>
-            </div>
-
-            <div class="warnings" id="warnings" style="display: none;">
-                <div class="warning-title">⚠️ Heads up</div>
-                <ul class="warning-list" id="warning-list"></ul>
-            </div>
-
-            <div class="actions-section" id="actions-list"></div>
-
-            <div class="stats-bar">
-                <div class="stat">
-                    <span class="stat-icon">📁</span>
-                    <span class="stat-value" id="stat-files">0</span>
-                    <span class="stat-label">files</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-icon">💾</span>
-                    <span class="stat-value" id="stat-space">0 MB</span>
-                    <span class="stat-label">to free</span>
-                </div>
-            </div>
-
-            <div class="results-actions">
-                <button class="btn btn-reject" onclick="rejectPlan()">✕ Cancel</button>
-                <button class="btn btn-approve" onclick="approvePlan()">✓ Clean Up Selected</button>
-            </div>
-        </div>
+    <div class="suggestions" id="suggestions">
+        <span class="suggestion" onclick="sendMessage('My PC feels cluttered, can you help?')">🧹 My PC feels cluttered</span>
+        <span class="suggestion" onclick="sendMessage('Find duplicate files wasting space')">🔍 Find duplicates</span>
+        <span class="suggestion" onclick="sendMessage('Organize my Downloads folder')">📁 Organize Downloads</span>
+        <span class="suggestion" onclick="sendMessage('What can you help me with?')">❓ What can you do?</span>
     </div>
 
-    <!-- Loading -->
-    <div class="loading-overlay" id="loading">
-        <div class="loading-card">
-            <div class="spinner"></div>
-            <p class="loading-text" id="loading-text">Scanning files...</p>
+    <footer class="input-area">
+        <div class="input-container">
+            <input type="text" class="input-field" id="input" 
+                   placeholder="Tell me what you need..." 
+                   onkeypress="if(event.key==='Enter')sendMessage()">
+            <button class="send-btn" onclick="sendMessage()">Send</button>
         </div>
-    </div>
-
-    <!-- Toast -->
-    <div class="toast" id="toast">
-        <span class="toast-icon">✅</span>
-        <span class="toast-text" id="toast-text">Cleanup complete!</span>
-    </div>
+    </footer>
 
     <script>
-        let currentFeature = null;
+        const API = 'http://localhost:8000';
         let currentTaskId = null;
         let currentPlan = null;
-        const API_URL = 'http://localhost:8000';
 
-        const features = {
-            organize: {
-                icon: '📁', title: 'Organize Files',
-                description: "I'll analyze your folder and suggest how to organize it. You'll review everything before I do anything.",
-                showFolders: true, ready: true
-            },
-            duplicates: {
-                icon: '🔍', title: 'Find Duplicates',
-                description: "I'll find duplicate files wasting space. You choose which copies to remove.",
-                showFolders: true, ready: true
-            },
-            temp: {
-                icon: '🗑️', title: 'Clear Temp Files',
-                description: "I'll find temporary files, caches, and junk that can be safely deleted.",
-                showFolders: false, ready: true
-            },
-            photos: { icon: '📸', title: 'Photo Cleanup', ready: false },
-            startup: { icon: '🚀', title: 'Startup Manager', ready: false },
-            uninstall: { icon: '📦', title: 'Uninstall Advisor', ready: false }
-        };
-
-        function toggleCapability(cardId) {
-            document.getElementById(cardId).classList.toggle('expanded');
+        function addMessage(text, type, extra = '') {
+            document.getElementById('welcome')?.remove();
+            const chat = document.getElementById('chat');
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            msg.innerHTML = text + extra;
+            chat.appendChild(msg);
+            chat.scrollTop = chat.scrollHeight;
+            return msg;
         }
 
-        function selectFeature(featureId, btn) {
-            const feature = features[featureId];
-            if (!feature.ready) {
-                showToast('Coming soon! This feature is under development.');
-                return;
-            }
+        function setThinking(thinking) {
+            document.getElementById('orb').classList.toggle('thinking', thinking);
+            document.getElementById('status').textContent = thinking ? '● Thinking...' : '● Ready';
+            document.querySelector('.send-btn').disabled = thinking;
+        }
 
-            document.querySelectorAll('.feature-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+        function hideSuggestions() {
+            document.getElementById('suggestions').style.display = 'none';
+        }
 
-            currentFeature = featureId;
-            document.getElementById('action-icon').textContent = feature.icon;
-            document.getElementById('action-title').textContent = feature.title;
-            document.getElementById('action-description').textContent = feature.description;
+        async function sendMessage(text) {
+            const input = document.getElementById('input');
+            const message = text || input.value.trim();
+            if (!message) return;
             
-            document.getElementById('quick-folders').style.display = feature.showFolders ? 'flex' : 'none';
-            document.getElementById('folder-input').style.display = feature.showFolders ? 'block' : 'none';
-            document.getElementById('folder-input').value = '';
-
-            document.getElementById('action-panel').classList.add('visible');
-            document.getElementById('results-panel').classList.remove('visible');
-        }
-
-        function closeActionPanel() {
-            document.getElementById('action-panel').classList.remove('visible');
-            document.querySelectorAll('.feature-btn').forEach(b => b.classList.remove('active'));
-            currentFeature = null;
-        }
-
-        function setFolder(folder) {
-            document.getElementById('folder-input').value = folder;
-        }
-
-        async function startScan() {
-            const folder = document.getElementById('folder-input').value.trim();
-            if (!folder && features[currentFeature].showFolders) {
-                alert('Please select or enter a folder to scan.');
-                return;
-            }
-
-            showLoading('Analyzing ' + (folder || 'system folders') + '...');
+            input.value = '';
+            hideSuggestions();
+            addMessage(message, 'user');
+            setThinking(true);
 
             try {
-                const response = await fetch(`${API_URL}/scan/${currentFeature}`, {
+                const res = await fetch(`${API}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folder, feature: currentFeature })
+                    body: JSON.stringify({ message })
                 });
-
-                const data = await response.json();
-                hideLoading();
+                const data = await res.json();
+                setThinking(false);
 
                 if (data.error) {
-                    alert('Error: ' + data.error);
+                    addMessage(data.error, 'system');
                     return;
                 }
 
-                currentTaskId = data.task_id;
-                currentPlan = data.plan;
-                showResults(data.plan);
-            } catch (error) {
-                hideLoading();
-                alert('Failed to connect. Is the server running?');
+                if (data.plan && data.plan.actions?.length > 0) {
+                    currentTaskId = data.task_id;
+                    currentPlan = data.plan;
+                    addMessage(data.response, 'assistant', renderPlan(data.plan));
+                } else {
+                    addMessage(data.response, 'assistant');
+                }
+
+            } catch (e) {
+                setThinking(false);
+                addMessage('Cannot connect to Apex. Is the server running?', 'system');
             }
         }
 
-        function showResults(plan) {
-            document.getElementById('results-icon').textContent = features[currentFeature].icon;
-            document.getElementById('results-summary').textContent = plan.summary;
-            document.getElementById('results-reasoning').textContent = plan.reasoning;
-
-            const warningsDiv = document.getElementById('warnings');
-            const warningList = document.getElementById('warning-list');
-            if (plan.warnings?.length > 0) {
-                warningList.innerHTML = plan.warnings.map(w => `<li>${w}</li>`).join('');
-                warningsDiv.style.display = 'block';
-            } else {
-                warningsDiv.style.display = 'none';
-            }
-
-            const actionsList = document.getElementById('actions-list');
-            const icons = { 'move': '📁', 'delete': '🗑️', 'create_folder': '📂', 'rename': '✏️', 'copy': '📋' };
-
-            if (plan.actions?.length > 0) {
-                actionsList.innerHTML = plan.actions.map((action, i) => `
-                    <div class="action-item">
-                        <input type="checkbox" class="action-checkbox" data-index="${i}" checked>
-                        <div class="action-icon">${icons[action.type] || '•'}</div>
-                        <div class="action-content">
-                            <div class="action-type">${action.type}</div>
-                            <div class="action-source">${action.source}</div>
-                            ${action.destination ? `<div class="action-dest">→ ${action.destination}</div>` : ''}
-                            ${action.size ? `<div class="action-size">${action.size}</div>` : ''}
-                            <div class="action-reason">${action.reason}</div>
+        function renderPlan(plan) {
+            const icons = { move: '📁', delete: '🗑️', create_folder: '📂', rename: '✏️' };
+            
+            let actionsHtml = '';
+            if (plan.actions && plan.actions.length > 0) {
+                actionsHtml = plan.actions.map((a, i) => `
+                    <div class="plan-action">
+                        <input type="checkbox" checked data-idx="${i}">
+                        <span class="plan-action-icon">${icons[a.type] || '•'}</span>
+                        <div class="plan-action-text">
+                            <div class="plan-action-source">${a.source}</div>
+                            ${a.destination ? `<div class="plan-action-dest">→ ${a.destination}</div>` : ''}
+                            <div class="plan-action-reason">${a.reason}</div>
                         </div>
                     </div>
                 `).join('');
-            } else {
-                actionsList.innerHTML = '<div style="text-align: center; padding: 40px; color: #94a3b8;">✨ Everything looks clean! No actions needed.</div>';
+            }
+            
+            let warningsHtml = '';
+            if (plan.warnings && plan.warnings.length > 0) {
+                warningsHtml = `<div class="warnings">⚠️ ${plan.warnings.join('<br>⚠️ ')}</div>`;
             }
 
-            document.getElementById('stat-files').textContent = plan.stats?.files || 0;
-            document.getElementById('stat-space').textContent = plan.stats?.space || '0 MB';
-
-            document.getElementById('action-panel').classList.remove('visible');
-            document.getElementById('results-panel').classList.add('visible');
+            return `
+                <div class="plan-card">
+                    <div class="plan-header">📋 ${plan.summary}</div>
+                    ${actionsHtml ? `<div class="plan-actions">${actionsHtml}</div>` : ''}
+                    ${warningsHtml}
+                    <div class="stats">
+                        <span><span class="stat-value">${plan.stats?.files || 0}</span> files</span>
+                        <span><span class="stat-value">${plan.stats?.space || '0 MB'}</span> to free</span>
+                    </div>
+                    <div class="plan-footer">
+                        <button class="btn btn-reject" onclick="rejectPlan()">Cancel</button>
+                        <button class="btn btn-approve" onclick="approvePlan()">✓ Do it</button>
+                    </div>
+                </div>
+            `;
         }
 
         async function approvePlan() {
-            const checkboxes = document.querySelectorAll('.action-checkbox:checked');
-            const indices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
-            if (indices.length === 0) { alert('Select at least one action.'); return; }
+            const checkboxes = document.querySelectorAll('.plan-action input:checked');
+            const indices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.idx));
+            
+            if (indices.length === 0) {
+                addMessage('Select at least one action to approve.', 'system');
+                return;
+            }
 
-            showLoading('Cleaning up...');
-
+            setThinking(true);
             try {
-                const response = await fetch(`${API_URL}/approve`, {
+                const res = await fetch(`${API}/approve`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ task_id: currentTaskId, approved_indices: indices })
                 });
-                const data = await response.json();
-                hideLoading();
+                const data = await res.json();
+                setThinking(false);
 
-                const successCount = data.result?.success?.length || 0;
-                showToast(`Cleanup complete! ${successCount} actions performed.`);
-                document.getElementById('results-panel').classList.remove('visible');
-                document.querySelectorAll('.feature-btn').forEach(b => b.classList.remove('active'));
-            } catch (error) {
-                hideLoading();
-                alert('Failed to execute cleanup.');
+                const count = data.result?.success?.length || 0;
+                addMessage(`Done! Completed ${count} actions. ${data.result?.space_freed ? `Freed ${data.result.space_freed}.` : ''}`, 'assistant');
+                
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to execute. Try again?', 'system');
             }
         }
 
         function rejectPlan() {
-            document.getElementById('results-panel').classList.remove('visible');
-            document.getElementById('action-panel').classList.add('visible');
+            addMessage("No problem, I won't make any changes. What else can I help with?", 'assistant');
+            currentTaskId = null;
+            currentPlan = null;
         }
 
-        function showLoading(text) {
-            document.getElementById('loading-text').textContent = text;
-            document.getElementById('loading').classList.add('visible');
-            document.getElementById('orb').classList.add('thinking');
-        }
-
-        function hideLoading() {
-            document.getElementById('loading').classList.remove('visible');
-            document.getElementById('orb').classList.remove('thinking');
-        }
-
-        function showToast(text) {
-            const toast = document.getElementById('toast');
-            document.getElementById('toast-text').textContent = text;
-            toast.classList.add('visible');
-            setTimeout(() => toast.classList.remove('visible'), 3000);
-        }
+        // Focus input on load
+        document.getElementById('input').focus();
     </script>
 </body>
 </html>

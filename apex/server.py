@@ -47,6 +47,10 @@ class SubmitRequest(BaseModel):
     request: str
 
 
+class ChatRequest(BaseModel):
+    message: str
+
+
 class ScanRequest(BaseModel):
     folder: str = ""
     feature: str = "organize"
@@ -61,11 +65,117 @@ class RejectRequest(BaseModel):
     task_id: str
 
 
+# Chat system prompt for conversational AI
+CHAT_SYSTEM_PROMPT = """You are Apex, a helpful personal AI assistant that lives on the user's PC.
+
+Your capabilities:
+1. **File Organization** - Organize messy folders, sort files by type/date, clean up Downloads/Desktop
+2. **Duplicate Finder** - Find and remove duplicate files wasting disk space
+3. **Temp Cleaner** - Clean temporary files, browser caches, free up space
+
+When the user asks for help with something you can do:
+1. Acknowledge their request conversationally
+2. Tell them you'll analyze the situation
+3. Set "action" to the appropriate skill name
+
+When the user asks what you can do, explain your capabilities warmly.
+
+When the user asks something you can't help with, be honest and suggest what you CAN help with.
+
+IMPORTANT: You must respond with valid JSON in this exact format:
+{
+    "response": "Your conversational message to the user",
+    "action": "file_organizer" | "duplicate_finder" | "temp_cleaner" | null,
+    "target": "path or folder name if mentioned, or null"
+}
+
+Examples:
+- "organize my downloads" -> action: "file_organizer", target: "Downloads"
+- "find duplicates in D:\\Photos" -> action: "duplicate_finder", target: "D:\\Photos"
+- "my pc is slow" -> action: "temp_cleaner", target: null
+- "clean up my computer" -> action: null (ask what specifically they want)
+- "what can you do?" -> action: null (just explain)
+"""
+
+
 # Routes
 @app.get("/")
 async def root():
     """Serve the UI."""
     return FileResponse(Path(__file__).parent / "ui" / "index.html")
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    """
+    Main chat endpoint - the AI assistant interface.
+    
+    This is where natural language becomes action.
+    """
+    llm = create_client_from_env()
+    
+    if not llm:
+        return JSONResponse({
+            "error": "No LLM API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+            "response": None,
+            "plan": None,
+            "task_id": None
+        })
+    
+    try:
+        # Ask LLM to understand intent
+        import json
+        
+        result = await llm.complete_json(
+            system=CHAT_SYSTEM_PROMPT,
+            user=req.message
+        )
+        
+        response_text = result.get("response", "I'm not sure how to help with that.")
+        action = result.get("action")
+        target = result.get("target")
+        
+        # If there's an action, route to skill
+        if action:
+            # Build the skill request
+            skill_request = req.message
+            if target:
+                skill_request = f"{req.message} - target: {target}"
+            
+            task = await orchestrator.submit(skill_request)
+            
+            if task.error:
+                return JSONResponse({
+                    "error": None,
+                    "response": f"{response_text}\n\nHmm, I ran into an issue: {task.error}",
+                    "plan": None,
+                    "task_id": None
+                })
+            
+            plan_dict = task.plan.to_display_dict() if task.plan else None
+            
+            return JSONResponse({
+                "error": None,
+                "response": response_text,
+                "plan": plan_dict,
+                "task_id": task.id
+            })
+        
+        # No action needed, just conversation
+        return JSONResponse({
+            "error": None,
+            "response": response_text,
+            "plan": None,
+            "task_id": None
+        })
+        
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "response": "Sorry, I encountered an error. Please try again.",
+            "plan": None,
+            "task_id": None
+        })
 
 
 @app.post("/submit")
