@@ -1,9 +1,0 @@
-Package: apex
-Version: 0.1.0
-Architecture: amd64
-Installed-Size: 15002
-Maintainer: rob637
-Priority: optional
-Depends: libappindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0
-Description: Your Personal AI Assistant
- Privacy-First Personal AI Assistant that lives on your PC. Organizes files, finds duplicates, and more - always with your approval.
