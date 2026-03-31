@@ -282,39 +282,69 @@ async def execute_plan(req: ExecuteRequest):
     Called after the user approves a plan from /chat.
     Actually runs the primitives (FILE.search, COMPUTE.amortization, etc.)
     """
+    print(f"[EXECUTE] Received request: {req.message[:100]}")
+    
     engine = get_apex_engine()
     if not engine:
+        print("[EXECUTE] ERROR: Engine not initialized")
         return JSONResponse({
-            "error": "Engine not initialized",
+            "error": "Engine not initialized - check API key",
             "success": False,
             "results": None,
         })
     
     try:
+        print(f"[EXECUTE] Running engine.do()...")
         exec_result = await engine.do(req.message, require_approval=False)
+        print(f"[EXECUTE] Engine completed. Success: {exec_result.success}")
         
         # Format results
         step_results = []
         if exec_result.plan:
             for step in exec_result.plan:
+                # Safely serialize data
+                step_data = None
+                if step.result and step.result.success and step.result.data is not None:
+                    try:
+                        import json as json_mod
+                        json_mod.dumps(step.result.data)  # Test serializable
+                        step_data = step.result.data
+                    except (TypeError, ValueError):
+                        step_data = str(step.result.data)
+                
                 step_results.append({
                     "id": step.id,
                     "description": step.description,
                     "primitive": step.primitive,
                     "operation": step.operation,
                     "success": step.result.success if step.result else False,
-                    "data": step.result.data if step.result and step.result.success else None,
+                    "data": step_data,
                     "error": step.result.error if step.result and not step.result.success else None,
                 })
+                print(f"[EXECUTE]   Step {step.id}: {step.primitive}.{step.operation} -> {'OK' if step.result and step.result.success else 'FAIL'}")
         
+        # Safely handle final_result
+        final = None
+        if hasattr(exec_result, 'final_result') and exec_result.final_result is not None:
+            try:
+                import json as json_mod
+                json_mod.dumps(exec_result.final_result)
+                final = exec_result.final_result
+            except (TypeError, ValueError):
+                final = str(exec_result.final_result)
+        
+        print(f"[EXECUTE] Returning {len(step_results)} results")
         return JSONResponse({
             "error": None,
             "success": exec_result.success,
             "results": step_results,
-            "final_result": exec_result.final_result if hasattr(exec_result, 'final_result') else None,
+            "final_result": final,
             "summary": exec_result.error if not exec_result.success else "All steps completed successfully",
         })
     except Exception as e:
+        import traceback
+        print(f"[EXECUTE] EXCEPTION: {e}")
+        traceback.print_exc()
         return JSONResponse({
             "error": str(e),
             "success": False,

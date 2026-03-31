@@ -1805,16 +1805,20 @@
                 addMessage('No plan to execute.', 'system');
                 return;
             }
+            console.log('[Apex] Executing plan for:', originalMessage);
             setThinking(true);
             addTypingIndicator();
             
             try {
+                console.log('[Apex] Sending /execute request...');
                 const res = await fetch(`${API}/execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: originalMessage })
                 });
+                console.log('[Apex] Response status:', res.status);
                 const data = await res.json();
+                console.log('[Apex] Response data:', data);
                 removeTypingIndicator();
                 setThinking(false);
                 
