@@ -1772,17 +1772,19 @@
                 const icon = primitiveIcons[step.primitive] || '⚙️';
                 return `
                     <div class="plan-step" data-step-id="${step.id}" style="
-                        display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-                        background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 6px;
+                        padding: 10px 14px; background: rgba(255,255,255,0.03); 
+                        border-radius: 8px; margin-bottom: 6px;
                     ">
-                        <span style="font-size: 1.2em">${icon}</span>
-                        <div style="flex: 1">
-                            <div style="font-size: 0.85rem; color: var(--text-primary)">${step.description}</div>
-                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px">
-                                ${step.primitive}.${step.operation}
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.2em">${icon}</span>
+                            <div style="flex: 1; min-width: 0">
+                                <div style="font-size: 0.85rem; color: var(--text-primary)">${step.description}</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px">
+                                    ${step.primitive}.${step.operation}
+                                </div>
                             </div>
+                            <span class="step-status" style="font-size: 0.75rem; color: var(--warning); white-space: nowrap">⏳ pending</span>
                         </div>
-                        <span class="step-status" style="font-size: 0.75rem; color: var(--warning)">⏳ pending</span>
                     </div>
                 `;
             }).join('');
@@ -1804,6 +1806,15 @@
             if (!originalMessage) {
                 addMessage('No plan to execute.', 'system');
                 return;
+            }
+            
+            // Prevent double execution
+            lastPlanMessage = null;
+            const execBtn = document.querySelector('[onclick="executePlan()"]');
+            if (execBtn) {
+                execBtn.disabled = true;
+                execBtn.textContent = '⏳ Executing...';
+                execBtn.style.opacity = '0.5';
             }
             console.log('[Apex] Executing plan for:', originalMessage);
             
@@ -1853,11 +1864,11 @@
                         
                         // Add result detail below the step
                         const detailEl = document.createElement('div');
-                        detailEl.style.cssText = 'margin-top: 6px; padding-left: 32px;';
+                        detailEl.style.cssText = 'margin-top: 6px; padding-left: 32px; overflow: hidden;';
                         if (step.success && step.data) {
                             const dataStr = typeof step.data === 'string' ? step.data : JSON.stringify(step.data, null, 2);
                             const escaped = dataStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                            detailEl.innerHTML = `<pre style="font-size: 0.75rem; color: var(--text-muted); white-space: pre-wrap; max-height: 150px; overflow-y: auto; margin: 0;">${escaped}</pre>`;
+                            detailEl.innerHTML = `<pre style="font-size: 0.7rem; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; margin: 0; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">${escaped}</pre>`;
                         } else if (step.error) {
                             const escapedErr = String(step.error).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                             detailEl.innerHTML = `<div style="color: var(--error, #f87171); font-size: 0.75rem;">${escapedErr}</div>`;
