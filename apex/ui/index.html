@@ -1694,29 +1694,24 @@
                     return;
                 }
 
-                // Check for multi-step workflow
-                if (data.workflow && data.workflow_id) {
-                    currentWorkflow = data.workflow;
-                    currentTaskId = null;
-                    
-                    let extra = renderWorkflow(data.workflow, data.workflow_summary);
-                    if (data.plan && data.plan.actions?.length > 0) {
-                        currentPlan = data.plan;
-                        currentTaskId = data.workflow_id;
-                        extra += renderPlan(data.plan, true);
-                    }
-                    addMessage(data.response, 'assistant', extra);
+                // Check for plan from Apex engine
+                if (data.plan && data.plan.length > 0) {
+                    const planHtml = renderApexPlan(data.plan);
+                    const executeBtn = `
+                        <div style="margin-top: 12px; display: flex; gap: 10px;">
+                            <button class="btn btn-approve btn-sm" onclick="executePlan('${message.replace(/'/g, "\\'")}')">
+                                ✓ Execute Plan
+                            </button>
+                            <button class="btn btn-reject btn-sm" onclick="this.parentElement.innerHTML='<span style=color:var(--text-muted)>Cancelled</span>'">
+                                ✗ Cancel
+                            </button>
+                        </div>`;
+                    addMessage(data.response, 'assistant', planHtml + executeBtn);
                     return;
                 }
 
-                // Single action plan
-                if (data.plan && data.plan.actions?.length > 0) {
-                    currentTaskId = data.task_id;
-                    currentPlan = data.plan;
-                    addMessage(data.response, 'assistant', renderPlan(data.plan));
-                } else {
-                    addMessage(data.response, 'assistant');
-                }
+                // Just conversation
+                addMessage(data.response, 'assistant');
 
             } catch (e) {
                 removeTypingIndicator();
@@ -1763,6 +1758,91 @@
                     <div class="workflow-steps">${stepsHtml}</div>
                 </div>
             `;
+        }
+
+        function renderApexPlan(steps) {
+            const primitiveIcons = {
+                'FILE': '📁', 'DOCUMENT': '📄', 'COMPUTE': '🧮', 'EMAIL': '📧',
+                'CALENDAR': '📅', 'CONTACTS': '👤', 'DRIVE': '☁️', 'KNOWLEDGE': '🧠',
+            };
+            
+            const stepsHtml = steps.map((step, i) => {
+                const icon = primitiveIcons[step.primitive] || '⚙️';
+                return `
+                    <div class="plan-step" data-step-id="${step.id}" style="
+                        display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+                        background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 6px;
+                    ">
+                        <span style="font-size: 1.2em">${icon}</span>
+                        <div style="flex: 1">
+                            <div style="font-size: 0.85rem; color: var(--text-primary)">${step.description}</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px">
+                                ${step.primitive}.${step.operation}
+                            </div>
+                        </div>
+                        <span class="step-status" style="font-size: 0.75rem; color: var(--warning)">⏳ pending</span>
+                    </div>
+                `;
+            }).join('');
+            
+            return `
+                <div style="margin-top: 12px; border: 1px solid var(--border-subtle); border-radius: 10px; 
+                            padding: 14px; background: rgba(0,0,0,0.2);">
+                    <div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-primary); 
+                                text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px">
+                        Execution Plan (${steps.length} steps)
+                    </div>
+                    ${stepsHtml}
+                </div>
+            `;
+        }
+        
+        async function executePlan(originalMessage) {
+            setThinking(true);
+            addTypingIndicator();
+            
+            try {
+                const res = await fetch(`${API}/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: originalMessage })
+                });
+                const data = await res.json();
+                removeTypingIndicator();
+                setThinking(false);
+                
+                if (data.error) {
+                    addMessage(`Error: ${data.error}`, 'system');
+                    return;
+                }
+                
+                // Show results
+                let resultsHtml = '';
+                if (data.results) {
+                    resultsHtml = data.results.map(step => {
+                        const icon = step.success ? '✅' : '❌';
+                        const detail = step.success && step.data ? 
+                            `<pre style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${
+                                typeof step.data === 'string' ? step.data : JSON.stringify(step.data, null, 2)
+                            }</pre>` : 
+                            (step.error ? `<div style="color: var(--error); font-size: 0.8rem">${step.error}</div>` : '');
+                        
+                        return `<div style="padding: 8px 0; border-bottom: 1px solid var(--border-subtle)">
+                            ${icon} <strong>${step.description}</strong>
+                            ${detail}
+                        </div>`;
+                    }).join('');
+                }
+                
+                const summary = data.success ? '✅ All steps completed successfully!' : '⚠️ Some steps had issues.';
+                addMessage(summary, 'assistant', 
+                    `<div style="margin-top: 10px">${resultsHtml}</div>`);
+                
+            } catch (e) {
+                removeTypingIndicator();
+                setThinking(false);
+                addMessage('Failed to execute plan.', 'system');
+            }
         }
 
         function renderPlan(plan, isWorkflowStep = false) {

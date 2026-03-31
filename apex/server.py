@@ -35,6 +35,9 @@ from src.skills import (
     DiskAnalyzerSkill,
 )
 
+# Apex Engine - the REAL engine with all primitives
+from apex_engine import Apex
+
 # Phase 7: Privacy & Control Layer
 from src.privacy import (
     AuditLogger, audit_logger,
@@ -68,6 +71,19 @@ app.add_middleware(
 
 # Initialize orchestrator
 orchestrator = Orchestrator()
+
+# Initialize the REAL Apex engine (all 8 primitives)
+_apex_engine: Optional[Apex] = None
+
+def get_apex_engine() -> Optional[Apex]:
+    """Get or create the Apex engine singleton."""
+    global _apex_engine
+    if _apex_engine is None:
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
+            _apex_engine = Apex(api_key=api_key, model=model)
+    return _apex_engine
 
 # Phase 4-5: Intelligence Layer singletons
 _proactive_monitor: Optional[ProactiveMonitor] = None
@@ -126,44 +142,38 @@ class RejectRequest(BaseModel):
 
 
 # Chat system prompt for conversational AI
-CHAT_SYSTEM_PROMPT = """You are Apex, a helpful personal AI assistant that lives on the user's PC.
+CHAT_SYSTEM_PROMPT = """You are Apex, a privacy-first personal AI assistant that lives on the user's PC.
 
-Your capabilities:
-1. **File Organization** - Organize messy folders, sort files by type/date, clean up Downloads/Desktop
-2. **Duplicate Finder** - Find and remove duplicate files wasting disk space
-3. **Temp Cleaner** - Clean temporary files, browser caches, free up space
-4. **Gmail Access** - Read and search emails to find travel confirmations, receipts, etc.
-5. **Document Creator** - Create documents, itineraries, summaries from collected data
-6. **Photo Organizer** - Sort photos by date, separate screenshots, find photo duplicates
-7. **Disk Analyzer** - Find what's using your storage, identify large files and space wasters
+Your capabilities (powered by universal primitives):
+1. **FILE** - Search, read, write, list, get info on any file on the PC
+2. **DOCUMENT** - Parse PDFs/DOCX, extract data, create documents
+3. **COMPUTE** - Financial calculations (amortization, compound interest, etc.)
+4. **EMAIL** - Send, search, draft, list emails (Gmail/Outlook)
+5. **CALENDAR** - List, create, update, delete events, find free time
+6. **CONTACTS** - Search, find, list, create contacts
+7. **DRIVE** - Cloud storage (Google Drive/OneDrive) list, search, upload, download
+8. **KNOWLEDGE** - Persistent memory (remember, recall, forget)
 
-SPECIAL: Multi-step workflows for complex tasks:
-- "travel_itinerary" - Search emails for travel bookings → Create itinerary document
-- "pc_cleanup" - Analyze disk → Clean temps → Find duplicates  
-- "photo_cleanup" - Organize photos → Find duplicate photos
-- "weekly_maintenance" - Clean temps → Organize downloads → Check disk
+You can chain these into multi-step workflows. For example:
+- "Find the loan doc, create amortization, email to Rob" → FILE.search → DOCUMENT.parse → COMPUTE.amortization → EMAIL.send
+- "Prepare for my meeting with John" → CALENDAR.search → EMAIL.search → CONTACTS.find → summarize
 
 When detecting intent:
-1. For simple single-skill tasks: set "action" to the skill name
-2. For compound tasks (multiple steps needed): set "workflow" to the workflow name
-3. For conversation only: set both to null
+1. For actionable tasks: set "action" to true and describe what you'll do
+2. For conversation only: set "action" to false
 
 IMPORTANT: Respond with valid JSON:
 {
-    "response": "Your conversational message to the user",
-    "action": "file_organizer" | "duplicate_finder" | "temp_cleaner" | "gmail" | "document" | "photo_organizer" | "disk_analyzer" | null,
-    "workflow": "travel_itinerary" | "pc_cleanup" | "photo_cleanup" | "weekly_maintenance" | null,
-    "target": "path or folder name if mentioned, or null"
+    "response": "Your conversational message explaining what you'll do",
+    "action": true | false
 }
 
 Examples:
-- "organize my downloads" -> action: "file_organizer", workflow: null
-- "create an itinerary from my travel emails" -> action: null, workflow: "travel_itinerary"
-- "do a full cleanup of my PC" -> action: null, workflow: "pc_cleanup"
-- "my pc is slow" -> action: "temp_cleaner", workflow: null
-- "weekly maintenance" -> action: null, workflow: "weekly_maintenance"
-- "clean up and organize my photos" -> action: null, workflow: "photo_cleanup"
-- "what can you do?" -> action: null, workflow: null (just explain)
+- "Find my loan document and create an amortization schedule" -> action: true, response explains the plan
+- "Organize my downloads" -> action: true
+- "Search my emails for travel bookings" -> action: true  
+- "What can you do?" -> action: false, response explains capabilities
+- "Thanks!" -> action: false
 """
 
 
@@ -180,9 +190,9 @@ async def chat(req: ChatRequest):
     Main chat endpoint - the AI assistant interface.
     
     This is where natural language becomes action.
-    Uses SecureLLMClient for privacy (PII redaction + audit logging).
+    Uses the Apex engine with real primitives (FILE, DOCUMENT, COMPUTE, EMAIL, etc.)
     """
-    # Use privacy-wrapped LLM client
+    # Use privacy-wrapped LLM client for intent detection
     llm = create_secure_client_from_env()
     
     if not llm:
@@ -194,9 +204,9 @@ async def chat(req: ChatRequest):
         })
     
     try:
-        # Ask LLM to understand intent (PII auto-redacted, transmission logged)
         import json
         
+        # Step 1: Ask LLM to understand intent
         result = await llm.complete_json(
             system=CHAT_SYSTEM_PROMPT,
             user=req.message,
@@ -204,57 +214,44 @@ async def chat(req: ChatRequest):
         )
         
         response_text = result.get("response", "I'm not sure how to help with that.")
-        action = result.get("action")
-        workflow_name = result.get("workflow")
-        target = result.get("target")
+        needs_action = result.get("action", False)
         
-        # Check for multi-step workflow
-        if workflow_name:
-            try:
-                workflow = workflow_engine.create_workflow(workflow_name, {"target": target} if target else {})
+        if needs_action:
+            # Step 2: Use the REAL Apex engine to plan and execute
+            engine = get_apex_engine()
+            if engine:
+                # Generate plan (with approval required - show user first)
+                exec_result = await engine.do(
+                    req.message,
+                    require_approval=True,
+                )
                 
-                # Analyze the first step
-                step = await workflow_engine.analyze_step(workflow)
+                # Format plan steps for the UI
+                plan_steps = []
+                if exec_result.plan:
+                    for step in exec_result.plan:
+                        plan_steps.append({
+                            "id": step.id,
+                            "description": step.description,
+                            "primitive": step.primitive,
+                            "operation": step.operation,
+                            "status": "pending",
+                        })
                 
                 return JSONResponse({
                     "error": None,
-                    "response": f"{response_text}\n\nThis is a multi-step task:",
-                    "workflow": workflow.to_display_dict(),
-                    "workflow_summary": workflow_engine.get_workflow_summary(workflow),
-                    "current_step_plan": step.plan.to_display_dict() if step.plan else None,
-                    "plan": step.plan.to_display_dict() if step.plan else None,
+                    "response": response_text,
+                    "plan": plan_steps if plan_steps else None,
                     "task_id": None,
-                    "workflow_id": workflow.id,
+                    "needs_execution": True,
                 })
-            except ValueError as e:
-                # Fall back to single action if workflow template not found
-                pass
-        
-        # Single-skill action
-        if action:
-            # Build the skill request
-            skill_request = req.message
-            if target:
-                skill_request = f"{req.message} - target: {target}"
-            
-            task = await orchestrator.submit(skill_request)
-            
-            if task.error:
+            else:
                 return JSONResponse({
                     "error": None,
-                    "response": f"{response_text}\n\nHmm, I ran into an issue: {task.error}",
+                    "response": response_text + "\n\n(Engine not initialized - check API key)",
                     "plan": None,
-                    "task_id": None
+                    "task_id": None,
                 })
-            
-            plan_dict = task.plan.to_display_dict() if task.plan else None
-            
-            return JSONResponse({
-                "error": None,
-                "response": response_text,
-                "plan": plan_dict,
-                "task_id": task.id
-            })
         
         # No action needed, just conversation
         return JSONResponse({
@@ -270,6 +267,58 @@ async def chat(req: ChatRequest):
             "response": "Sorry, I encountered an error. Please try again.",
             "plan": None,
             "task_id": None
+        })
+
+
+class ExecuteRequest(BaseModel):
+    message: str  # Original request to execute
+
+
+@app.post("/execute")
+async def execute_plan(req: ExecuteRequest):
+    """
+    Execute a plan using the Apex engine.
+    
+    Called after the user approves a plan from /chat.
+    Actually runs the primitives (FILE.search, COMPUTE.amortization, etc.)
+    """
+    engine = get_apex_engine()
+    if not engine:
+        return JSONResponse({
+            "error": "Engine not initialized",
+            "success": False,
+            "results": None,
+        })
+    
+    try:
+        exec_result = await engine.do(req.message, require_approval=False)
+        
+        # Format results
+        step_results = []
+        if exec_result.plan:
+            for step in exec_result.plan:
+                step_results.append({
+                    "id": step.id,
+                    "description": step.description,
+                    "primitive": step.primitive,
+                    "operation": step.operation,
+                    "success": step.result.success if step.result else False,
+                    "data": step.result.data if step.result and step.result.success else None,
+                    "error": step.result.error if step.result and not step.result.success else None,
+                })
+        
+        return JSONResponse({
+            "error": None,
+            "success": exec_result.success,
+            "results": step_results,
+            "final_result": exec_result.final_result if hasattr(exec_result, 'final_result') else None,
+            "summary": exec_result.error if not exec_result.success else "All steps completed successfully",
+        })
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "success": False,
+            "results": None,
         })
 
 
