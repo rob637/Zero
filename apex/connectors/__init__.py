@@ -1,5 +1,5 @@
 """
-Apex Connectors - Cloud Service Integration
+Telic Connectors - Cloud Service Integration
 
 Provides real API connectors for:
 

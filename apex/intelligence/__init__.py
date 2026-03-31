@@ -1,7 +1,7 @@
 """
-Apex Intelligence Layer
+Telic Intelligence Layer
 
-This is where the magic happens - the components that make Apex
+This is where the magic happens - the components that make Telic
 truly LEARN and ANTICIPATE rather than just execute commands.
 
 Components:

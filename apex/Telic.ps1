@@ -1,5 +1,5 @@
-# Apex Launcher with System Tray
-# Double-click this file or run: powershell -ExecutionPolicy Bypass -File Apex.ps1
+# Telic Launcher with System Tray
+# Double-click this file or run: powershell -ExecutionPolicy Bypass -File Telic.ps1
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -11,14 +11,14 @@ $url = "http://localhost:$port"
 # Create notification icon
 $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $notifyIcon.Icon = [System.Drawing.SystemIcons]::Application
-$notifyIcon.Text = "Apex - AI Assistant"
+$notifyIcon.Text = "Telic - AI OS"
 $notifyIcon.Visible = $true
 
 # Create context menu
 $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
 $openItem = New-Object System.Windows.Forms.ToolStripMenuItem
-$openItem.Text = "Open Apex"
+$openItem.Text = "Open Telic"
 $openItem.Add_Click({ Start-Process $url })
 $contextMenu.Items.Add($openItem)
 
@@ -45,11 +45,11 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Check for API key
 if (-not $env:ANTHROPIC_API_KEY -and -not $env:OPENAI_API_KEY) {
-    $notifyIcon.ShowBalloonTip(5000, "Apex", "Warning: No API key set. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.", [System.Windows.Forms.ToolTipIcon]::Warning)
+    $notifyIcon.ShowBalloonTip(5000, "Telic", "Warning: No API key set. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.", [System.Windows.Forms.ToolTipIcon]::Warning)
 }
 
 # Start server
-$notifyIcon.ShowBalloonTip(3000, "Apex", "Starting server...", [System.Windows.Forms.ToolTipIcon]::Info)
+$notifyIcon.ShowBalloonTip(3000, "Telic", "Starting...", [System.Windows.Forms.ToolTipIcon]::Info)
 
 $global:serverProcess = Start-Process -FilePath "python" -ArgumentList "server.py" -WorkingDirectory $scriptDir -PassThru -WindowStyle Hidden
 
@@ -59,7 +59,7 @@ Start-Sleep -Seconds 2
 # Open browser
 Start-Process $url
 
-$notifyIcon.ShowBalloonTip(3000, "Apex", "Ready! Click the tray icon to open.", [System.Windows.Forms.ToolTipIcon]::Info)
+$notifyIcon.ShowBalloonTip(3000, "Telic", "Ready! Click the tray icon to open.", [System.Windows.Forms.ToolTipIcon]::Info)
 
 # Keep running
 [System.Windows.Forms.Application]::Run()

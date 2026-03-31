@@ -1,7 +1,7 @@
 [package]
-name = "apex"
+name = "telic"
 version = "0.1.0"
-description = "Privacy-First Personal AI Assistant"
+description = "Telic - The AI Operating System with Purpose"
 authors = ["rob637"]
 license = "MIT"
 repository = "https://github.com/rob637/Zero"

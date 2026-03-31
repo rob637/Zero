@@ -1,7 +1,7 @@
 """
 Semantic Memory Engine
 
-This is what makes Apex actually different from competitors.
+This is what makes Telic actually different from competitors.
 
 NOT just key-value storage. This is a knowledge graph that:
 - Stores facts with relationships and context
@@ -169,7 +169,7 @@ class Entity:
 
 class SemanticMemory:
     """
-    The brain of Apex - semantic memory with knowledge graph.
+    The brain of Telic - semantic memory with knowledge graph.
     
     This is NOT a simple key-value store. It's a knowledge graph that:
     1. Stores facts with rich metadata

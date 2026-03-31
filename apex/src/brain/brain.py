@@ -436,7 +436,7 @@ class UnifiedBrain:
 # === Factory Function ===
 
 def create_brain(
-    storage_path: str = "~/.apex",
+    storage_path: str = "~/.telic",
     llm_model: str = "gpt-4o-mini",
     llm_api_key: Optional[str] = None,
 ) -> UnifiedBrain:
@@ -444,7 +444,7 @@ def create_brain(
     Create a Unified Brain instance.
     
     Args:
-        storage_path: Where to store brain data (~/.apex by default)
+        storage_path: Where to store brain data (~/.telic by default)
         llm_model: LLM model to use for cognition
         llm_api_key: API key for LLM provider
     
@@ -483,7 +483,7 @@ async def quick_start(
     key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     
     brain = create_brain(
-        storage_path="~/.apex",
+        storage_path="~/.telic",
         llm_api_key=key,
     )
     

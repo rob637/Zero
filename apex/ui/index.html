@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apex - Your Personal AI</title>
+    <title>Telic - AI Operating System</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1455,7 +1455,7 @@
                     <path d="M2 12l10 5 10-5"/>
                 </svg>
             </div>
-            <span class="logo-text">Apex</span>
+            <span class="logo-text">Telic</span>
         </div>
         
         <div class="sidebar-section">
@@ -1552,8 +1552,8 @@
             <div class="chat-container" id="chat">
                 <div class="welcome" id="welcome">
                     <div class="welcome-orb"></div>
-                    <h1>Hey! I'm Apex</h1>
-                    <p>Your personal AI assistant that connects all your services. I'm ready to help with emails, calendar, files, code, and more.</p>
+                    <h1>Hey! I'm Telic</h1>
+                    <p>Your AI operating system that connects all your services. I act with purpose — emails, calendar, files, code, and more.</p>
                     <div class="welcome-actions">
                         <div class="welcome-action" onclick="getBriefing()">
                             <span class="welcome-action-icon">📋</span>
@@ -1695,10 +1695,10 @@
                     return;
                 }
 
-                // Check for plan from Apex engine
+                // Check for plan from Telic engine
                 if (data.plan && data.plan.length > 0) {
                     lastPlanMessage = message;  // Store for execute
-                    const planHtml = renderApexPlan(data.plan);
+                    const planHtml = renderTelicPlan(data.plan);
                     const executeBtn = `
                         <div style="margin-top: 12px; display: flex; gap: 10px;">
                             <button class="btn btn-approve btn-sm" onclick="executePlan()">
@@ -1718,7 +1718,7 @@
             } catch (e) {
                 removeTypingIndicator();
                 setThinking(false);
-                addMessage('Cannot connect to Apex. Is the server running?', 'system');
+                addMessage('Cannot connect to Telic. Is the server running?', 'system');
             }
         }
 
@@ -1762,7 +1762,7 @@
             `;
         }
 
-        function renderApexPlan(steps) {
+        function renderTelicPlan(steps) {
             const primitiveIcons = {
                 'FILE': '📁', 'DOCUMENT': '📄', 'COMPUTE': '🧮', 'EMAIL': '📧',
                 'CALENDAR': '📅', 'CONTACTS': '👤', 'DRIVE': '☁️', 'KNOWLEDGE': '🧠',
@@ -1816,7 +1816,7 @@
                 execBtn.textContent = '⏳ Executing...';
                 execBtn.style.opacity = '0.5';
             }
-            console.log('[Apex] Executing plan for:', originalMessage);
+            console.log('[Telic] Executing plan for:', originalMessage);
             
             // Update all step cards to "running" state
             document.querySelectorAll('.plan-step .step-status').forEach(el => {
@@ -1825,15 +1825,15 @@
             });
             
             try {
-                console.log('[Apex] Sending /execute request...');
+                console.log('[Telic] Sending /execute request...');
                 const res = await fetch(`${API}/execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: originalMessage })
                 });
-                console.log('[Apex] Response status:', res.status);
+                console.log('[Telic] Response status:', res.status);
                 const data = await res.json();
-                console.log('[Apex] Response data:', data);
+                console.log('[Telic] Response data:', data);
                 
                 if (data.error) {
                     addMessage(`Error: ${data.error}`, 'system');
@@ -1842,11 +1842,11 @@
                 
                 // Update each step card in place
                 if (data.results && data.results.length > 0) {
-                    console.log('[Apex] Rendering', data.results.length, 'results');
+                    console.log('[Telic] Rendering', data.results.length, 'results');
                     data.results.forEach(step => {
                         const stepEl = document.querySelector(`.plan-step[data-step-id="${step.id}"]`);
                         if (!stepEl) {
-                            console.warn('[Apex] No DOM element for step', step.id);
+                            console.warn('[Telic] No DOM element for step', step.id);
                             return;
                         }
                         
@@ -1884,7 +1884,7 @@
                 addMessage(summary, 'assistant');
                 
             } catch (e) {
-                console.error('[Apex] Execute error:', e);
+                console.error('[Telic] Execute error:', e);
                 document.querySelectorAll('.plan-step .step-status').forEach(el => {
                     el.style.color = 'var(--error, #f87171)';
                     el.textContent = '❌ error';

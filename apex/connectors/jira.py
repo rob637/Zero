@@ -13,7 +13,7 @@ Capabilities:
 - JQL search
 - Worklog and comments
 
-This enables Apex to:
+This enables Telic to:
 - Alert on assigned issues
 - Track sprint progress
 - Cross-reference with GitHub PRs

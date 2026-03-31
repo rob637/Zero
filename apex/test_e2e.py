@@ -89,13 +89,13 @@ async def test_file_primitive():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         test_path = f.name
     
-    result = await prim.execute("write", {"path": test_path, "content": "Hello, Apex!"})
+    result = await prim.execute("write", {"path": test_path, "content": "Hello, Telic!"})
     assert result.success, f"Write failed: {result.error}"
     print(f"✓ write: Wrote to {test_path}")
     
     result = await prim.execute("read", {"path": test_path})
     assert result.success, f"Read failed: {result.error}"
-    assert result.data == "Hello, Apex!", f"Content mismatch: {result.data}"
+    assert result.data == "Hello, Telic!", f"Content mismatch: {result.data}"
     print(f"✓ read: Content verified")
     
     # Test info
@@ -376,12 +376,12 @@ Best regards""",
 
 
 # ============================================================
-#  APEX ENGINE INTEGRATION TEST
+#  TELIC ENGINE INTEGRATION TEST
 # ============================================================
 
 async def test_apex_engine():
-    """Test the Apex engine with direct primitive calls."""
-    print("\n=== Testing Apex Engine ===")
+    """Test the Telic engine with direct primitive calls."""
+    print("\n=== Testing Telic Engine ===")
     
     apex = Apex()  # Will work even without API key for direct calls
     
@@ -404,7 +404,7 @@ async def test_apex_engine():
     total_ops = sum(len(ops) for ops in caps.values())
     print(f"✓ Total operations: {total_ops}")
     
-    print("✓ Apex Engine tests passed")
+    print("✓ Telic Engine tests passed")
     return True
 
 
@@ -415,7 +415,7 @@ async def test_apex_engine():
 async def run_all_tests():
     """Run all tests."""
     print("=" * 60)
-    print(" APEX ENGINE - END-TO-END TEST SUITE")
+    print(" TELIC ENGINE - END-TO-END TEST SUITE")
     print("=" * 60)
     
     results = {}

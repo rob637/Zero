@@ -14,7 +14,7 @@ Capabilities:
 - Code search
 - Commit and branch information
 
-This enables Apex to:
+This enables Telic to:
 - Alert when PRs need review
 - Track issue assignments
 - Monitor CI/CD status

@@ -1,15 +1,15 @@
 @echo off
-title Apex - Starting...
+title Telic - Starting...
 color 0B
 
 echo.
-echo     ___    ____  _______  __
-echo    /   \  ^|  _ \^| ____^\ \/ /
-echo   / /_\ \ ^| ^|_) ^|  _^|  \  / 
-echo  / _____ \^|  __/^| ^|___ /  \ 
-echo /_/     \_\_^|   ^|_____/_/\_\
+echo  _____ _____ _     ___ ____
+echo ^|_   _^| ____^| ^|   ^|_ _^/ ___|
+echo   ^| ^| ^|  _^| ^| ^|    ^| ^| ^|
+echo   ^| ^| ^| ^|___^| ^|___ ^| ^| ^|___
+echo   ^|_^| ^|_____^|_____^|___\____^|
 echo.
-echo Privacy-First Personal AI Assistant
+echo The AI Operating System with Purpose
 echo =====================================
 echo.
 
@@ -39,7 +39,7 @@ if "%ANTHROPIC_API_KEY%"=="" (
 :: Get the directory where this script is located
 cd /d "%~dp0"
 
-echo Starting Apex server...
+echo Starting Telic...
 echo.
 
 :: Start the browser after a short delay
@@ -50,5 +50,5 @@ python server.py
 
 :: If we get here, server stopped
 echo.
-echo Apex server stopped.
+echo Telic stopped.
 pause

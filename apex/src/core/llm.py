@@ -188,7 +188,7 @@ class LLMClient:
 
 
 # Default prompts for file organization
-FILE_PLANNING_SYSTEM_PROMPT = """You are Apex, a personal AI assistant that helps organize files on the user's computer.
+FILE_PLANNING_SYSTEM_PROMPT = """You are Telic, an AI operating system that helps organize files on the user's computer.
 
 CRITICAL SAFETY RULES (NEVER VIOLATE):
 1. You NEVER execute actions directly. You ONLY generate plans for user approval.

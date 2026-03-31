@@ -37,9 +37,9 @@ from apex.connectors.slack import (
 MOCK_USER = {
     "id": "U12345678",
     "name": "apex_bot",
-    "real_name": "Apex Bot",
+    "real_name": "Telic Bot",
     "profile": {
-        "real_name": "Apex Bot",
+        "real_name": "Telic Bot",
         "display_name": "apex",
         "email": "apex@example.com",
         "image_72": "https://example.com/avatar.png",
@@ -65,7 +65,7 @@ MOCK_CHANNEL = {
 
 MOCK_MESSAGE = {
     "ts": "1704067200.000100",  # 2024-01-01
-    "text": "Hello from Apex! <@U87654321> check this out",
+    "text": "Hello from Telic! <@U87654321> check this out",
     "user": "U12345678",
     "channel": "C12345678",
     "reactions": [{"name": "thumbsup", "count": 3}],
@@ -95,7 +95,7 @@ class TestSlackDataModels:
         
         assert user.id == "U12345678"
         assert user.name == "apex_bot"
-        assert user.real_name == "Apex Bot"
+        assert user.real_name == "Telic Bot"
         assert user.email == "apex@example.com"
         assert user.is_bot is True
         assert user.status_emoji == ":computer:"
@@ -126,7 +126,7 @@ class TestSlackDataModels:
         msg = SlackMessage.from_api(MOCK_MESSAGE, channel_name="general")
         
         assert msg.ts == "1704067200.000100"
-        assert "Hello from Apex" in msg.text
+        assert "Hello from Telic" in msg.text
         assert msg.user_id == "U12345678"
         assert msg.channel_name == "general"
         assert len(msg.reactions) == 1
@@ -213,7 +213,7 @@ class TestSlackConnectorMock:
         messages = await connector.get_channel_history("C12345678", limit=10)
         
         assert len(messages) == 2
-        assert "Hello from Apex" in messages[0].text
+        assert "Hello from Telic" in messages[0].text
     
     @pytest.mark.asyncio
     async def test_search_messages_mock(self, connector):
@@ -230,7 +230,7 @@ class TestSlackConnectorMock:
         connector._client = AsyncMock()
         connector._client.get = AsyncMock(return_value=MagicMock(json=lambda: mock_response))
         
-        messages = await connector.search_messages("Apex")
+        messages = await connector.search_messages("Telic")
         
         assert len(messages) == 1
         assert messages[0].channel_name == "general"

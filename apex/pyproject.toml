@@ -1,7 +1,7 @@
 [project]
-name = "apex"
+name = "telic"
 version = "0.1.0"
-description = "Privacy-First Personal AI Operating Layer"
+description = "Telic - The AI Operating System with Purpose"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -37,7 +37,7 @@ memory = [
 ]
 
 [project.scripts]
-apex = "apex.cli:main"
+telic = "apex.cli:main"
 
 [build-system]
 requires = ["hatchling"]

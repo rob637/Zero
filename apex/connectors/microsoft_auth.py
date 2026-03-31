@@ -12,7 +12,7 @@ Setup:
 1. Go to https://portal.azure.com/
 2. Navigate to Azure Active Directory → App registrations
 3. Create new registration:
-   - Name: "Apex Personal Assistant"
+   - Name: "Telic AI OS"
    - Supported account types: "Personal Microsoft accounts only" (for personal)
      OR "Accounts in any organizational directory and personal" (for both)
    - Redirect URI: "http://localhost" (Mobile and desktop applications)
@@ -178,7 +178,7 @@ Microsoft 365 API Setup Instructions:
 1. Go to https://portal.azure.com/
 2. Navigate to Azure Active Directory → App registrations
 3. Click "New registration":
-   - Name: "Apex Personal Assistant"
+   - Name: "Telic AI OS"
    - Supported account types: Choose based on your needs:
      * "Personal Microsoft accounts only" - for @outlook.com, @hotmail.com
      * "Accounts in any organizational directory and personal" - for work + personal

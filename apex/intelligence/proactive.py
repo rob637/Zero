@@ -3,7 +3,7 @@ Proactive Suggestion Engine
 
 This is the "HOW DID IT KNOW?!" engine.
 
-Instead of waiting for you to ask, Apex:
+Instead of waiting for you to ask, Telic:
 1. ANTICIPATES your needs based on patterns
 2. MONITORS for triggers that require attention
 3. PREPARES context before you need it
@@ -70,7 +70,7 @@ class SuggestionCategory(Enum):
 
 @dataclass
 class ProactiveSuggestion:
-    """A proactive suggestion from Apex."""
+    """A proactive suggestion from Telic."""
     id: str
     title: str
     description: str

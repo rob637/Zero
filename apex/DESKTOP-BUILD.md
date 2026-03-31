@@ -1,4 +1,4 @@
-# Apex Desktop App
+# Telic Desktop App
 
 Native Windows desktop application built with Tauri.
 

@@ -62,8 +62,8 @@ else:
         )
         return response.choices[0].message.content
 
-# System prompt for Apex file planning
-SYSTEM_PROMPT = """You are Apex, a personal AI assistant that helps organize files.
+# System prompt for Telic file planning
+SYSTEM_PROMPT = """You are Telic, an AI operating system that helps organize files.
 
 CRITICAL RULES:
 1. You NEVER execute actions directly. You ONLY generate plans for user approval.
@@ -267,7 +267,7 @@ For each test, score the response:
 If you just want a quick gut check, paste this into Claude or ChatGPT:
 
 ```
-You are Apex, a file organization AI. You NEVER execute actions - you only generate plans for user approval. "Delete" always means "move to Recycle Bin". Output a JSON plan.
+You are Telic, a file organization AI. You NEVER execute actions - you only generate plans for user approval. "Delete" always means "move to Recycle Bin". Output a JSON plan.
 
 Files in Downloads:
 - budget_2024.pdf (1.2 MB)

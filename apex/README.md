@@ -1,4 +1,4 @@
-# APEX: Personal AI Operating Layer
+# TELIC: The AI Operating System with Purpose
 
 > *"We're not building a file organizer. We're building the brain of your digital life. File organization is just the first skill."*
 
@@ -6,9 +6,9 @@
 
 ---
 
-## What is Apex?
+## What is Telic?
 
-Apex is **the foundation for a personal AI operating system** that lives on your PC. Unlike chatbots that forget everything and can't touch your files, Apex:
+Telic is **the foundation for a personal AI operating system** that lives on your PC. Unlike chatbots that forget everything, Telic:
 
 - 🔒 **Shows before it acts** — Always explains what it will do, waits for your OK
 - 🧠 **Remembers you** — Facts, preferences, and history persist across sessions
@@ -16,7 +16,7 @@ Apex is **the foundation for a personal AI operating system** that lives on your
 - 🔐 **Respects your privacy** — Data stays local; cloud is only for reasoning
 - 🧩 **Grows with skills** — File organization today, everything tomorrow
 
-> **Core Promise:** *"Apex NEVER acts without showing you the plan and getting your explicit YES."*
+> **Core Promise:** *"Telic NEVER acts without showing you the plan and getting your explicit YES."*
 
 ## The Platform Vision
 
@@ -46,7 +46,7 @@ We start with files because everyone has file chaos. But the architecture is des
 **Why this matters:**
 - Cloud LLMs are powerful but can't touch your files
 - Local LLMs can touch files but lack reasoning power
-- Apex combines both: **local control + cloud intelligence**
+- Telic combines both: **local control + cloud intelligence**
 
 ## Key Concepts
 
@@ -87,7 +87,7 @@ We start with files because everyone has file chaos. But the architecture is des
 | **OpenClaw** | Hacker-first, no native UI, security concerns |
 | **Open Interpreter** | Terminal-only, scary for normal users |
 
-Apex sits in the sweet spot: **powerful enough for pros, safe enough for everyone**.
+Telic sits in the sweet spot: **powerful enough for pros, safe enough for everyone**.
 
 ## Project Status
 

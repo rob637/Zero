@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Apex",
+  "productName": "Telic",
   "version": "0.1.0",
-  "identifier": "com.apex.app",
+  "identifier": "com.telic.app",
   "build": {
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
@@ -16,7 +16,7 @@
         "fullscreen": false,
         "height": 700,
         "resizable": true,
-        "title": "Apex",
+        "title": "Telic",
         "width": 960,
         "center": true,
         "decorations": true,
@@ -45,8 +45,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "longDescription": "Privacy-First Personal AI Assistant that lives on your PC. Organizes files, finds duplicates, and more - always with your approval.",
-    "shortDescription": "Your Personal AI Assistant",
+    "longDescription": "AI Operating System that lives on your PC. Connects all your services, organizes your digital life - always with your approval.",
+    "shortDescription": "The AI Operating System with Purpose",
     "targets": "all",
     "resources": ["../src/**/*", "../server.py", "../pyproject.toml"],
     "linux": {

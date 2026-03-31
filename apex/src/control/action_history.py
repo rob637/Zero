@@ -1,5 +1,5 @@
 """
-ActionHistoryDB - Complete audit trail of all actions taken by Apex.
+ActionHistoryDB - Complete audit trail of all actions taken by Telic.
 
 Every action - approved, rejected, auto-executed, undone - is recorded here.
 This provides:

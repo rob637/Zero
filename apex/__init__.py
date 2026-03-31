@@ -1,5 +1,5 @@
 """
-Apex - Personal AI Operating Layer
+Telic - AI Operating System
 
 A primitives-based AI assistant that works with your real services.
 

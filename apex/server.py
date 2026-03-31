@@ -1,5 +1,5 @@
 """
-Apex Web Server - Beautiful UI prototype
+Telic Web Server - AI Operating System
 
 Run with:
     cd apex
@@ -35,8 +35,8 @@ from src.skills import (
     DiskAnalyzerSkill,
 )
 
-# Apex Engine - the REAL engine with all primitives
-from apex_engine import Apex
+# Telic Engine - the REAL engine with all primitives
+from apex_engine import Apex as TelicEngine
 
 # Phase 7: Privacy & Control Layer
 from src.privacy import (
@@ -58,7 +58,7 @@ from intelligence.semantic_memory import SemanticMemory
 from connectors.devtools import UnifiedDevTools
 
 # Initialize
-app = FastAPI(title="Apex", description="Privacy-First Personal AI Assistant")
+app = FastAPI(title="Telic", description="AI Operating System")
 
 # CORS for development
 app.add_middleware(
@@ -72,18 +72,18 @@ app.add_middleware(
 # Initialize orchestrator
 orchestrator = Orchestrator()
 
-# Initialize the REAL Apex engine (all 8 primitives)
-_apex_engine: Optional[Apex] = None
+# Initialize the REAL Telic engine (all 8 primitives)
+_telic_engine: Optional[TelicEngine] = None
 
-def get_apex_engine() -> Optional[Apex]:
-    """Get or create the Apex engine singleton."""
-    global _apex_engine
-    if _apex_engine is None:
+def get_telic_engine() -> Optional[TelicEngine]:
+    """Get or create the Telic engine singleton."""
+    global _telic_engine
+    if _telic_engine is None:
         api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if api_key:
             model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
-            _apex_engine = Apex(api_key=api_key, model=model)
-    return _apex_engine
+            _telic_engine = TelicEngine(api_key=api_key, model=model)
+    return _telic_engine
 
 # Phase 4-5: Intelligence Layer singletons
 _proactive_monitor: Optional[ProactiveMonitor] = None
@@ -142,7 +142,7 @@ class RejectRequest(BaseModel):
 
 
 # Chat system prompt for conversational AI
-CHAT_SYSTEM_PROMPT = """You are Apex, a privacy-first personal AI assistant that lives on the user's PC.
+CHAT_SYSTEM_PROMPT = """You are Telic, a privacy-first AI operating system that lives on the user's PC.
 
 Your capabilities (powered by universal primitives):
 1. **FILE** - Search, read, write, list, get info on any file on the PC
@@ -190,7 +190,7 @@ async def chat(req: ChatRequest):
     Main chat endpoint - the AI assistant interface.
     
     This is where natural language becomes action.
-    Uses the Apex engine with real primitives (FILE, DOCUMENT, COMPUTE, EMAIL, etc.)
+    Uses the Telic engine with real primitives (FILE, DOCUMENT, COMPUTE, EMAIL, etc.)
     """
     # Use privacy-wrapped LLM client for intent detection
     llm = create_secure_client_from_env()
@@ -217,8 +217,8 @@ async def chat(req: ChatRequest):
         needs_action = result.get("action", False)
         
         if needs_action:
-            # Step 2: Use the REAL Apex engine to plan and execute
-            engine = get_apex_engine()
+            # Step 2: Use the REAL Telic engine to plan and execute
+            engine = get_telic_engine()
             if engine:
                 # Generate plan (with approval required - show user first)
                 exec_result = await engine.do(
@@ -277,14 +277,14 @@ class ExecuteRequest(BaseModel):
 @app.post("/execute")
 async def execute_plan(req: ExecuteRequest):
     """
-    Execute a plan using the Apex engine.
+    Execute a plan using the Telic engine.
     
     Called after the user approves a plan from /chat.
     Actually runs the primitives (FILE.search, COMPUTE.amortization, etc.)
     """
     print(f"[EXECUTE] Received request: {req.message[:100]}")
     
-    engine = get_apex_engine()
+    engine = get_telic_engine()
     if not engine:
         print("[EXECUTE] ERROR: Engine not initialized")
         return JSONResponse({
@@ -1249,7 +1249,7 @@ async def get_brain():
         # Create brain with storage in user's home
         api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
         _brain = create_brain(
-            storage_path=str(Path.home() / ".apex"),
+            storage_path=str(Path.home() / ".telic"),
             llm_api_key=api_key,
         )
         await _brain.initialize()
@@ -1793,8 +1793,8 @@ if __name__ == "__main__":
     
     print("""
 ╔═══════════════════════════════════════════════════════════════╗
-║                       APEX WEB UI                             ║
-║           Privacy-First Personal AI Assistant                 ║
+║                       TELIC AI OS                             ║
+║            The AI Operating System with Purpose               ║
 ╚═══════════════════════════════════════════════════════════════╝
     """)
     

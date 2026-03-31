@@ -576,7 +576,7 @@ async def run_workflow_tests():
 async def main():
     """Run all tests."""
     print("\n" + "="*60)
-    print("APEX - Microsoft 365 Integration Tests")
+    print("TELIC - Microsoft 365 Integration Tests")
     print("="*60)
     
     all_passed = True

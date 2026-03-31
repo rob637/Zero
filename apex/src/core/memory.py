@@ -61,10 +61,10 @@ class MemoryEngine:
         Initialize memory engine.
         
         Args:
-            storage_path: Where to store memory. Defaults to ~/.apex/memory/
+            storage_path: Where to store memory. Defaults to ~/.telic/memory/
         """
         if storage_path is None:
-            storage_path = Path.home() / ".apex" / "memory"
+            storage_path = Path.home() / ".telic" / "memory"
         
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)

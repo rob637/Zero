@@ -1,5 +1,5 @@
 """
-Apex Core - The brain of the Personal AI Operating Layer
+Telic Core - The brain of the AI Operating System
 
 This module contains:
 - Skill: Base class for all capabilities

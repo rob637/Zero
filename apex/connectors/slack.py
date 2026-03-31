@@ -14,7 +14,7 @@ Capabilities:
 - File sharing
 - Status and presence
 
-This enables Apex to:
+This enables Telic to:
 - Alert on important mentions (@user, keywords)
 - Monitor channels for important updates
 - Send messages on user's behalf (with approval)
@@ -246,7 +246,7 @@ class SlackConnector:
         channels = await connector.list_channels()
         
         # Send a message
-        await connector.send_message("#general", "Hello from Apex!")
+        await connector.send_message("#general", "Hello from Telic!")
     """
     
     def __init__(

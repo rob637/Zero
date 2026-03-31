@@ -8,7 +8,7 @@ Supported Providers:
 - GitHub (repos, issues, PRs, notifications)
 - Jira (projects, issues, sprints)
 
-The unified interface enables Apex to:
+The unified interface enables Telic to:
 - Cross-reference GitHub PRs with Jira issues
 - Track work across both systems
 - Provide unified work summaries

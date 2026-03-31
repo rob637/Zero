@@ -1,5 +1,5 @@
 """
-Apex - Privacy-First Personal AI Operating Layer
+Telic - AI Operating System
 """
 
 __version__ = "0.1.0"

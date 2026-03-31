@@ -1,18 +1,18 @@
 """
-Apex Engine - Phase 1 Implementation
+Telic Engine - Phase 1 Implementation
 
 This is the WORKING implementation that ties everything together.
 
 Usage:
     from apex_engine import Apex
     
-    apex = Apex(api_key="...")
+    engine = Apex(api_key="...")
     
     # Simple request
-    result = await apex.do("Find all PDFs in Downloads and list them")
+    result = await engine.do("Find all PDFs in Downloads and list them")
     
     # With context
-    result = await apex.do(
+    result = await engine.do(
         "Create an amortization schedule from this loan and email it to Fred",
         context={"loan_doc": "~/Documents/loan.pdf"}
     )
@@ -799,16 +799,16 @@ Respond with ONLY a JSON array:
 
 
 # ============================================================
-#  APEX ENGINE
+#  TELIC ENGINE
 # ============================================================
 
 class Apex:
     """
-    The Apex Engine - unified interface to all capabilities.
+    The Telic Engine - unified interface to all capabilities.
     
     Usage:
-        apex = Apex(api_key="...")
-        result = await apex.do("Create amortization from loan doc and email to Fred")
+        engine = Apex(api_key="...")
+        result = await engine.do("Create amortization from loan doc and email to Fred")
     """
     
     def __init__(
@@ -819,7 +819,7 @@ class Apex:
     ):
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
         self._model = model
-        self._storage_path = Path(storage_path or "~/.apex").expanduser()
+        self._storage_path = Path(storage_path or "~/.telic").expanduser()
         self._storage_path.mkdir(parents=True, exist_ok=True)
         
         # Initialize primitives
@@ -844,7 +844,7 @@ class Apex:
     async def _llm_complete(self, prompt: str) -> str:
         """Call LLM for completion."""
         if not self._api_key:
-            raise ValueError("No API key configured. Set OPENAI_API_KEY or pass api_key to Apex()")
+            raise ValueError("No API key configured. Set OPENAI_API_KEY or pass api_key to the engine")
         
         if HAS_LITELLM:
             response = await asyncio.to_thread(

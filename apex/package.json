@@ -1,7 +1,7 @@
 {
-  "name": "apex",
+  "name": "telic",
   "version": "0.1.0",
-  "description": "Privacy-First Personal AI Assistant",
+  "description": "Telic - The AI Operating System with Purpose",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",

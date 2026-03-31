@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Apex CLI - Interactive Demo
+Telic CLI - Interactive Demo
 
 Usage:
     python apex/demo.py
@@ -79,7 +79,7 @@ def format_result(result):
 async def demo_direct_operations():
     """Demo direct primitive operations (no LLM needed)."""
     print("\n" + "="*60)
-    print(" APEX DIRECT OPERATIONS DEMO")
+    print(" TELIC DIRECT OPERATIONS DEMO")
     print(" (No LLM / API key required)")
     print("="*60)
     
@@ -182,7 +182,7 @@ async def interactive_mode():
         return
     
     print("\n" + "="*60)
-    print(" APEX - Interactive Mode")
+    print(" TELIC - Interactive Mode")
     print(" Type 'quit' to exit, 'help' for commands")
     print("="*60)
     
@@ -200,7 +200,7 @@ async def interactive_mode():
     
     while True:
         try:
-            request = input("apex> ").strip()
+            request = input("telic> ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye!")
             break

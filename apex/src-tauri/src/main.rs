@@ -27,7 +27,7 @@ fn main() {
             *state.0.lock().unwrap() = Some(python_child);
             
             // Set up system tray
-            let show_item = MenuItem::with_id(app, "show", "Show Apex", true, None::<&str>)?;
+            let show_item = MenuItem::with_id(app, "show", "Show Telic", true, None::<&str>)?;
             let hide_item = MenuItem::with_id(app, "hide", "Hide to Tray", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             

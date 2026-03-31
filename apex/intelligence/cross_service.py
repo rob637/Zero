@@ -1,7 +1,7 @@
 """
 Cross-Service Intelligence
 
-This is what makes Apex magical - connecting dots across services.
+This is what makes Telic magical - connecting dots across services.
 
 When you say "prepare for my meeting with John":
 - Recent emails with/about John

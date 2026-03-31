@@ -1,7 +1,7 @@
 """
 Preference Learning Engine
 
-This is how Apex learns YOU without you telling it.
+This is how Telic learns YOU without you telling it.
 
 Instead of asking "what time do you prefer meetings?", it observes:
 - You scheduled 23 meetings last month

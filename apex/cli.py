@@ -1,5 +1,5 @@
 """
-Apex CLI - Command line interface for testing
+Telic CLI - Command line interface for testing
 
 This is a simple CLI for development/testing.
 The real UI will be the Tauri system tray app.
@@ -56,11 +56,11 @@ def print_plan(plan):
 
 
 async def interactive_mode():
-    """Run Apex in interactive mode."""
+    """Run Telic in interactive mode."""
     print("""
 ╔═══════════════════════════════════════════════════════════════╗
-║                    APEX - Development CLI                     ║
-║           Privacy-First Personal AI Operating Layer           ║
+║                   TELIC - Development CLI                     ║
+║              The AI Operating System with Purpose             ║
 ╚═══════════════════════════════════════════════════════════════╝
     """)
     
@@ -86,7 +86,7 @@ async def interactive_mode():
     
     while True:
         try:
-            user_input = input("\n🤖 Apex> ").strip()
+            user_input = input("\n🤖 Telic> ").strip()
             
             if not user_input:
                 continue
@@ -163,7 +163,7 @@ async def interactive_mode():
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Apex CLI")
+    parser = argparse.ArgumentParser(description="Telic CLI")
     parser.add_argument("--request", "-r", help="Single request to process")
     parser.add_argument("--auto-approve", action="store_true", help="Auto-approve (DANGEROUS)")
     args = parser.parse_args()

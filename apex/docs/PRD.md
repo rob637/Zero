@@ -1,5 +1,5 @@
 # PRODUCT REQUIREMENTS DOCUMENT: APEX
-## Privacy-First Personal AI Operating Layer
+## Telic - The AI Operating System with Purpose
 **Version:** 1.0  
 **Date:** March 2026  
 **Status:** Draft

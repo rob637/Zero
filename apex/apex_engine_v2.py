@@ -1,20 +1,20 @@
 """
-Apex Engine v2 - With Real Google Integration
+Telic Engine v2 - With Real Google Integration
 
 This version includes real Google API connectors for Gmail, Calendar, Drive, and Contacts.
 
 Usage:
     from apex_engine_v2 import Apex
     
-    apex = Apex(api_key="...")
+    engine = Apex(api_key="...")
     
     # Connect to Google services (first run opens browser for OAuth)
-    await apex.connect_google()
+    await engine.connect_google()
     
     # Now requests can use real Gmail, Calendar, etc.
-    result = await apex.do("Find my unread emails from this week")
-    result = await apex.do("What meetings do I have tomorrow?")
-    result = await apex.do("Find the budget spreadsheet in my Drive")
+    result = await engine.do("Find my unread emails from this week")
+    result = await engine.do("What meetings do I have tomorrow?")
+    result = await engine.do("Find the budget spreadsheet in my Drive")
 """
 
 import asyncio
@@ -387,17 +387,17 @@ class GoogleContactsPrimitive(Primitive):
 
 
 # ============================================================
-#  APEX ENGINE V2
+#  TELIC ENGINE V2
 # ============================================================
 
 class Apex(BaseApex):
     """
-    Enhanced Apex Engine with real Google integration.
+    Enhanced Telic Engine with real Google integration.
     
     Usage:
-        apex = Apex(api_key="...")
-        await apex.connect_google()  # Authenticate with Google
-        result = await apex.do("Find my unread emails")
+        engine = Apex(api_key="...")
+        await engine.connect_google()  # Authenticate with Google
+        result = await engine.do("Find my unread emails")
     """
     
     def __init__(
@@ -579,7 +579,7 @@ async def test_google_integration():
     apex = Apex()
     
     print("=" * 60)
-    print(" APEX v2 - Google Integration Test")
+    print(" TELIC v2 - Google Integration Test")
     print("=" * 60)
     
     # Check for credentials

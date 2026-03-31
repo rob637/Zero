@@ -638,7 +638,7 @@ if __name__ == "__main__":
     import json
     summary = get_primitive_summary()
     print(f"\n{'='*60}")
-    print("APEX UNIVERSAL PRIMITIVES")
+    print("TELIC UNIVERSAL PRIMITIVES")
     print(f"{'='*60}")
     print(f"\nTotal Primitives: {summary['total_primitives']}")
     print(f"Total Operations: {summary['total_operations']}")
