@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connected - Apex</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 400px;
+        }
+        
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #10b981, #059669);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            animation: pop 0.4s ease-out;
+        }
+        
+        @keyframes pop {
+            0% { transform: scale(0); }
+            70% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .success-icon svg {
+            width: 40px;
+            height: 40px;
+            stroke: white;
+            stroke-width: 3;
+            fill: none;
+            animation: check 0.5s ease-out 0.2s both;
+        }
+        
+        @keyframes check {
+            0% { stroke-dashoffset: 50; }
+            100% { stroke-dashoffset: 0; }
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        p {
+            color: #888;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+        
+        .close-hint {
+            font-size: 0.875rem;
+            color: #555;
+        }
+        
+        .auto-close {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">
+            <svg viewBox="0 0 24 24">
+                <polyline points="20 6 9 17 4 12" stroke-dasharray="50" stroke-dashoffset="0"/>
+            </svg>
+        </div>
+        
+        <h1>Connected!</h1>
+        
+        <p>
+            Your service has been successfully connected to Apex.
+            You can now use it through the assistant.
+        </p>
+        
+        <p class="close-hint">
+            You can close this tab and return to Apex.
+        </p>
+        
+        <div class="auto-close">
+            This tab will close automatically in <span id="countdown">5</span> seconds...
+        </div>
+    </div>
+    
+    <script>
+        // Auto-close countdown
+        let seconds = 5;
+        const countdownEl = document.getElementById('countdown');
+        
+        const interval = setInterval(() => {
+            seconds--;
+            countdownEl.textContent = seconds;
+            
+            if (seconds <= 0) {
+                clearInterval(interval);
+                // Try to close the tab
+                window.close();
+                // If that doesn't work (browser restrictions), show message
+                document.querySelector('.auto-close').textContent = 
+                    'Tab auto-close blocked by browser. Please close this tab manually.';
+            }
+        }, 1000);
+        
+        // Notify parent window if embedded
+        if (window.opener) {
+            window.opener.postMessage({ type: 'oauth_complete' }, '*');
+        }
+    </script>
+</body>
+</html>

@@ -6,41 +6,261 @@
     <title>Apex - Your Personal AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --bg-hover: #22222e;
+            --border-subtle: rgba(255,255,255,0.06);
+            --border-light: rgba(255,255,255,0.1);
+            --text-primary: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #6366f1;
+            --accent-glow: rgba(139, 92, 246, 0.2);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --info: #3b82f6;
+        }
+        
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
             min-height: 100vh;
-            color: #e4e4e7;
+            color: var(--text-primary);
             display: flex;
-            flex-direction: column;
+            overflow: hidden;
         }
 
-        /* Header */
-        .header {
-            padding: 20px 24px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+        /* ============================================ */
+        /* Sidebar */
+        /* ============================================ */
+        .sidebar {
+            width: 260px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        
+        .sidebar-header {
+            padding: 20px;
             display: flex;
             align-items: center;
             gap: 12px;
+            border-bottom: 1px solid var(--border-subtle);
         }
-        .orb {
-            width: 32px; height: 32px; border-radius: 50%;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+        
+        .logo-orb {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+            box-shadow: 0 0 24px var(--accent-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .orb.thinking { animation: pulse 0.6s ease-in-out infinite; }
+        .logo-orb.thinking {
+            animation: pulse 1s ease-in-out infinite;
+        }
         @keyframes pulse {
-            0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.1); opacity: 0.7; }
+            0%, 100% { transform: scale(1); box-shadow: 0 0 24px var(--accent-glow); }
+            50% { transform: scale(1.05); box-shadow: 0 0 32px rgba(139, 92, 246, 0.4); }
         }
-        .title { font-size: 1.1rem; font-weight: 600; }
-        .status { margin-left: auto; font-size: 0.8rem; color: #6ee7b7; }
+        
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .sidebar-section {
+            padding: 16px 12px;
+        }
+        
+        .sidebar-section-title {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            padding: 0 8px;
+            margin-bottom: 8px;
+        }
+        
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        .sidebar-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .sidebar-item.active {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-primary);
+        }
+        .sidebar-item-icon {
+            font-size: 1.1rem;
+            width: 24px;
+            text-align: center;
+        }
+        .sidebar-item-badge {
+            margin-left: auto;
+            background: var(--accent-primary);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+        
+        /* Service indicators */
+        .service-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+        .status-dot.connected { background: var(--success); }
+        .status-dot.error { background: var(--error); }
+        
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 16px;
+            border-top: 1px solid var(--border-subtle);
+        }
+        
+        .user-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .user-card:hover {
+            background: var(--bg-hover);
+        }
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .user-info {
+            flex: 1;
+            font-size: 0.8rem;
+        }
+        .user-name { color: var(--text-primary); font-weight: 500; }
+        .user-email { color: var(--text-muted); font-size: 0.7rem; }
 
-        /* Chat Area */
+        /* ============================================ */
+        /* Main Content */
+        /* ============================================ */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        
+        /* Top Bar */
+        .top-bar {
+            height: 56px;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-secondary);
+        }
+        
+        .top-bar-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .top-bar-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            color: var(--success);
+        }
+        
+        .top-bar-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
+        }
+        
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid var(--border-light);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+        .icon-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .icon-btn.has-notification::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 8px;
+            height: 8px;
+            background: var(--error);
+            border-radius: 50%;
+            border: 2px solid var(--bg-secondary);
+        }
+
+        /* ============================================ */
+        /* Chat Container */
+        /* ============================================ */
+        .chat-wrapper {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
         .chat-container {
             flex: 1;
             overflow-y: auto;
@@ -49,122 +269,2448 @@
             flex-direction: column;
             gap: 16px;
         }
-
-        .message {
-            max-width: 85%;
-            padding: 16px 20px;
-            border-radius: 16px;
-            line-height: 1.5;
+        
+        /* Scrollbar styling */
+        .chat-container::-webkit-scrollbar {
+            width: 6px;
         }
+        .chat-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .chat-container::-webkit-scrollbar-thumb {
+            background: var(--border-light);
+            border-radius: 3px;
+        }
+        .chat-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Welcome State */
+        .welcome {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .welcome-orb {
+            width: 80px;
+            height: 80px;
+            border-radius: 24px;
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary), #c084fc);
+            box-shadow: 0 0 60px var(--accent-glow);
+            margin-bottom: 24px;
+            animation: float 4s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-12px) rotate(2deg); }
+        }
+        
+        .welcome h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .welcome p {
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            max-width: 400px;
+        }
+        
+        .welcome-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            max-width: 500px;
+        }
+        
+        .welcome-action {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 18px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        .welcome-action:hover {
+            border-color: var(--accent-primary);
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--text-primary);
+            transform: translateY(-2px);
+        }
+        .welcome-action-icon {
+            font-size: 1.2rem;
+        }
+
+        /* Messages */
+        .message {
+            max-width: 75%;
+            padding: 14px 18px;
+            border-radius: 16px;
+            line-height: 1.6;
+            font-size: 0.9rem;
+            animation: messageIn 0.2s ease-out;
+        }
+        @keyframes messageIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
         .message.user {
             align-self: flex-end;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
             border-bottom-right-radius: 4px;
         }
+        
         .message.assistant {
             align-self: flex-start;
-            background: rgba(255,255,255,0.08);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
             border-bottom-left-radius: 4px;
         }
+        
         .message.system {
             align-self: center;
-            background: rgba(251, 146, 60, 0.15);
-            border: 1px solid rgba(251, 146, 60, 0.3);
-            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            color: var(--warning);
             font-size: 0.85rem;
-            text-align: center;
+            padding: 10px 16px;
+            border-radius: 8px;
+        }
+        
+        /* Typing indicator */
+        .typing {
+            display: flex;
+            gap: 4px;
+            padding: 16px 20px;
+        }
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: typingBounce 1.4s infinite ease-in-out;
+        }
+        .typing-dot:nth-child(1) { animation-delay: 0s; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typingBounce {
+            0%, 80%, 100% { transform: scale(1); opacity: 0.4; }
+            40% { transform: scale(1.2); opacity: 1; }
         }
 
-        /* Plan Display */
+        /* ============================================ */
+        /* Plan Card */
+        /* ============================================ */
         .plan-card {
-            background: rgba(0,0,0,0.3);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
             margin-top: 12px;
             overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.3);
         }
+        
         .plan-header {
-            padding: 16px;
-            background: rgba(99, 102, 241, 0.15);
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding: 16px 20px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
+            border-bottom: 1px solid var(--border-subtle);
             font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
+        
         .plan-actions {
-            max-height: 250px;
+            max-height: 280px;
             overflow-y: auto;
         }
+        
         .plan-action {
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.03);
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border-subtle);
             display: flex;
             align-items: flex-start;
             gap: 12px;
-            font-size: 0.9rem;
+            transition: background 0.15s;
+        }
+        .plan-action:hover {
+            background: var(--bg-hover);
         }
         .plan-action:last-child { border-bottom: none; }
-        .plan-action input { margin-top: 3px; accent-color: #8b5cf6; }
-        .plan-action-icon { font-size: 1.1rem; }
+        
+        .plan-action input[type="checkbox"] {
+            margin-top: 2px;
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
+        
+        .plan-action-icon {
+            font-size: 1.2rem;
+        }
+        
         .plan-action-text { flex: 1; }
-        .plan-action-source { color: #e4e4e7; word-break: break-all; }
-        .plan-action-dest { color: #6ee7b7; font-size: 0.85rem; margin-top: 2px; word-break: break-all; }
-        .plan-action-reason { color: #94a3b8; font-size: 0.8rem; margin-top: 4px; }
-
+        
+        .plan-action-source {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            word-break: break-all;
+        }
+        
+        .plan-action-dest {
+            font-size: 0.8rem;
+            color: var(--success);
+            margin-top: 2px;
+        }
+        
+        .plan-action-reason {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        
         .plan-footer {
-            padding: 16px;
+            padding: 16px 20px;
             display: flex;
             gap: 12px;
             background: rgba(0,0,0,0.2);
         }
+        
         .btn {
             flex: 1;
             padding: 12px 20px;
-            border-radius: 8px;
+            border-radius: 10px;
             font-weight: 600;
+            font-size: 0.875rem;
             cursor: pointer;
             border: none;
-            font-size: 0.9rem;
             transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
+        
         .btn-approve {
-            background: linear-gradient(135deg, #10b981, #059669);
+            background: linear-gradient(135deg, var(--success), #059669);
             color: white;
         }
-        .btn-approve:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+        .btn-approve:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.3);
+        }
+        
         .btn-reject {
-            background: rgba(239, 68, 68, 0.15);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.3);
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-light);
         }
-        .btn-reject:hover { background: rgba(239, 68, 68, 0.25); }
-
-        /* Suggestions */
-        .suggestions {
+        .btn-reject:hover {
+            color: var(--text-primary);
+            border-color: rgba(255,255,255,0.2);
+            background: var(--bg-hover);
+        }
+        
+        .stats-bar {
             display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            padding: 0 24px 16px;
             justify-content: center;
+            gap: 24px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            padding: 12px 20px;
+            background: rgba(0,0,0,0.15);
         }
-        .suggestion {
-            padding: 10px 16px;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .suggestion:hover {
-            background: rgba(99, 102, 241, 0.2);
-            border-color: rgba(99, 102, 241, 0.4);
+        .stat-value {
+            color: var(--text-primary);
+            font-weight: 600;
         }
 
+        /* ============================================ */
         /* Input Area */
+        /* ============================================ */
         .input-area {
             padding: 20px 24px;
-            border-top: 1px solid rgba(255,255,255,0.05);
+            border-top: 1px solid var(--border-subtle);
+            background: var(--bg-secondary);
+        }
+        
+        .input-container {
+            display: flex;
+            gap: 12px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .input-field {
+            flex: 1;
+            padding: 14px 18px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            outline: none;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .input-field:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .input-field::placeholder {
+            color: var(--text-muted);
+        }
+        
+        .send-btn {
+            padding: 14px 24px;
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .send-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ============================================ */
+        /* Alerts Panel (Right Sidebar) */
+        /* ============================================ */
+        .alerts-panel {
+            width: 320px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            transition: width 0.3s ease;
+        }
+        .alerts-panel.collapsed {
+            width: 0;
+            border: none;
+            overflow: hidden;
+        }
+        
+        .alerts-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .alerts-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .alerts-count {
+            background: var(--error);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+        
+        .alerts-close {
+            margin-left: auto;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .alerts-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .alerts-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        
+        .alert-card {
+            padding: 14px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            animation: alertIn 0.3s ease-out;
+        }
+        @keyframes alertIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .alert-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .alert-icon {
+            font-size: 1.1rem;
+        }
+        
+        .alert-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            flex: 1;
+        }
+        
+        .alert-time {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+        
+        .alert-message {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        
+        .alert-source {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+        
+        .alert-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .alert-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.15s;
+        }
+        
+        .alert-btn-primary {
+            background: var(--accent-primary);
+            color: white;
+        }
+        .alert-btn-primary:hover {
+            background: #9966ff;
+        }
+        
+        .alert-btn-secondary {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border-light);
+        }
+        .alert-btn-secondary:hover {
+            color: var(--text-secondary);
+            border-color: rgba(255,255,255,0.2);
+        }
+        
+        .priority-critical { color: var(--error); }
+        .priority-high { color: #f97316; }
+        .priority-medium { color: var(--warning); }
+        .priority-low { color: var(--success); }
+
+        /* ============================================ */
+        /* Workflow Card */
+        /* ============================================ */
+        .workflow-card {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+        
+        .workflow-header {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .workflow-progress {
+            margin-left: auto;
+            font-size: 0.8rem;
+            color: var(--success);
+        }
+        
+        .workflow-steps {
+            font-size: 0.85rem;
+        }
+        
+        .workflow-step {
+            padding: 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-muted);
+        }
+        
+        .workflow-step.current {
+            color: var(--accent-primary);
+            font-weight: 500;
+        }
+        
+        .workflow-step.completed {
+            color: var(--success);
+        }
+        
+        .workflow-step-icon {
+            width: 20px;
+            text-align: center;
+        }
+
+        /* ============================================ */
+        /* Empty States */
+        /* ============================================ */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
+        
+        .empty-state-icon {
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+        
+        .empty-state-text {
+            font-size: 0.85rem;
+        }
+
+        /* ============================================ */
+        /* Step Preview Card (Sprint 4) */
+        /* ============================================ */
+        .step-preview {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            margin-top: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+        
+        .step-preview-header {
+            padding: 14px 18px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+        
+        .step-preview-type {
+            font-size: 1.2rem;
+        }
+        
+        .step-preview-title {
+            font-weight: 600;
+            flex: 1;
+        }
+        
+        .step-preview-badge {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .step-preview-badge.pending { background: rgba(251, 191, 36, 0.2); color: var(--warning); }
+        .step-preview-badge.approved { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+        .step-preview-badge.rejected { background: rgba(239, 68, 68, 0.2); color: var(--error); }
+        
+        .step-preview-content {
+            padding: 16px 18px;
+        }
+        
+        /* Document Preview */
+        .doc-preview {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        
+        .doc-preview-filename {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        
+        .doc-preview-icon { font-size: 1.3rem; }
+        
+        .doc-preview-details {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        
+        .doc-preview-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        
+        .doc-preview-label { color: var(--text-muted); }
+        
+        .doc-preview-excerpt {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            max-height: 150px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        /* Email Preview */
+        .email-preview {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .email-preview-header {
+            padding: 12px 14px;
+            background: var(--bg-hover);
+            font-size: 0.8rem;
+        }
+        
+        .email-preview-row {
+            display: flex;
+            gap: 8px;
+            padding: 4px 0;
+        }
+        
+        .email-preview-label {
+            color: var(--text-muted);
+            width: 60px;
+            flex-shrink: 0;
+        }
+        
+        .email-preview-value {
+            color: var(--text-primary);
+            flex: 1;
+        }
+        
+        .email-preview-body {
+            padding: 14px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            cursor: text;
+        }
+        
+        .email-preview-body.editable {
+            border: 1px dashed var(--accent-primary);
+            background: rgba(139, 92, 246, 0.05);
+        }
+        
+        .email-preview-attachments {
+            padding: 10px 14px;
+            border-top: 1px solid var(--border-subtle);
+            background: rgba(0,0,0,0.15);
+        }
+        
+        .email-attachment {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-right: 6px;
+        }
+        
+        /* Calculation Preview */
+        .calc-preview {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        
+        .calc-preview-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        
+        .calc-preview-item {
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+        }
+        
+        .calc-preview-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+        
+        .calc-preview-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .calc-preview-value.highlight {
+            color: var(--success);
+        }
+        
+        .calc-preview-table {
+            width: 100%;
+            font-size: 0.8rem;
+            border-collapse: collapse;
+        }
+        
+        .calc-preview-table th {
+            text-align: left;
+            padding: 8px 10px;
+            background: rgba(0,0,0,0.2);
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        
+        .calc-preview-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+        
+        /* Step Preview Actions */
+        .step-preview-actions {
+            padding: 14px 18px;
+            display: flex;
+            gap: 10px;
             background: rgba(0,0,0,0.2);
         }
+        
+        .step-preview-actions .btn { flex: 1; }
+        
+        .btn-edit {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-light);
+        }
+        
+        .btn-edit:hover {
+            background: var(--bg-hover);
+            color: var(--accent-primary);
+            border-color: var(--accent-primary);
+        }
+        
+        /* Remember Pattern Toggle */
+        .remember-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+        }
+        
+        .remember-toggle:hover {
+            color: var(--text-secondary);
+            background: rgba(255,255,255,0.05);
+        }
+        
+        .remember-checkbox {
+            width: 14px;
+            height: 14px;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
+        
+        .remember-toggle:has(.remember-checkbox:checked) {
+            color: var(--accent-primary);
+        }
+
+        /* ============================================ */
+        /* Inline Editor (Sprint 4) */
+        /* ============================================ */
+        .inline-editor {
+            background: var(--bg-tertiary);
+            border: 2px solid var(--accent-primary);
+            border-radius: 10px;
+            padding: 14px;
+            margin-top: 12px;
+        }
+        
+        .inline-editor-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        
+        .inline-editor-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .inline-editor-close {
+            margin-left: auto;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        
+        .inline-editor-close:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--error);
+        }
+        
+        .inline-editor-field {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.15s;
+            margin-bottom: 8px;
+        }
+        
+        .inline-editor-field:focus {
+            border-color: var(--accent-primary);
+        }
+        
+        .inline-editor-field.textarea {
+            min-height: 120px;
+            resize: vertical;
+            line-height: 1.5;
+        }
+        
+        .inline-editor-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .btn-sm {
+            padding: 8px 14px;
+            font-size: 0.8rem;
+        }
+
+        /* ============================================ */
+        /* Audit Log Modal (Sprint 4) */
+        /* ============================================ */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+        }
+        
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .modal {
+            width: 90%;
+            max-width: 800px;
+            max-height: 85vh;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            transform: scale(0.95);
+            transition: transform 0.2s;
+        }
+        
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+        
+        .modal-header {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            flex: 1;
+        }
+        
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+        
+        .modal-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 24px;
+        }
+        
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        /* Audit Log Specific */
+        .audit-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .audit-stat {
+            padding: 14px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .audit-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .audit-stat-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 4px;
+        }
+        
+        .audit-stat.warning .audit-stat-value { color: var(--warning); }
+        .audit-stat.success .audit-stat-value { color: var(--success); }
+        
+        .audit-log-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .audit-log-item {
+            padding: 14px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            transition: border-color 0.15s;
+        }
+        
+        .audit-log-item:hover {
+            border-color: var(--border-light);
+        }
+        
+        .audit-log-item-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        
+        .audit-log-item-icon {
+            font-size: 1.1rem;
+        }
+        
+        .audit-log-item-type {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            flex: 1;
+        }
+        
+        .audit-log-item-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .audit-log-item-details {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            padding: 8px 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 6px;
+        }
+        
+        .audit-log-item-size {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 8px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .audit-log-item-pii {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 8px;
+            margin-left: 12px;
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--error);
+            border-radius: 4px;
+        }
+        
+        /* ============================================ */
+        /* Undo Toast (Sprint 4) */
+        /* ============================================ */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1001;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .toast {
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 280px;
+            animation: toastIn 0.3s ease-out;
+        }
+        
+        @keyframes toastIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .toast-icon { font-size: 1.2rem; }
+        
+        .toast-content {
+            flex: 1;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+        
+        .toast-undo {
+            padding: 6px 12px;
+            background: transparent;
+            border: 1px solid var(--warning);
+            border-radius: 6px;
+            color: var(--warning);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        
+        .toast-undo:hover {
+            background: rgba(245, 158, 11, 0.15);
+        }
+        
+        .toast-dismiss {
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        .toast-dismiss:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        /* ============================================ */
+        /* Responsive */
+        /* ============================================ */
+        @media (max-width: 1024px) {
+            .sidebar { width: 220px; }
+            .alerts-panel { width: 280px; }
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .alerts-panel { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-orb" id="logoOrb">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5"/>
+                    <path d="M2 12l10 5 10-5"/>
+                </svg>
+            </div>
+            <span class="logo-text">Apex</span>
+        </div>
+        
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Main</div>
+            <div class="sidebar-item active">
+                <span class="sidebar-item-icon">💬</span>
+                <span>Chat</span>
+            </div>
+            <div class="sidebar-item" onclick="getBriefing()">
+                <span class="sidebar-item-icon">📋</span>
+                <span>Daily Briefing</span>
+            </div>
+            <div class="sidebar-item" onclick="getDevToolsStatus()">
+                <span class="sidebar-item-icon">💻</span>
+                <span>Dev Status</span>
+            </div>
+            <div class="sidebar-item" onclick="openAuditLog()">
+                <span class="sidebar-item-icon">🔒</span>
+                <span>Audit Log</span>
+            </div>
+            <div class="sidebar-item" onclick="openActionHistory()">
+                <span class="sidebar-item-icon">📜</span>
+                <span>Action History</span>
+            </div>
+        </div>
+        
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Connected Services</div>
+            <div class="sidebar-item" id="googleStatus">
+                <span class="sidebar-item-icon">📧</span>
+                <span>Google</span>
+                <div class="service-status">
+                    <span class="status-dot" id="googleDot"></span>
+                </div>
+            </div>
+            <div class="sidebar-item" id="microsoftStatus">
+                <span class="sidebar-item-icon">📨</span>
+                <span>Microsoft</span>
+                <div class="service-status">
+                    <span class="status-dot" id="microsoftDot"></span>
+                </div>
+            </div>
+            <div class="sidebar-item" onclick="connectGitHub()">
+                <span class="sidebar-item-icon">🐙</span>
+                <span>GitHub</span>
+                <div class="service-status">
+                    <span class="status-dot" id="githubDot"></span>
+                </div>
+            </div>
+            <div class="sidebar-item" onclick="connectJira()">
+                <span class="sidebar-item-icon">📊</span>
+                <span>Jira</span>
+                <div class="service-status">
+                    <span class="status-dot" id="jiraDot"></span>
+                </div>
+            </div>
+            <div class="sidebar-item" onclick="connectSlack()">
+                <span class="sidebar-item-icon">💬</span>
+                <span>Slack</span>
+                <div class="service-status">
+                    <span class="status-dot" id="slackDot"></span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar-footer">
+            <div class="user-card" onclick="openSettings()">
+                <div class="user-avatar">U</div>
+                <div class="user-info">
+                    <div class="user-name">User</div>
+                    <div class="user-email">Settings</div>
+                </div>
+                <span style="color: var(--text-muted)">⚙️</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="top-bar">
+            <span class="top-bar-title">Chat</span>
+            <span class="top-bar-status" id="statusIndicator">
+                <span class="status-dot connected"></span>
+                Ready
+            </span>
+            <div class="top-bar-actions">
+                <button class="icon-btn" onclick="toggleAlerts()" id="alertsBtn" style="position:relative;">
+                    🔔
+                </button>
+            </div>
+        </div>
+        
+        <div class="chat-wrapper">
+            <div class="chat-container" id="chat">
+                <div class="welcome" id="welcome">
+                    <div class="welcome-orb"></div>
+                    <h1>Hey! I'm Apex</h1>
+                    <p>Your personal AI assistant that connects all your services. I'm ready to help with emails, calendar, files, code, and more.</p>
+                    <div class="welcome-actions">
+                        <div class="welcome-action" onclick="getBriefing()">
+                            <span class="welcome-action-icon">📋</span>
+                            <span>Get my briefing</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('What can you do?')">
+                            <span class="welcome-action-icon">💡</span>
+                            <span>What can you do?</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('My PC feels cluttered')">
+                            <span class="welcome-action-icon">🧹</span>
+                            <span>Clean up my PC</span>
+                        </div>
+                        <div class="welcome-action" onclick="getDevToolsStatus()">
+                            <span class="welcome-action-icon">💻</span>
+                            <span>Dev work status</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Alerts Panel -->
+            <div class="alerts-panel collapsed" id="alertsPanel">
+                <div class="alerts-header">
+                    <span class="alerts-title">🔔 Notifications</span>
+                    <span class="alerts-count" id="alertsCount">0</span>
+                    <button class="alerts-close" onclick="toggleAlerts()">✕</button>
+                </div>
+                <div class="alerts-list" id="alertsList">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔕</div>
+                        <div class="empty-state-text">No notifications</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="input-area">
+            <div class="input-container">
+                <input type="text" class="input-field" id="input" 
+                       placeholder="Ask me anything..." 
+                       onkeypress="if(event.key==='Enter')sendMessage()">
+                <button class="send-btn" onclick="sendMessage()" id="sendBtn">
+                    Send
+                    <span>→</span>
+                </button>
+            </div>
+        </footer>
+    </main>
+
+    <script>
+        const API = 'http://localhost:8000';
+        let currentTaskId = null;
+        let currentPlan = null;
+        let currentWorkflow = null;
+        let alertsPanelOpen = false;
+        let alerts = [];
+        let currentEditContext = null;  // For inline editing
+
+        // ============================================
+        // UI State
+        // ============================================
+        
+        function setThinking(thinking) {
+            document.getElementById('logoOrb').classList.toggle('thinking', thinking);
+            document.getElementById('statusIndicator').innerHTML = thinking 
+                ? '<span class="status-dot" style="background: var(--warning)"></span> Thinking...'
+                : '<span class="status-dot connected"></span> Ready';
+            document.getElementById('sendBtn').disabled = thinking;
+        }
+        
+        function toggleAlerts() {
+            alertsPanelOpen = !alertsPanelOpen;
+            document.getElementById('alertsPanel').classList.toggle('collapsed', !alertsPanelOpen);
+        }
+        
+        function openSettings() {
+            addMessage('Settings panel coming soon!', 'system');
+        }
+
+        // ============================================
+        // Messages
+        // ============================================
+
+        function addMessage(text, type, extra = '') {
+            const welcome = document.getElementById('welcome');
+            if (welcome) welcome.style.display = 'none';
+            
+            const chat = document.getElementById('chat');
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            msg.innerHTML = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>') + extra;
+            chat.appendChild(msg);
+            chat.scrollTop = chat.scrollHeight;
+            return msg;
+        }
+        
+        function addTypingIndicator() {
+            const chat = document.getElementById('chat');
+            const typing = document.createElement('div');
+            typing.className = 'message assistant typing';
+            typing.id = 'typingIndicator';
+            typing.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+            chat.appendChild(typing);
+            chat.scrollTop = chat.scrollHeight;
+        }
+        
+        function removeTypingIndicator() {
+            document.getElementById('typingIndicator')?.remove();
+        }
+
+        // ============================================
+        // Chat Functions
+        // ============================================
+
+        async function sendMessage(text) {
+            const input = document.getElementById('input');
+            const message = text || input.value.trim();
+            if (!message) return;
+            
+            input.value = '';
+            addMessage(message, 'user');
+            setThinking(true);
+            addTypingIndicator();
+
+            try {
+                const res = await fetch(`${API}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await res.json();
+                removeTypingIndicator();
+                setThinking(false);
+
+                if (data.error) {
+                    addMessage(data.error, 'system');
+                    return;
+                }
+
+                // Check for multi-step workflow
+                if (data.workflow && data.workflow_id) {
+                    currentWorkflow = data.workflow;
+                    currentTaskId = null;
+                    
+                    let extra = renderWorkflow(data.workflow, data.workflow_summary);
+                    if (data.plan && data.plan.actions?.length > 0) {
+                        currentPlan = data.plan;
+                        currentTaskId = data.workflow_id;
+                        extra += renderPlan(data.plan, true);
+                    }
+                    addMessage(data.response, 'assistant', extra);
+                    return;
+                }
+
+                // Single action plan
+                if (data.plan && data.plan.actions?.length > 0) {
+                    currentTaskId = data.task_id;
+                    currentPlan = data.plan;
+                    addMessage(data.response, 'assistant', renderPlan(data.plan));
+                } else {
+                    addMessage(data.response, 'assistant');
+                }
+
+            } catch (e) {
+                removeTypingIndicator();
+                setThinking(false);
+                addMessage('Cannot connect to Apex. Is the server running?', 'system');
+            }
+        }
+
+        // ============================================
+        // Plan Rendering
+        // ============================================
+
+        function renderWorkflow(workflow, summary) {
+            if (!workflow) return '';
+            
+            const statusIcons = {
+                'pending': '⏳',
+                'awaiting_approval': '🔔',
+                'approved': '✅',
+                'executing': '⚙️',
+                'completed': '✓',
+                'skipped': '⏭️',
+                'failed': '❌'
+            };
+            
+            const stepsHtml = workflow.steps.map((step, i) => {
+                const icon = statusIcons[step.status] || '•';
+                const isCurrent = i === workflow.current_step && !workflow.completed;
+                const className = isCurrent ? 'workflow-step current' : 
+                                  step.status === 'completed' ? 'workflow-step completed' : 'workflow-step';
+                return `<div class="${className}">
+                    <span class="workflow-step-icon">${icon}</span>
+                    <span>Step ${i + 1}: ${step.description}${isCurrent ? ' ← current' : ''}</span>
+                </div>`;
+            }).join('');
+            
+            return `
+                <div class="workflow-card">
+                    <div class="workflow-header">
+                        <span>🔄</span>
+                        <span>${workflow.name}</span>
+                        <span class="workflow-progress">${workflow.current_step + 1}/${workflow.total_steps}</span>
+                    </div>
+                    <div class="workflow-steps">${stepsHtml}</div>
+                </div>
+            `;
+        }
+
+        function renderPlan(plan, isWorkflowStep = false) {
+            const icons = { move: '📁', delete: '🗑️', create_folder: '📂', rename: '✏️', copy: '📧' };
+            
+            let actionsHtml = '';
+            if (plan.actions && plan.actions.length > 0) {
+                actionsHtml = plan.actions.map((a, i) => `
+                    <div class="plan-action">
+                        <input type="checkbox" checked data-idx="${i}">
+                        <span class="plan-action-icon">${icons[a.type] || '📄'}</span>
+                        <div class="plan-action-text">
+                            <div class="plan-action-source">${a.source}</div>
+                            ${a.destination ? `<div class="plan-action-dest">→ ${a.destination}</div>` : ''}
+                            <div class="plan-action-reason">${a.reason}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            return `
+                <div class="plan-card">
+                    <div class="plan-header">
+                        <span>📋</span>
+                        <span>${plan.summary}</span>
+                    </div>
+                    ${actionsHtml ? `<div class="plan-actions">${actionsHtml}</div>` : ''}
+                    <div class="stats-bar">
+                        <span><span class="stat-value">${plan.stats?.files || 0}</span> files</span>
+                        <span><span class="stat-value">${plan.stats?.space || '0 MB'}</span> to free</span>
+                    </div>
+                    <div class="plan-footer">
+                        ${isWorkflowStep 
+                            ? `<button class="btn btn-reject" onclick="skipWorkflowStep()">Skip</button>
+                               <button class="btn btn-approve" onclick="approveWorkflowStep()">✓ Continue</button>`
+                            : `<button class="btn btn-reject" onclick="rejectPlan()">Cancel</button>
+                               <button class="btn btn-approve" onclick="approvePlan()">✓ Do it</button>`
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        async function approvePlan() {
+            const checkboxes = document.querySelectorAll('.plan-action input:checked');
+            const indices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.idx));
+            
+            if (indices.length === 0) {
+                addMessage('Select at least one action to approve.', 'system');
+                return;
+            }
+
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_id: currentTaskId, approved_indices: indices })
+                });
+                const data = await res.json();
+                setThinking(false);
+
+                const count = data.result?.success?.length || 0;
+                addMessage(`✓ Done! Completed ${count} actions. ${data.result?.space_freed ? `Freed ${data.result.space_freed}.` : ''}`, 'assistant');
+                
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to execute. Try again?', 'system');
+            }
+        }
+
+        function rejectPlan() {
+            addMessage("No problem, I won't make any changes.", 'assistant');
+            currentTaskId = null;
+            currentPlan = null;
+        }
+
+        // ============================================
+        // Workflow Functions
+        // ============================================
+        
+        async function approveWorkflowStep() {
+            if (!currentWorkflow) return;
+            
+            const checkboxes = document.querySelectorAll('.plan-action input:checked');
+            const indices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.idx));
+            
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/workflow/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workflow_id: currentWorkflow.id, approved_indices: indices })
+                });
+                const data = await res.json();
+                
+                if (data.error) {
+                    setThinking(false);
+                    addMessage(`Error: ${data.error}`, 'system');
+                    return;
+                }
+                
+                const stepResult = data.executed_step;
+                if (stepResult.status === 'completed') {
+                    addMessage(`✓ Step completed!`, 'assistant');
+                } else if (stepResult.error) {
+                    addMessage(`Step failed: ${stepResult.error}`, 'system');
+                }
+                
+                if (data.completed) {
+                    setThinking(false);
+                    addMessage(`🎉 Workflow complete!`, 'assistant');
+                    currentWorkflow = null;
+                    return;
+                }
+                
+                if (data.has_next) {
+                    currentWorkflow = data.workflow;
+                    
+                    const analyzeRes = await fetch(`${API}/workflow/analyze`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ workflow_id: currentWorkflow.id })
+                    });
+                    const analyzeData = await analyzeRes.json();
+                    setThinking(false);
+                    
+                    let extra = renderWorkflow(analyzeData.workflow, analyzeData.summary);
+                    if (analyzeData.current_step?.plan) {
+                        currentPlan = analyzeData.current_step.plan;
+                        extra += renderPlan(analyzeData.current_step.plan, true);
+                    }
+                    addMessage(`Next step:`, 'assistant', extra);
+                } else {
+                    setThinking(false);
+                }
+                
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to execute workflow step.', 'system');
+            }
+        }
+        
+        async function skipWorkflowStep() {
+            if (!currentWorkflow) return;
+            
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/workflow/skip`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workflow_id: currentWorkflow.id })
+                });
+                const data = await res.json();
+                setThinking(false);
+                
+                addMessage(`Skipped step.`, 'assistant');
+                
+                if (data.completed) {
+                    addMessage(`Workflow finished.`, 'assistant');
+                    currentWorkflow = null;
+                    return;
+                }
+                
+                if (data.has_next) {
+                    currentWorkflow = data.workflow;
+                    addMessage(`Ready for next step. Say "continue" to proceed.`, 'assistant');
+                }
+                
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to skip step.', 'system');
+            }
+        }
+
+        // ============================================
+        // Intelligence / Alerts
+        // ============================================
+        
+        async function fetchAlerts() {
+            try {
+                const res = await fetch(`${API}/intelligence/alerts`);
+                const data = await res.json();
+                alerts = data.alerts || [];
+                renderAlerts();
+            } catch(e) {
+                console.log('Alerts not available');
+            }
+        }
+        
+        function renderAlerts() {
+            const list = document.getElementById('alertsList');
+            const countEl = document.getElementById('alertsCount');
+            const btn = document.getElementById('alertsBtn');
+            
+            countEl.textContent = alerts.length;
+            btn.classList.toggle('has-notification', alerts.length > 0);
+            
+            if (alerts.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔕</div>
+                        <div class="empty-state-text">No notifications</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            const typeIcons = {
+                important_email: '📧',
+                vip_email: '⭐',
+                meeting_soon: '📅',
+                deadline_approaching: '⏰',
+                task_overdue: '❗',
+                review_requested: '👀',
+                issue_assigned: '🎯',
+                anomaly: '⚠️'
+            };
+            
+            list.innerHTML = alerts.map(a => `
+                <div class="alert-card" data-id="${a.id}">
+                    <div class="alert-card-header">
+                        <span class="alert-icon">${typeIcons[a.alert_type] || '💡'}</span>
+                        <span class="alert-title priority-${a.priority}">${a.title}</span>
+                    </div>
+                    <div class="alert-message">${a.message}</div>
+                    <div class="alert-source">${a.source || ''}</div>
+                    <div class="alert-actions">
+                        <button class="alert-btn alert-btn-primary" onclick="acknowledgeAlert('${a.id}')">Got it</button>
+                        <button class="alert-btn alert-btn-secondary" onclick="dismissAlert('${a.id}')">Dismiss</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        async function acknowledgeAlert(id) {
+            await fetch(`${API}/intelligence/alerts/${id}/acknowledge`, { method: 'POST' });
+            alerts = alerts.filter(a => a.id !== id);
+            renderAlerts();
+        }
+        
+        async function dismissAlert(id) {
+            await fetch(`${API}/intelligence/alerts/${id}/dismiss`, { method: 'POST' });
+            alerts = alerts.filter(a => a.id !== id);
+            renderAlerts();
+        }
+        
+        // ============================================
+        // Briefing & DevTools
+        // ============================================
+        
+        async function getBriefing() {
+            setThinking(true);
+            addTypingIndicator();
+            try {
+                const res = await fetch(`${API}/intelligence/briefing`);
+                const data = await res.json();
+                removeTypingIndicator();
+                setThinking(false);
+                
+                if (data.error) {
+                    addMessage(`Couldn't generate briefing: ${data.error}`, 'system');
+                    return;
+                }
+                
+                const b = data.briefing;
+                let msg = `**📋 Your Morning Briefing**\n\n`;
+                
+                if (b.meetings?.length) {
+                    msg += `**Today's Meetings (${b.meetings.length})**\n`;
+                    b.meetings.slice(0, 3).forEach(m => {
+                        msg += `• ${m.title || m.summary} at ${m.start || 'TBD'}\n`;
+                    });
+                    if (b.meetings.length > 3) msg += `• ...and ${b.meetings.length - 3} more\n`;
+                    msg += '\n';
+                }
+                
+                if (b.important_emails?.length) {
+                    msg += `**Important Emails (${b.important_emails.length})**\n`;
+                    msg += `• Check your inbox for priority items\n\n`;
+                }
+                
+                if (b.action_items?.length) {
+                    msg += `**Action Items (${b.action_items.length})**\n`;
+                    b.action_items.slice(0, 3).forEach(item => {
+                        msg += `• ${item}\n`;
+                    });
+                    msg += '\n';
+                }
+                
+                if (!b.meetings?.length && !b.important_emails?.length && !b.action_items?.length) {
+                    msg += `Your schedule looks clear! A great day to focus on deep work.`;
+                }
+                
+                addMessage(msg, 'assistant');
+            } catch(e) {
+                removeTypingIndicator();
+                setThinking(false);
+                addMessage('Error fetching briefing. Make sure the server is running.', 'system');
+            }
+        }
+        
+        async function getDevToolsStatus() {
+            setThinking(true);
+            addTypingIndicator();
+            try {
+                const res = await fetch(`${API}/intelligence/devtools`);
+                const data = await res.json();
+                removeTypingIndicator();
+                setThinking(false);
+                
+                if (data.error) {
+                    addMessage(`DevTools: ${data.error}`, 'system');
+                    return;
+                }
+                
+                const s = data.summary;
+                let msg = `**💻 Dev Work Summary**\n\n`;
+                msg += `**Connected:** ${data.providers.join(', ') || 'None'}\n\n`;
+                
+                if (s.in_progress?.length) {
+                    msg += `**In Progress (${s.in_progress.length})**\n`;
+                    s.in_progress.slice(0, 3).forEach(i => {
+                        msg += `• ${i.key || ''} ${i.title || i.summary}\n`;
+                    });
+                    if (s.in_progress.length > 3) msg += `• ...and ${s.in_progress.length - 3} more\n`;
+                    msg += '\n';
+                }
+                
+                if (s.review_requests?.length) {
+                    msg += `**Review Requests (${s.review_requests.length})**\n`;
+                    msg += `• ${s.review_requests.length} PRs waiting for review\n\n`;
+                }
+                
+                if (s.notifications?.length) {
+                    msg += `**Notifications (${s.notifications.length})**\n`;
+                    msg += `• ${s.notifications.length} unread\n`;
+                }
+                
+                if (!s.in_progress?.length && !s.review_requests?.length && !s.notifications?.length) {
+                    msg += `All clear! No pending dev work.`;
+                }
+                
+                addMessage(msg, 'assistant');
+            } catch(e) {
+                removeTypingIndicator();
+                setThinking(false);
+                addMessage('Error fetching DevTools status.', 'system');
+            }
+        }
+        
+        // ============================================
+        // Service Connections
+        // ============================================
+        
+        async function connectGitHub() {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/intelligence/devtools/connect/github`, { method: 'POST' });
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.success) {
+                    document.getElementById('githubDot').classList.add('connected');
+                    addMessage(`✅ Connected to GitHub as **${data.user}**`, 'assistant');
+                } else {
+                    addMessage(`Set GITHUB_TOKEN environment variable to connect GitHub.`, 'system');
+                }
+            } catch(e) {
+                setThinking(false);
+                addMessage('Failed to connect GitHub.', 'system');
+            }
+        }
+        
+        async function connectJira() {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/intelligence/devtools/connect/jira`, { method: 'POST' });
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.success) {
+                    document.getElementById('jiraDot').classList.add('connected');
+                    addMessage(`✅ Connected to Jira as **${data.user}**`, 'assistant');
+                } else {
+                    addMessage(`Set JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN to connect Jira.`, 'system');
+                }
+            } catch(e) {
+                setThinking(false);
+                addMessage('Failed to connect Jira.', 'system');
+            }
+        }
+        
+        async function connectSlack() {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/intelligence/devtools/connect/slack`, { method: 'POST' });
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.success) {
+                    document.getElementById('slackDot').classList.add('connected');
+                    addMessage(`✅ Connected to Slack as **${data.user}**`, 'assistant');
+                } else {
+                    addMessage(`Set SLACK_BOT_TOKEN environment variable to connect Slack.`, 'system');
+                }
+            } catch(e) {
+                setThinking(false);
+                addMessage('Set SLACK_BOT_TOKEN to connect Slack.', 'system');
+            }
+        }
+        
+        async function checkServiceStatus() {
+            try {
+                const res = await fetch(`${API}/health`);
+                const data = await res.json();
+                
+                // Update service indicators based on response
+                if (data.services) {
+                    if (data.services.google) document.getElementById('googleDot').classList.add('connected');
+                    if (data.services.microsoft) document.getElementById('microsoftDot').classList.add('connected');
+                    if (data.services.github) document.getElementById('githubDot').classList.add('connected');
+                    if (data.services.jira) document.getElementById('jiraDot').classList.add('connected');
+                    if (data.services.slack) document.getElementById('slackDot').classList.add('connected');
+                }
+            } catch(e) {
+                console.log('Could not check service status');
+            }
+        }
+
+        // ============================================
+        // Step Preview Rendering (Sprint 4)
+        // ============================================
+
+        function renderStepPreview(step) {
+            const typeIcons = {
+                document: '📄',
+                email: '📧',
+                calculation: '📊',
+                calendar: '📅',
+                file: '📁',
+                search: '🔍'
+            };
+            
+            const icon = typeIcons[step.type] || '📋';
+            let contentHtml = '';
+            
+            if (step.type === 'document') {
+                contentHtml = `
+                    <div class="doc-preview">
+                        <div class="doc-preview-filename">
+                            <span class="doc-preview-icon">${icon}</span>
+                            <span>${step.filename || 'Document'}</span>
+                        </div>
+                        <div class="doc-preview-details">
+                            <div class="doc-preview-row">
+                                <span class="doc-preview-label">Location:</span>
+                                <span>${step.path || 'Unknown'}</span>
+                            </div>
+                            <div class="doc-preview-row">
+                                <span class="doc-preview-label">Size:</span>
+                                <span>${step.size || 'Unknown'}</span>
+                            </div>
+                        </div>
+                        ${step.excerpt ? `<div class="doc-preview-excerpt">${escapeHtml(step.excerpt)}</div>` : ''}
+                    </div>
+                `;
+            } else if (step.type === 'email') {
+                contentHtml = `
+                    <div class="email-preview">
+                        <div class="email-preview-header">
+                            <div class="email-preview-row">
+                                <span class="email-preview-label">To:</span>
+                                <span class="email-preview-value">${step.to || ''}</span>
+                            </div>
+                            <div class="email-preview-row">
+                                <span class="email-preview-label">Subject:</span>
+                                <span class="email-preview-value">${step.subject || ''}</span>
+                            </div>
+                        </div>
+                        <div class="email-preview-body ${step.editable ? 'editable' : ''}" 
+                             id="emailBody-${step.id}" 
+                             ${step.editable ? 'contenteditable="true"' : ''}>${escapeHtml(step.body || '')}</div>
+                        ${step.attachments?.length ? `
+                            <div class="email-preview-attachments">
+                                ${step.attachments.map(a => `
+                                    <div class="email-attachment">📎 ${a.name} (${a.size})</div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            } else if (step.type === 'calculation') {
+                contentHtml = `
+                    <div class="calc-preview">
+                        <div class="calc-preview-grid">
+                            ${step.results?.map(r => `
+                                <div class="calc-preview-item">
+                                    <div class="calc-preview-label">${r.label}</div>
+                                    <div class="calc-preview-value ${r.highlight ? 'highlight' : ''}">${r.value}</div>
+                                </div>
+                            `).join('') || ''}
+                        </div>
+                        ${step.table ? `
+                            <table class="calc-preview-table">
+                                <thead>
+                                    <tr>
+                                        ${step.table.headers.map(h => `<th>${h}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${step.table.rows.slice(0, 5).map(row => `
+                                        <tr>${row.map(c => `<td>${c}</td>`).join('')}</tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        ` : ''}
+                    </div>
+                `;
+            } else {
+                contentHtml = `
+                    <div class="doc-preview">
+                        <div class="doc-preview-filename">
+                            <span class="doc-preview-icon">${icon}</span>
+                            <span>${step.title || 'Action'}</span>
+                        </div>
+                        ${step.description ? `<div class="doc-preview-excerpt">${escapeHtml(step.description)}</div>` : ''}
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="step-preview" data-step-id="${step.id}">
+                    <div class="step-preview-header">
+                        <span class="step-preview-type">${icon}</span>
+                        <span class="step-preview-title">${step.title || `Step ${step.step_number}`}</span>
+                        <span class="step-preview-badge pending">Pending</span>
+                    </div>
+                    <div class="step-preview-content">
+                        ${contentHtml}
+                    </div>
+                    <div class="step-preview-actions">
+                        <label class="remember-toggle" title="Auto-approve similar actions in the future">
+                            <input type="checkbox" class="remember-checkbox" data-step-id="${step.id}">
+                            <span>Remember</span>
+                        </label>
+                        ${step.editable ? `<button class="btn btn-edit btn-sm" onclick="editStep('${step.id}')">✏️ Edit</button>` : ''}
+                        <button class="btn btn-reject btn-sm" onclick="rejectStep('${step.id}')">✗ Reject</button>
+                        <button class="btn btn-approve btn-sm" onclick="approveStep('${step.id}')">✓ Approve</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        async function approveStep(stepId) {
+            // Check if "Remember" checkbox is checked
+            const checkbox = document.querySelector(`.remember-checkbox[data-step-id="${stepId}"]`);
+            const rememberPattern = checkbox ? checkbox.checked : false;
+            
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/control/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action_id: stepId,
+                        remember_pattern: rememberPattern,
+                        pattern_context: rememberPattern ? { action_id: stepId } : null
+                    })
+                });
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.success) {
+                    const preview = document.querySelector(`[data-step-id="${stepId}"]`);
+                    if (preview) {
+                        preview.querySelector('.step-preview-badge').className = 'step-preview-badge approved';
+                        preview.querySelector('.step-preview-badge').textContent = 'Approved';
+                        const msg = rememberPattern ? '✓ Executed (pattern saved)' : '✓ Executed';
+                        preview.querySelector('.step-preview-actions').innerHTML = `<span style="color:var(--success)">${msg}</span>`;
+                    }
+                    showToast(rememberPattern ? '✓ Action completed & pattern remembered' : '✓ Action completed', stepId);
+                } else {
+                    addMessage(`Failed: ${data.error || 'Unknown error'}`, 'system');
+                }
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to approve step.', 'system');
+            }
+        }
+        
+        async function rejectStep(stepId) {
+            try {
+                await fetch(`${API}/control/reject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_id: stepId })
+                });
+                
+                const preview = document.querySelector(`[data-step-id="${stepId}"]`);
+                if (preview) {
+                    preview.querySelector('.step-preview-badge').className = 'step-preview-badge rejected';
+                    preview.querySelector('.step-preview-badge').textContent = 'Rejected';
+                    preview.querySelector('.step-preview-actions').innerHTML = '<span style="color:var(--text-muted)">Cancelled</span>';
+                }
+            } catch (e) {
+                addMessage('Failed to reject step.', 'system');
+            }
+        }
+        
+        function editStep(stepId) {
+            currentEditContext = { stepId };
+            const emailBody = document.getElementById(`emailBody-${stepId}`);
+            if (emailBody) {
+                emailBody.focus();
+                emailBody.classList.add('editable');
+            }
+        }
+
+        // ============================================
+        // Audit Log Viewer (Sprint 4)
+        // ============================================
+        
+        async function openAuditLog() {
+            // Create modal if not exists
+            let modal = document.getElementById('auditModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'auditModal';
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal">
+                        <div class="modal-header">
+                            <span>🔒</span>
+                            <span class="modal-title">External Data Transmissions</span>
+                            <button class="modal-close" onclick="closeAuditLog()">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="audit-stats" id="auditStats">
+                                <div class="audit-stat">
+                                    <div class="audit-stat-value" id="auditTotalCalls">-</div>
+                                    <div class="audit-stat-label">Total Calls</div>
+                                </div>
+                                <div class="audit-stat">
+                                    <div class="audit-stat-value" id="auditBytesOut">-</div>
+                                    <div class="audit-stat-label">Bytes Sent</div>
+                                </div>
+                                <div class="audit-stat warning">
+                                    <div class="audit-stat-value" id="auditPiiDetected">-</div>
+                                    <div class="audit-stat-label">PII Redacted</div>
+                                </div>
+                                <div class="audit-stat success">
+                                    <div class="audit-stat-value" id="auditRedacted">-</div>
+                                    <div class="audit-stat-label">Redactions</div>
+                                </div>
+                            </div>
+                            <div class="audit-log-list" id="auditLogList">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">🔒</div>
+                                    <div class="empty-state-text">Loading transmissions...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-reject" onclick="closeAuditLog()">Close</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            
+            modal.classList.add('active');
+            await loadAuditLog();
+        }
+        
+        function closeAuditLog() {
+            document.getElementById('auditModal')?.classList.remove('active');
+        }
+        
+        async function loadAuditLog() {
+            try {
+                const [logRes, statsRes] = await Promise.all([
+                    fetch(`${API}/privacy/audit?limit=50`),
+                    fetch(`${API}/privacy/audit/stats`)
+                ]);
+                
+                const logData = await logRes.json();
+                const statsData = await statsRes.json();
+                
+                // Update stats
+                document.getElementById('auditTotalCalls').textContent = statsData.total_calls || 0;
+                document.getElementById('auditBytesOut').textContent = formatBytes(statsData.total_bytes_out || 0);
+                document.getElementById('auditPiiDetected').textContent = statsData.pii_detected_count || 0;
+                document.getElementById('auditRedacted').textContent = statsData.total_redactions || 0;
+                
+                // Update log list
+                const list = document.getElementById('auditLogList');
+                const transmissions = logData.transmissions || [];
+                
+                if (transmissions.length === 0) {
+                    list.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">✅</div>
+                            <div class="empty-state-text">No external transmissions recorded</div>
+                        </div>
+                    `;
+                } else {
+                    list.innerHTML = transmissions.map(t => `
+                        <div class="audit-log-item">
+                            <div class="audit-log-item-header">
+                                <span class="audit-log-item-icon">${t.destination?.includes('openai') ? '🤖' : '🌐'}</span>
+                                <span class="audit-log-item-type">${t.destination || 'Unknown'}</span>
+                                <span class="audit-log-item-time">${formatTime(t.timestamp)}</span>
+                            </div>
+                            <div class="audit-log-item-details">
+                                ${truncate(t.prompt_preview || t.prompt || 'No preview', 200)}
+                            </div>
+                            <span class="audit-log-item-size">📤 ${formatBytes(t.bytes_out || 0)}</span>
+                            ${t.had_pii ? '<span class="audit-log-item-pii">⚠️ PII Redacted</span>' : ''}
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                document.getElementById('auditLogList').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <div class="empty-state-text">Failed to load audit log</div>
+                    </div>
+                `;
+            }
+        }
+
+        // ============================================
+        // Action History Viewer (Sprint 4)
+        // ============================================
+        
+        async function openActionHistory() {
+            let modal = document.getElementById('historyModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'historyModal';
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal">
+                        <div class="modal-header">
+                            <span>📜</span>
+                            <span class="modal-title">Action History</span>
+                            <button class="modal-close" onclick="closeActionHistory()">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="audit-log-list" id="actionHistoryList">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📜</div>
+                                    <div class="empty-state-text">Loading actions...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-reject" onclick="closeActionHistory()">Close</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            
+            modal.classList.add('active');
+            await loadActionHistory();
+        }
+        
+        function closeActionHistory() {
+            document.getElementById('historyModal')?.classList.remove('active');
+        }
+        
+        async function loadActionHistory() {
+            try {
+                const res = await fetch(`${API}/control/history?limit=50`);
+                const data = await res.json();
+                
+                const list = document.getElementById('actionHistoryList');
+                const actions = data.actions || [];
+                
+                if (actions.length === 0) {
+                    list.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <div class="empty-state-text">No actions recorded yet</div>
+                        </div>
+                    `;
+                } else {
+                    const statusIcons = {
+                        pending: '⏳',
+                        approved: '✅',
+                        rejected: '❌',
+                        completed: '✓',
+                        failed: '💥',
+                        undone: '↩️'
+                    };
+                    
+                    const categoryIcons = {
+                        file: '📁',
+                        email: '📧',
+                        calendar: '📅',
+                        contact: '👤',
+                        document: '📄',
+                        system: '⚙️'
+                    };
+                    
+                    list.innerHTML = actions.map(a => `
+                        <div class="audit-log-item">
+                            <div class="audit-log-item-header">
+                                <span class="audit-log-item-icon">${categoryIcons[a.category] || '📋'}</span>
+                                <span class="audit-log-item-type">${a.action_type || 'Unknown'}</span>
+                                <span style="margin-left:auto;padding:2px 8px;border-radius:4px;font-size:0.7rem;
+                                    background:${a.status === 'completed' ? 'rgba(16,185,129,0.2)' : 
+                                                 a.status === 'failed' ? 'rgba(239,68,68,0.2)' : 
+                                                 'rgba(245,158,11,0.2)'};
+                                    color:${a.status === 'completed' ? 'var(--success)' : 
+                                            a.status === 'failed' ? 'var(--error)' : 'var(--warning)'};">
+                                    ${statusIcons[a.status] || '•'} ${a.status}
+                                </span>
+                                <span class="audit-log-item-time">${formatTime(a.created_at)}</span>
+                            </div>
+                            <div class="audit-log-item-details">
+                                ${a.preview?.title || JSON.stringify(a.payload || {}).slice(0, 100)}
+                            </div>
+                            ${a.is_undoable && a.status === 'completed' ? `
+                                <button class="toast-undo" style="margin-top:8px" onclick="undoAction('${a.id}')">
+                                    ↩️ Undo
+                                </button>
+                            ` : ''}
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                document.getElementById('actionHistoryList').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <div class="empty-state-text">Failed to load action history</div>
+                    </div>
+                `;
+            }
+        }
+
+        // ============================================
+        // Undo & Toast (Sprint 4)
+        // ============================================
+        
+        function showToast(message, actionId = null) {
+            let container = document.getElementById('toastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toastContainer';
+                container.className = 'toast-container';
+                document.body.appendChild(container);
+            }
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <span class="toast-icon">✓</span>
+                <span class="toast-content">${message}</span>
+                ${actionId ? `<button class="toast-undo" onclick="undoAction('${actionId}')">Undo</button>` : ''}
+                <button class="toast-dismiss" onclick="this.parentElement.remove()">✕</button>
+            `;
+            container.appendChild(toast);
+            
+            // Auto-remove after 8 seconds
+            setTimeout(() => toast.remove(), 8000);
+        }
+        
+        async function undoAction(actionId) {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/control/undo`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_id: actionId })
+                });
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.success) {
+                    addMessage(`↩️ Action undone successfully.`, 'assistant');
+                    // Refresh action history if open
+                    if (document.getElementById('historyModal')?.classList.contains('active')) {
+                        await loadActionHistory();
+                    }
+                } else {
+                    addMessage(`Couldn't undo: ${data.error || 'Unknown error'}`, 'system');
+                }
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to undo action.', 'system');
+            }
+        }
+
+        // ============================================
+        // Utility Functions (Sprint 4)
+        // ============================================
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+        
+        function formatTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return 'Just now';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+            return date.toLocaleDateString();
+        }
+        
+        function truncate(str, len) {
+            if (!str) return '';
+            return str.length > len ? str.slice(0, len) + '...' : str;
+        }
+
+        // ============================================
+        // Initialization
+        // ============================================
+        
+        document.getElementById('input').focus();
+        
+        // Check alerts and service status on load
+        setTimeout(() => {
+            fetchAlerts();
+            checkServiceStatus();
+        }, 1000);
+        
+        // Periodic refresh
+        setInterval(fetchAlerts, 60 * 1000);
+    </script>
+</body>
+</html>
         .input-container {
             display: flex;
             gap: 12px;
@@ -249,6 +2795,125 @@
             font-size: 0.85rem;
             color: #fbbf24;
         }
+        
+        /* Proactive Suggestions Panel */
+        .proactive-panel {
+            padding: 16px 24px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .proactive-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            color: #a5b4fc;
+        }
+        .proactive-header .brain-icon {
+            font-size: 1.1rem;
+        }
+        .proactive-cards {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .proactive-card {
+            min-width: 280px;
+            max-width: 320px;
+            padding: 14px 16px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .proactive-card:hover {
+            border-color: #8b5cf6;
+            transform: translateY(-2px);
+        }
+        .proactive-card-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .proactive-card-desc {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+        .proactive-card-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .proactive-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .proactive-btn-act {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+        }
+        .proactive-btn-dismiss {
+            background: transparent;
+            color: #64748b;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .proactive-btn-dismiss:hover {
+            color: #94a3b8;
+            border-color: rgba(255,255,255,0.2);
+        }
+        .priority-high { color: #f87171; }
+        .priority-medium { color: #fbbf24; }
+        .priority-low { color: #6ee7b7; }
+        
+        /* Workflow Progress */
+        .workflow-card {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+        .workflow-header {
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .workflow-steps {
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+        .workflow-step {
+            padding: 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .workflow-step.current {
+            color: #a5b4fc;
+            font-weight: 500;
+        }
+        .workflow-step.completed {
+            color: #6ee7b7;
+        }
     </style>
 </head>
 <body>
@@ -258,19 +2923,35 @@
         <span class="status" id="status">● Ready</span>
     </header>
 
+    <!-- Proactive Suggestions Panel (hidden by default) -->
+    <div class="proactive-panel" id="proactivePanel" style="display: none;">
+        <div class="proactive-header">
+            <span class="brain-icon">🧠</span>
+            <span>I noticed some things that might help you:</span>
+        </div>
+        <div class="proactive-cards" id="proactiveCards">
+            <!-- Cards inserted by JS -->
+        </div>
+    </div>
+
     <main class="chat-container" id="chat">
         <div class="welcome" id="welcome">
             <div class="welcome-orb"></div>
             <h1>Hey! I'm Apex</h1>
-            <p>Your personal AI assistant. Tell me what you need help with.</p>
+            <p>Your personal AI assistant. I'm scanning your system for ways to help...</p>
         </div>
     </main>
 
     <div class="suggestions" id="suggestions">
-        <span class="suggestion" onclick="sendMessage('My PC feels cluttered, can you help?')">🧹 My PC feels cluttered</span>
-        <span class="suggestion" onclick="sendMessage('Find duplicate files wasting space')">🔍 Find duplicates</span>
-        <span class="suggestion" onclick="sendMessage('Organize my Downloads folder')">📁 Organize Downloads</span>
-        <span class="suggestion" onclick="sendMessage('What can you help me with?')">❓ What can you do?</span>
+        <span class="suggestion" onclick="getBriefing()">📋 Morning briefing</span>
+        <span class="suggestion" onclick="getDevToolsStatus()">💻 Dev work status</span>
+        <span class="suggestion" onclick="sendMessage('My PC feels cluttered, can you help?')">🧹 PC feels cluttered</span>
+        <span class="suggestion" onclick="sendMessage('What can you do?')">💡 What can you do?</span>
+    </div>
+    
+    <div class="suggestions" id="connect-suggestions" style="padding-top: 0;">
+        <span class="suggestion" onclick="connectGitHub()">🐙 Connect GitHub</span>
+        <span class="suggestion" onclick="connectJira()">📊 Connect Jira</span>
     </div>
 
     <footer class="input-area">
@@ -286,6 +2967,97 @@
         const API = 'http://localhost:8000';
         let currentTaskId = null;
         let currentPlan = null;
+        let currentWorkflow = null;
+
+        // ============================================
+        // Proactive Suggestions
+        // ============================================
+        
+        async function runProactiveScan() {
+            try {
+                const res = await fetch(`${API}/suggestions/scan`, { method: 'POST' });
+                const data = await res.json();
+                displaySuggestions(data.new_suggestions || []);
+            } catch(e) {
+                console.log('Proactive scan not available');
+            }
+        }
+        
+        async function fetchSuggestions() {
+            try {
+                const res = await fetch(`${API}/suggestions`);
+                const data = await res.json();
+                displaySuggestions(data.suggestions || []);
+            } catch(e) {
+                console.log('Suggestions not available');
+            }
+        }
+        
+        function displaySuggestions(suggestions) {
+            const panel = document.getElementById('proactivePanel');
+            const container = document.getElementById('proactiveCards');
+            
+            if (!suggestions || suggestions.length === 0) {
+                panel.style.display = 'none';
+                return;
+            }
+            
+            const priorityIcons = {
+                urgent: '🔴',
+                high: '🟠',
+                medium: '🟡',
+                low: '🟢'
+            };
+            
+            const categoryIcons = {
+                cleanup: '🧹',
+                organization: '📁',
+                storage: '💾',
+                reminder: '⏰',
+                optimization: '⚡',
+                security: '🔒'
+            };
+            
+            container.innerHTML = suggestions.map(s => `
+                <div class="proactive-card" data-id="${s.id}">
+                    <div class="proactive-card-title">
+                        <span>${categoryIcons[s.category] || '💡'}</span>
+                        <span class="priority-${s.priority}">${s.title}</span>
+                    </div>
+                    <div class="proactive-card-desc">${s.description}</div>
+                    <div class="proactive-card-actions">
+                        <button class="proactive-btn proactive-btn-act" onclick="actOnSuggestion('${s.id}', '${s.action_prompt.replace(/'/g, "\\'")}')">
+                            Fix this
+                        </button>
+                        <button class="proactive-btn proactive-btn-dismiss" onclick="dismissSuggestion('${s.id}')">
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            
+            panel.style.display = 'block';
+        }
+        
+        async function actOnSuggestion(id, prompt) {
+            // Mark as acted on
+            await fetch(`${API}/suggestions/${id}/act`, { method: 'POST' });
+            
+            // Send the action prompt as a message
+            sendMessage(prompt);
+            
+            // Refresh suggestions
+            fetchSuggestions();
+        }
+        
+        async function dismissSuggestion(id) {
+            await fetch(`${API}/suggestions/${id}/dismiss`, { method: 'POST' });
+            fetchSuggestions();
+        }
+
+        // ============================================
+        // Chat & Messages
+        // ============================================
 
         function addMessage(text, type, extra = '') {
             document.getElementById('welcome')?.remove();
@@ -332,6 +3104,22 @@
                     return;
                 }
 
+                // Check for multi-step workflow
+                if (data.workflow && data.workflow_id) {
+                    currentWorkflow = data.workflow;
+                    currentTaskId = null;
+                    
+                    let extra = renderWorkflow(data.workflow, data.workflow_summary);
+                    if (data.plan && data.plan.actions?.length > 0) {
+                        currentPlan = data.plan;
+                        currentTaskId = data.workflow_id;  // Use workflow_id for step approval
+                        extra += renderPlan(data.plan, true);  // true = is workflow step
+                    }
+                    addMessage(data.response, 'assistant', extra);
+                    return;
+                }
+
+                // Single action plan
                 if (data.plan && data.plan.actions?.length > 0) {
                     currentTaskId = data.task_id;
                     currentPlan = data.plan;
@@ -346,8 +3134,46 @@
             }
         }
 
-        function renderPlan(plan) {
-            const icons = { move: '📁', delete: '🗑️', create_folder: '📂', rename: '✏️' };
+        function renderWorkflow(workflow, summary) {
+            if (!workflow) return '';
+            
+            const statusIcons = {
+                'pending': '⏳',
+                'awaiting_approval': '🔔',
+                'approved': '✅',
+                'executing': '⚙️',
+                'completed': '✓',
+                'skipped': '⏭️',
+                'failed': '❌'
+            };
+            
+            const stepsHtml = workflow.steps.map((step, i) => {
+                const icon = statusIcons[step.status] || '•';
+                const isCurrent = i === workflow.current_step && !workflow.completed;
+                const className = isCurrent ? 'workflow-step current' : 
+                                  step.status === 'completed' ? 'workflow-step completed' : 'workflow-step';
+                return `<div class="${className}">
+                    <span>${icon}</span>
+                    <span>Step ${i + 1}: ${step.description}${isCurrent ? ' ← current' : ''}</span>
+                </div>`;
+            }).join('');
+            
+            return `
+                <div class="workflow-card">
+                    <div class="workflow-header">
+                        <span>🔄</span>
+                        <span>${workflow.name}</span>
+                        <span style="margin-left:auto;font-size:0.8rem;color:#6ee7b7;">
+                            ${workflow.current_step + 1}/${workflow.total_steps} steps
+                        </span>
+                    </div>
+                    <div class="workflow-steps">${stepsHtml}</div>
+                </div>
+            `;
+        }
+
+        function renderPlan(plan, isWorkflowStep = false) {
+            const icons = { move: '📁', delete: '🗑️', create_folder: '📂', rename: '✏️', copy: '📧' };
             
             let actionsHtml = '';
             if (plan.actions && plan.actions.length > 0) {
@@ -379,8 +3205,12 @@
                         <span><span class="stat-value">${plan.stats?.space || '0 MB'}</span> to free</span>
                     </div>
                     <div class="plan-footer">
-                        <button class="btn btn-reject" onclick="rejectPlan()">Cancel</button>
-                        <button class="btn btn-approve" onclick="approvePlan()">✓ Do it</button>
+                        ${isWorkflowStep 
+                            ? `<button class="btn btn-reject" onclick="skipWorkflowStep()">Skip</button>
+                               <button class="btn btn-approve" onclick="approveWorkflowStep()">✓ Continue</button>`
+                            : `<button class="btn btn-reject" onclick="rejectPlan()">Cancel</button>
+                               <button class="btn btn-approve" onclick="approvePlan()">✓ Do it</button>`
+                        }
                     </div>
                 </div>
             `;
@@ -420,8 +3250,315 @@
             currentPlan = null;
         }
 
+        // ============================================
+        // Workflow Functions
+        // ============================================
+        
+        async function approveWorkflowStep() {
+            if (!currentWorkflow) return;
+            
+            const checkboxes = document.querySelectorAll('.plan-action input:checked');
+            const indices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.idx));
+            
+            setThinking(true);
+            try {
+                // Execute current step
+                const res = await fetch(`${API}/workflow/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        workflow_id: currentWorkflow.id, 
+                        approved_indices: indices 
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.error) {
+                    setThinking(false);
+                    addMessage(`Error: ${data.error}`, 'system');
+                    return;
+                }
+                
+                // Show step result
+                const stepResult = data.executed_step;
+                if (stepResult.status === 'completed') {
+                    addMessage(`✓ Step completed!`, 'assistant');
+                } else if (stepResult.error) {
+                    addMessage(`Step failed: ${stepResult.error}`, 'system');
+                }
+                
+                // Check if workflow is done
+                if (data.completed) {
+                    setThinking(false);
+                    addMessage(`🎉 Workflow complete! All steps finished.`, 'assistant');
+                    currentWorkflow = null;
+                    return;
+                }
+                
+                // If there's a next step, analyze it
+                if (data.has_next) {
+                    currentWorkflow = data.workflow;
+                    
+                    // Analyze next step
+                    const analyzeRes = await fetch(`${API}/workflow/analyze`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ workflow_id: currentWorkflow.id })
+                    });
+                    const analyzeData = await analyzeRes.json();
+                    setThinking(false);
+                    
+                    // Show next step
+                    let extra = renderWorkflow(analyzeData.workflow, analyzeData.summary);
+                    if (analyzeData.current_step?.plan) {
+                        currentPlan = analyzeData.current_step.plan;
+                        extra += renderPlan(analyzeData.current_step.plan, true);
+                    }
+                    addMessage(`Next step:`, 'assistant', extra);
+                } else {
+                    setThinking(false);
+                }
+                
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to execute workflow step. Try again?', 'system');
+            }
+        }
+        
+        async function skipWorkflowStep() {
+            if (!currentWorkflow) return;
+            
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/workflow/skip`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workflow_id: currentWorkflow.id })
+                });
+                const data = await res.json();
+                setThinking(false);
+                
+                addMessage(`Skipped step.`, 'assistant');
+                
+                if (data.completed) {
+                    addMessage(`Workflow finished (some steps skipped).`, 'assistant');
+                    currentWorkflow = null;
+                    return;
+                }
+                
+                if (data.has_next) {
+                    currentWorkflow = data.workflow;
+                    // Would need to analyze next step here
+                    addMessage(`Ready for next step. Say "continue" to proceed.`, 'assistant');
+                }
+                
+            } catch (e) {
+                setThinking(false);
+                addMessage('Failed to skip step.', 'system');
+            }
+        }
+
+        // ============================================
+        // Initialization
+        // ============================================
+        
         // Focus input on load
         document.getElementById('input').focus();
+        
+        // Run proactive scan on load (after a short delay for better UX)
+        setTimeout(() => {
+            runProactiveScan();
+            fetchIntelligenceAlerts(); // Also fetch Phase 4 alerts
+        }, 1500);
+        
+        // Periodic refresh of suggestions (every 5 minutes)
+        setInterval(fetchSuggestions, 5 * 60 * 1000);
+        setInterval(fetchIntelligenceAlerts, 60 * 1000); // Check alerts every minute
+        
+        // ============================================
+        // Intelligence Layer (Phase 4-5)
+        // ============================================
+        
+        async function fetchIntelligenceAlerts() {
+            try {
+                const res = await fetch(`${API}/intelligence/alerts`);
+                const data = await res.json();
+                displayIntelligenceAlerts(data.alerts || []);
+            } catch(e) {
+                console.log('Intelligence alerts not available');
+            }
+        }
+        
+        function displayIntelligenceAlerts(alerts) {
+            const panel = document.getElementById('proactivePanel');
+            const container = document.getElementById('proactiveCards');
+            
+            if (!alerts || alerts.length === 0) return;
+            
+            const priorityIcons = {
+                critical: '🔴',
+                high: '🟠',
+                medium: '🟡',
+                low: '🟢'
+            };
+            
+            const typeIcons = {
+                important_email: '📧',
+                vip_email: '⭐',
+                meeting_soon: '📅',
+                deadline_approaching: '⏰',
+                task_overdue: '❗',
+                review_requested: '👀',
+                issue_assigned: '🎯',
+                anomaly: '⚠️'
+            };
+            
+            const alertCards = alerts.map(a => `
+                <div class="proactive-card" data-id="${a.id}">
+                    <div class="proactive-card-title">
+                        <span>${typeIcons[a.alert_type] || '💡'}</span>
+                        <span class="priority-${a.priority}">${a.title}</span>
+                    </div>
+                    <div class="proactive-card-desc">${a.message}</div>
+                    <div style="font-size: 0.7rem; color: #64748b; margin-top: 6px;">
+                        ${a.source} ${a.timestamp ? '• ' + new Date(a.timestamp).toLocaleTimeString() : ''}
+                    </div>
+                    <div class="proactive-card-actions">
+                        <button class="proactive-btn proactive-btn-act" onclick="acknowledgeAlert('${a.id}')">
+                            Got it
+                        </button>
+                        <button class="proactive-btn proactive-btn-dismiss" onclick="dismissIntelAlert('${a.id}')">
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Append to existing cards or replace
+            container.innerHTML += alertCards;
+            panel.style.display = 'block';
+        }
+        
+        async function acknowledgeAlert(id) {
+            await fetch(`${API}/intelligence/alerts/${id}/acknowledge`, { method: 'POST' });
+            // Remove card from UI
+            document.querySelector(`.proactive-card[data-id="${id}"]`)?.remove();
+            fetchIntelligenceAlerts();
+        }
+        
+        async function dismissIntelAlert(id) {
+            await fetch(`${API}/intelligence/alerts/${id}/dismiss`, { method: 'POST' });
+            document.querySelector(`.proactive-card[data-id="${id}"]`)?.remove();
+            fetchIntelligenceAlerts();
+        }
+        
+        async function getBriefing() {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/intelligence/briefing`);
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.error) {
+                    addMessage(`Couldn't generate briefing: ${data.error}`, 'system');
+                    return;
+                }
+                
+                // Format briefing nicely
+                const b = data.briefing;
+                let msg = `📋 **Your Morning Briefing**\n\n`;
+                if (b.meetings?.length) {
+                    msg += `**Today's Meetings:** ${b.meetings.length}\n`;
+                    b.meetings.slice(0, 3).forEach(m => {
+                        msg += `• ${m.title || m.summary} at ${m.start || 'TBD'}\n`;
+                    });
+                    msg += '\n';
+                }
+                if (b.important_emails?.length) {
+                    msg += `**Important Emails:** ${b.important_emails.length}\n`;
+                }
+                if (b.action_items?.length) {
+                    msg += `**Action Items:** ${b.action_items.length}\n`;
+                }
+                
+                addMessage(msg, 'assistant');
+            } catch(e) {
+                setThinking(false);
+                addMessage('Error fetching briefing.', 'system');
+            }
+        }
+        
+        async function getDevToolsStatus() {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/intelligence/devtools`);
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.error) {
+                    addMessage(`DevTools: ${data.error}`, 'system');
+                    return;
+                }
+                
+                const s = data.summary;
+                let msg = `**Dev Work Summary**\n\n`;
+                msg += `Providers: ${data.providers.join(', ')}\n\n`;
+                
+                if (s.in_progress?.length) {
+                    msg += `**In Progress:** ${s.in_progress.length} items\n`;
+                    s.in_progress.slice(0, 3).forEach(i => {
+                        msg += `• ${i.key || i.title}: ${i.title || i.summary}\n`;
+                    });
+                }
+                if (s.review_requests?.length) {
+                    msg += `\n**Review Requests:** ${s.review_requests.length} PRs waiting\n`;
+                }
+                if (s.notifications?.length) {
+                    msg += `\n**Notifications:** ${s.notifications.length} unread\n`;
+                }
+                
+                addMessage(msg, 'assistant');
+            } catch(e) {
+                setThinking(false);
+                addMessage('Error fetching DevTools status.', 'system');
+            }
+        }
+        
+        async function connectGitHub() {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/intelligence/devtools/connect/github`, { method: 'POST' });
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.success) {
+                    addMessage(`✅ Connected to GitHub as ${data.user}`, 'assistant');
+                } else {
+                    addMessage(`❌ ${data.error}`, 'system');
+                }
+            } catch(e) {
+                setThinking(false);
+                addMessage('Failed to connect GitHub.', 'system');
+            }
+        }
+        
+        async function connectJira() {
+            setThinking(true);
+            try {
+                const res = await fetch(`${API}/intelligence/devtools/connect/jira`, { method: 'POST' });
+                const data = await res.json();
+                setThinking(false);
+                
+                if (data.success) {
+                    addMessage(`✅ Connected to Jira as ${data.user}`, 'assistant');
+                } else {
+                    addMessage(`❌ ${data.error}`, 'system');
+                }
+            } catch(e) {
+                setThinking(false);
+                addMessage('Failed to connect Jira.', 'system');
+            }
+        }
     </script>
 </body>
 </html>

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Categories=Utility;
+Comment=Your Personal AI Assistant
+Exec=apex
+StartupWMClass=apex
+Icon=apex
+Name=Apex
+Terminal=false
+Type=Application
