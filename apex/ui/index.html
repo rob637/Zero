@@ -1609,6 +1609,7 @@
         let currentTaskId = null;
         let currentPlan = null;
         let currentWorkflow = null;
+        let lastPlanMessage = null;
         let alertsPanelOpen = false;
         let alerts = [];
         let currentEditContext = null;  // For inline editing
@@ -1696,10 +1697,11 @@
 
                 // Check for plan from Apex engine
                 if (data.plan && data.plan.length > 0) {
+                    lastPlanMessage = message;  // Store for execute
                     const planHtml = renderApexPlan(data.plan);
                     const executeBtn = `
                         <div style="margin-top: 12px; display: flex; gap: 10px;">
-                            <button class="btn btn-approve btn-sm" onclick="executePlan('${message.replace(/'/g, "\\'")}')">
+                            <button class="btn btn-approve btn-sm" onclick="executePlan()">
                                 ✓ Execute Plan
                             </button>
                             <button class="btn btn-reject btn-sm" onclick="this.parentElement.innerHTML='<span style=color:var(--text-muted)>Cancelled</span>'">
@@ -1797,7 +1799,12 @@
             `;
         }
         
-        async function executePlan(originalMessage) {
+        async function executePlan() {
+            const originalMessage = lastPlanMessage;
+            if (!originalMessage) {
+                addMessage('No plan to execute.', 'system');
+                return;
+            }
             setThinking(true);
             addTypingIndicator();
             
