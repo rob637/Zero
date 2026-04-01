@@ -434,13 +434,35 @@ class ComputePrimitive(Primitive):
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
             if operation == "formula":
-                name = params.get("name", "")
+                name = params.get("name", "").lower().replace(" ", "_").replace("-", "_")
                 inputs = params.get("inputs", {})
                 
-                if name == "amortization":
-                    principal = float(inputs.get("principal", 0))
-                    rate = float(inputs.get("rate", 0))  # Annual percentage
-                    term = int(inputs.get("term_months") or inputs.get("term", 0) * 12)
+                # Fuzzy match formula names — LLMs generate many variants
+                amortization_aliases = {
+                    "amortization", "amortization_schedule", "loan_amortization",
+                    "mortgage_amortization", "calculate_amortization", "monthly_payment",
+                    "loan_payment", "calculate_monthly_payment", "payment_schedule",
+                    "loan_schedule", "mortgage_payment", "mortgage_schedule",
+                }
+                compound_aliases = {
+                    "compound_interest", "compound", "interest",
+                    "investment_growth", "future_value", "fv",
+                }
+                
+                if name in amortization_aliases or "amortiz" in name or "loan" in name or "mortgage" in name or "monthly_pay" in name:
+                    # Flexible input names — LLMs use many variants
+                    principal = float(inputs.get("principal") or inputs.get("loan_amount") or inputs.get("amount") or inputs.get("balance") or 0)
+                    rate = float(inputs.get("rate") or inputs.get("interest_rate") or inputs.get("annual_rate") or inputs.get("apr") or 0)
+                    
+                    # Term: could be months or years
+                    term_months = inputs.get("term_months") or inputs.get("months")
+                    term_years = inputs.get("term") or inputs.get("term_years") or inputs.get("years") or inputs.get("loan_term")
+                    if term_months:
+                        term = int(term_months)
+                    elif term_years:
+                        term = int(float(term_years) * 12)
+                    else:
+                        term = 0
                     
                     if principal <= 0 or rate <= 0 or term <= 0:
                         return StepResult(False, error=f"Invalid inputs: principal={principal}, rate={rate}, term={term}")
@@ -473,7 +495,7 @@ class ComputePrimitive(Primitive):
                         "schedule": schedule,
                     })
                 
-                elif name == "compound_interest":
+                elif name in compound_aliases or "compound" in name or "interest" in name and "amortiz" not in name:
                     principal = float(inputs.get("principal", 0))
                     rate = float(inputs.get("rate", 0)) / 100
                     years = float(inputs.get("years", 1))
@@ -487,7 +509,7 @@ class ComputePrimitive(Primitive):
                     })
                 
                 else:
-                    return StepResult(False, error=f"Unknown formula: {name}")
+                    return StepResult(False, error=f"Unknown formula: {name}. Available: amortization, compound_interest")
             
             elif operation == "calculate":
                 expr = params.get("expression", "")
@@ -867,20 +889,61 @@ class Apex:
                 return resp.json()["choices"][0]["message"]["content"]
     
     def _resolve_params(self, params: Dict, results: Dict[int, Any]) -> Dict:
-        """Resolve {{step_N}} references in parameters."""
+        """Resolve {{step_N}} references in parameters.
+        
+        Handles cases where:
+        - Referenced data is a string → direct substitution
+        - Referenced data is a list of file objects → extract first path
+        - Referenced data is a dict → serialize to JSON string for LLM consumption
+        - Referenced data is any other type → str() conversion
+        """
         resolved = {}
         for k, v in params.items():
             if isinstance(v, str):
                 for match in re.findall(r'\{\{step_(\d+)\}\}', v):
                     step_id = int(match)
                     if step_id in results:
-                        if v == f"{{{{step_{match}}}}}":
-                            v = results[step_id]
+                        ref_data = results[step_id]
+                        placeholder = f"{{{{step_{match}}}}}"
+                        
+                        if v == placeholder:
+                            # Entire value is a reference — smart resolve based on param name and data type
+                            if isinstance(ref_data, list) and ref_data:
+                                if k == "path" and isinstance(ref_data[0], dict) and "path" in ref_data[0]:
+                                    # FILE.search returns list of {path, name, ...} — extract first file path
+                                    files_only = [f for f in ref_data if not f.get("is_dir", False)]
+                                    v = files_only[0]["path"] if files_only else ref_data[0]["path"]
+                                elif k in ("content", "text", "body", "data"):
+                                    # Serialize for LLM consumption
+                                    v = json.dumps(ref_data, indent=2)
+                                else:
+                                    v = ref_data  # Keep as-is (list)
+                            elif isinstance(ref_data, dict):
+                                if k in ("content", "text", "body"):
+                                    # Extract text content from dict if available
+                                    v = ref_data.get("content", ref_data.get("raw", ref_data.get("text", json.dumps(ref_data, indent=2))))
+                                elif k == "path":
+                                    v = ref_data.get("path", str(ref_data))
+                                elif k == "data":
+                                    v = ref_data  # Keep as dict
+                                else:
+                                    v = ref_data
+                            elif isinstance(ref_data, str):
+                                v = ref_data
+                            else:
+                                v = ref_data
                         else:
-                            v = v.replace(f"{{{{step_{match}}}}}", str(results[step_id]))
+                            # Partial substitution — always convert to string
+                            v = v.replace(placeholder, str(ref_data) if not isinstance(ref_data, str) else ref_data)
                 resolved[k] = v
             elif isinstance(v, dict):
                 resolved[k] = self._resolve_params(v, results)
+            elif isinstance(v, list):
+                # Resolve references inside list items
+                resolved[k] = [
+                    self._resolve_params(item, results) if isinstance(item, dict) else item
+                    for item in v
+                ]
             else:
                 resolved[k] = v
         return resolved
@@ -919,10 +982,14 @@ class Apex:
         
         for step in plan:
             # Check dependencies
+            dep_failed = False
             for dep_id in step.depends_on:
                 if dep_id not in results:
-                    step.result = StepResult(False, error=f"Dependency step_{dep_id} not available")
-                    continue
+                    step.result = StepResult(False, error=f"Dependency step_{dep_id} failed or not available")
+                    dep_failed = True
+                    break
+            if dep_failed:
+                continue
             
             # Resolve parameters
             resolved_params = self._resolve_params(step.params, results)
@@ -934,7 +1001,10 @@ class Apex:
                 continue
             
             # Execute
-            step.result = await primitive.execute(step.operation, resolved_params)
+            try:
+                step.result = await primitive.execute(step.operation, resolved_params)
+            except Exception as e:
+                step.result = StepResult(False, error=str(e))
             
             if step.result.success:
                 results[step.id] = step.result.data
