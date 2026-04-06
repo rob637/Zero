@@ -3,14 +3,10 @@ title Telic - First Time Setup
 color 0B
 
 echo.
-echo  _____ _____ _     ___ ____
-echo ^|_   _^| ____^| ^|   ^|_ _^/ ___|
-echo   ^| ^| ^|  _^| ^| ^|    ^| ^| ^|
-echo   ^| ^| ^| ^|___^| ^|___ ^| ^| ^|___
-echo   ^|_^| ^|_____^|_____^|___\____^|
-echo.
-echo First-Time Setup
-echo =================
+echo  =============================
+echo       TELIC - Setup
+echo    The AI Operating System
+echo  =============================
 echo.
 
 :: Get the directory where this script is located
