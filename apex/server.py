@@ -145,7 +145,11 @@ class RejectRequest(BaseModel):
 
 
 # Chat system prompt for conversational AI
-CHAT_SYSTEM_PROMPT = """You are Telic, a privacy-first AI operating system that lives on the user's PC.
+def get_chat_system_prompt():
+    from datetime import datetime
+    today = datetime.now().strftime("%A, %B %d, %Y")
+    return f"""You are Telic, a privacy-first AI operating system that lives on the user's PC.
+Today's date is {today}.
 
 Your capabilities (powered by universal primitives):
 1. **FILE** - Search, read, write, list, get info on any file on the PC
@@ -214,7 +218,7 @@ async def chat(req: ChatRequest):
         
         # Step 1: Ask LLM to understand intent
         result = await llm.complete_json(
-            system=CHAT_SYSTEM_PROMPT,
+            system=get_chat_system_prompt(),
             user=req.message,
             triggering_request=f"User chat: {req.message[:100]}"
         )
@@ -245,6 +249,7 @@ async def chat(req: ChatRequest):
                             "description": step.description,
                             "primitive": step.primitive,
                             "operation": step.operation,
+                            "params": step.params,
                             "status": "pending",
                         })
                 

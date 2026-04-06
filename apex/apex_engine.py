@@ -3560,7 +3560,11 @@ class TaskPlanner:
         
         capabilities = self._get_capabilities_prompt()
         
+        from datetime import datetime
+        today = datetime.now().strftime("%A, %B %d, %Y")
+        
         prompt = f"""You are a task planner. Decompose this request into primitive operations.
+Today's date is {today}. Use this for any date-related parameters.
 
 {capabilities}
 

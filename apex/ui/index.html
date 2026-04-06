@@ -1787,6 +1787,14 @@
                                 <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px">
                                     ${step.primitive}.${step.operation}
                                 </div>
+                                ${step.params && Object.keys(step.params).length > 0 ? `
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                                    ${Object.entries(step.params).map(([k, v]) => {
+                                        const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                                        const display = val.length > 80 ? val.slice(0, 80) + '...' : val;
+                                        return `<span style="color: var(--accent-secondary)">${k}</span>: ${display.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}`;
+                                    }).join(' &nbsp;|&nbsp; ')}
+                                </div>` : ''}
                             </div>
                             <span class="step-status" style="font-size: 0.75rem; color: var(--warning); white-space: nowrap">⏳ pending</span>
                         </div>
