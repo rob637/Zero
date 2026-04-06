@@ -3519,10 +3519,13 @@ class TaskPlanner:
 {capabilities}
 
 PRIMITIVE SELECTION GUIDE:
-- Appointments, meetings, schedules, events → CALENDAR.search or CALENDAR.list (NOT EMAIL or CONTACTS)
+- Adding/creating events, appointments, meetings to a calendar → CALENDAR.create (NOT FILE.write or DOCUMENT.create)
+  CALENDAR.create params: {{"title": "...", "start": "ISO datetime", "end": "ISO datetime", "description": "...", "location": "..."}}
+- Finding/looking up appointments, meetings, schedules → CALENDAR.search or CALENDAR.list (NOT EMAIL or CONTACTS)
 - Finding people's info → CONTACTS.search
 - Emails, messages, correspondence → EMAIL.search
 - Files on disk → FILE.search
+- NEVER use FILE.search + FILE.write to manage calendar events. Always use the CALENDAR primitive.
 - When results from step N are needed in step N+1, you MUST wire them: "wires": {{"data": "step_N"}}
 
 RULES:
