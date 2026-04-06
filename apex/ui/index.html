@@ -32,7 +32,7 @@
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--bg-primary);
-            min-height: 100vh;
+            height: 100vh;
             color: var(--text-primary);
             display: flex;
             overflow: hidden;
@@ -191,6 +191,8 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+            min-height: 0;
+            overflow: hidden;
         }
         
         /* Top Bar */
@@ -1877,11 +1879,56 @@
                     });
                 }
                 
-                // Add summary message
-                const summary = data.success 
-                    ? '✅ All steps completed successfully!' 
-                    : '⚠️ Some steps had issues — see details in the plan above.';
-                addMessage(summary, 'assistant');
+                // Format and display the final answer
+                let answerHtml = '';
+                if (data.final_result !== null && data.final_result !== undefined) {
+                    const fr = data.final_result;
+                    if (typeof fr === 'number') {
+                        answerHtml = `<strong>${fr}</strong>`;
+                    } else if (typeof fr === 'string') {
+                        const escaped = fr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                        answerHtml = escaped;
+                    } else if (Array.isArray(fr)) {
+                        const count = fr.length;
+                        let items = fr.slice(0, 15).map(item => {
+                            if (typeof item === 'object' && item !== null) {
+                                const label = item.name || item.path || item.title || JSON.stringify(item);
+                                return label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                            }
+                            return String(item).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                        });
+                        answerHtml = `Found <strong>${count}</strong> item${count !== 1 ? 's' : ''}:`;
+                        answerHtml += '<ul style="margin: 6px 0 0 0; padding-left: 20px; list-style: disc;">';
+                        items.forEach(i => { answerHtml += `<li style="margin: 2px 0;">${i}</li>`; });
+                        if (count > 15) answerHtml += `<li style="margin: 2px 0; color: var(--text-muted);">… and ${count - 15} more</li>`;
+                        answerHtml += '</ul>';
+                    } else if (typeof fr === 'object') {
+                        // Special formatting for known shapes
+                        if (fr.monthly_payment !== undefined) {
+                            answerHtml = `<strong>Monthly Payment:</strong> $${Number(fr.monthly_payment).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}<br>`;
+                            if (fr.total_interest !== undefined) answerHtml += `<strong>Total Interest:</strong> $${Number(fr.total_interest).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}<br>`;
+                            if (fr.total_paid !== undefined) answerHtml += `<strong>Total Paid:</strong> $${Number(fr.total_paid).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+                        } else {
+                            // Generic object — show key: value pairs
+                            const entries = Object.entries(fr).slice(0, 20);
+                            answerHtml = '<div style="display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;">';
+                            entries.forEach(([k, v]) => {
+                                const key = k.replace(/_/g, ' ').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                let val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                                val = val.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                if (val.length > 200) val = val.slice(0, 200) + '…';
+                                answerHtml += `<span style="color: var(--text-muted); text-transform: capitalize;">${key}:</span><span>${val}</span>`;
+                            });
+                            answerHtml += '</div>';
+                        }
+                    }
+                }
+
+                if (answerHtml) {
+                    addMessage(answerHtml, 'assistant');
+                } else if (!data.success) {
+                    addMessage('⚠️ Some steps had issues — see details in the plan above.', 'assistant');
+                }
                 
             } catch (e) {
                 console.error('[Telic] Execute error:', e);

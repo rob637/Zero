@@ -2497,6 +2497,641 @@ class TestSprint5Integration:
 
 
 # =============================================================================
+# ORCHESTRATION TESTS
+# =============================================================================
+
+class TestOrchestrationPlanStep:
+    """Test extended PlanStep with orchestration fields."""
+
+    def test_action_step_defaults(self):
+        from apex_engine import PlanStep
+        step = PlanStep(id=0, description="test", primitive="FILE", operation="list", params={})
+        assert step.step_type == "action"
+        assert step.on_fail == "stop"
+        assert step.max_retries == 3
+        assert step.condition is None
+        assert step.then_steps is None
+        assert step.else_steps is None
+        assert step.loop_over is None
+        assert step.parallel_steps is None
+        assert step.sub_request is None
+
+    def test_orchestration_step_to_dict(self):
+        from apex_engine import PlanStep
+        step = PlanStep(
+            id=0, description="branch", primitive="", operation="",
+            params={}, step_type="condition", condition="step_0.count > 5",
+            on_fail="continue",
+        )
+        step.then_steps = [PlanStep(id=1, description="yes", primitive="FILE", operation="list", params={})]
+        step.else_steps = [PlanStep(id=2, description="no", primitive="NOTIFY", operation="alert", params={})]
+        d = step.to_dict()
+        assert d["step_type"] == "condition"
+        assert d["condition"] == "step_0.count > 5"
+        assert d["on_fail"] == "continue"
+        assert len(d["then_steps"]) == 1
+        assert len(d["else_steps"]) == 1
+        assert d["then_steps"][0]["primitive"] == "FILE"
+
+    def test_loop_step_to_dict(self):
+        from apex_engine import PlanStep
+        step = PlanStep(
+            id=0, description="iterate", primitive="", operation="",
+            params={}, step_type="loop", loop_over="step_0.items", loop_var="file",
+        )
+        step.loop_body = [PlanStep(id=1, description="process", primitive="FILE", operation="read", params={"path": "{{file}}"})]
+        d = step.to_dict()
+        assert d["step_type"] == "loop"
+        assert d["loop_over"] == "step_0.items"
+        assert d["loop_var"] == "file"
+        assert len(d["loop_body"]) == 1
+
+    def test_parallel_step_to_dict(self):
+        from apex_engine import PlanStep
+        step = PlanStep(
+            id=0, description="concurrent", primitive="", operation="",
+            params={}, step_type="parallel",
+        )
+        step.parallel_steps = [
+            PlanStep(id=1, description="a", primitive="FILE", operation="list", params={}),
+            PlanStep(id=2, description="b", primitive="WEB", operation="fetch", params={}),
+        ]
+        d = step.to_dict()
+        assert d["step_type"] == "parallel"
+        assert len(d["parallel_steps"]) == 2
+
+    def test_action_step_omits_orchestration_fields(self):
+        from apex_engine import PlanStep
+        step = PlanStep(id=0, description="simple", primitive="FILE", operation="list", params={})
+        d = step.to_dict()
+        assert "step_type" not in d  # action is default, omitted
+        assert "condition" not in d
+        assert "loop_over" not in d
+        assert "parallel_steps" not in d
+        assert "on_fail" not in d  # stop is default, omitted
+
+
+class TestOrchestratorParallel:
+    """Test parallel execution of steps."""
+
+    @pytest.fixture
+    def primitives(self):
+        from apex_engine import FilePrimitive, KnowledgePrimitive, TaskPrimitive
+        return {
+            "FILE": FilePrimitive(),
+            "KNOWLEDGE": KnowledgePrimitive(),
+            "TASK": TaskPrimitive(),
+        }
+
+    @pytest.fixture
+    def orchestrator(self, primitives):
+        from apex_engine import Orchestrator
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+        return Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal)
+
+    @pytest.mark.asyncio
+    async def test_parallel_steps_execute_concurrently(self, orchestrator):
+        from apex_engine import PlanStep
+        # Use TASK primitive (no path restrictions) to test parallelism
+        step = PlanStep(
+            id=0, description="parallel tasks", primitive="", operation="",
+            params={}, step_type="parallel",
+        )
+        step.parallel_steps = [
+            PlanStep(id=1, description="task a", primitive="TASK", operation="create", params={"title": "task_a"}),
+            PlanStep(id=2, description="task b", primitive="TASK", operation="create", params={"title": "task_b"}),
+        ]
+
+        results = await orchestrator.execute_plan([step])
+        assert step.result is not None
+        assert step.result.success
+        assert len(results[0]) == 2  # Two sub-results
+        assert results[0][0]["title"] == "task_a"
+        assert results[0][1]["title"] == "task_b"
+
+    @pytest.mark.asyncio
+    async def test_parallel_empty_steps(self, orchestrator):
+        from apex_engine import PlanStep
+        step = PlanStep(
+            id=0, description="empty parallel", primitive="", operation="",
+            params={}, step_type="parallel",
+        )
+        step.parallel_steps = []
+        results = await orchestrator.execute_plan([step])
+        assert step.result.success
+        assert results[0] == []
+
+    @pytest.mark.asyncio
+    async def test_parallel_with_failure_stops(self, orchestrator):
+        from apex_engine import PlanStep
+        step = PlanStep(
+            id=0, description="parallel with fail", primitive="", operation="",
+            params={}, step_type="parallel",
+        )
+        step.parallel_steps = [
+            PlanStep(id=1, description="ok", primitive="FILE", operation="list", params={"directory": "/tmp"}),
+            PlanStep(id=2, description="bad", primitive="FILE", operation="list", params={"directory": "/nonexistent_dir_xyz"}),
+        ]
+        results = await orchestrator.execute_plan([step])
+        # Overall parallel step should fail (one sub-step failed)
+        assert not step.result.success
+
+    @pytest.mark.asyncio
+    async def test_parallel_with_continue_on_fail(self, orchestrator):
+        from apex_engine import PlanStep
+        step = PlanStep(
+            id=0, description="parallel continue", primitive="", operation="",
+            params={}, step_type="parallel", on_fail="continue",
+        )
+        step.parallel_steps = [
+            PlanStep(id=1, description="ok", primitive="FILE", operation="list", params={"directory": "/tmp"}),
+            PlanStep(id=2, description="bad", primitive="FILE", operation="list", params={"directory": "/nonexistent_dir_xyz"}),
+        ]
+        results = await orchestrator.execute_plan([step])
+        assert step.result.success  # on_fail=continue means overall succeeds
+
+
+class TestOrchestratorCondition:
+    """Test conditional branching."""
+
+    @pytest.fixture
+    def primitives(self):
+        from apex_engine import FilePrimitive, KnowledgePrimitive, TaskPrimitive
+        return {
+            "FILE": FilePrimitive(),
+            "KNOWLEDGE": KnowledgePrimitive(),
+            "TASK": TaskPrimitive(),
+        }
+
+    @pytest.fixture
+    def orchestrator(self, primitives):
+        from apex_engine import Orchestrator
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+        return Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal)
+
+    @pytest.mark.asyncio
+    async def test_condition_true_branch(self, orchestrator):
+        from apex_engine import PlanStep
+        # Pre-populate results so condition can reference step_0
+        results = {0: {"count": 10}}
+        step = PlanStep(
+            id=1, description="check count", primitive="", operation="",
+            params={}, step_type="condition", condition="step_0.count > 5",
+        )
+        step.then_steps = [PlanStep(id=2, description="yes", primitive="TASK", operation="create", params={"title": "high count"})]
+        step.else_steps = [PlanStep(id=3, description="no", primitive="TASK", operation="create", params={"title": "low count"})]
+
+        await orchestrator.execute_plan([step], results=results)
+        assert step.result.success
+        assert step.result.data["condition_met"] is True
+        assert step.then_steps[0].result.success
+
+    @pytest.mark.asyncio
+    async def test_condition_false_branch(self, orchestrator):
+        from apex_engine import PlanStep
+        results = {0: {"count": 2}}
+        step = PlanStep(
+            id=1, description="check count", primitive="", operation="",
+            params={}, step_type="condition", condition="step_0.count > 5",
+        )
+        step.then_steps = [PlanStep(id=2, description="yes", primitive="TASK", operation="create", params={"title": "high"})]
+        step.else_steps = [PlanStep(id=3, description="no", primitive="TASK", operation="create", params={"title": "low"})]
+
+        await orchestrator.execute_plan([step], results=results)
+        assert step.result.data["condition_met"] is False
+        assert step.else_steps[0].result.success
+
+    @pytest.mark.asyncio
+    async def test_condition_no_else_branch(self, orchestrator):
+        from apex_engine import PlanStep
+        results = {0: {"count": 2}}
+        step = PlanStep(
+            id=1, description="check", primitive="", operation="",
+            params={}, step_type="condition", condition="step_0.count > 5",
+        )
+        step.then_steps = [PlanStep(id=2, description="yes", primitive="TASK", operation="create", params={"title": "high"})]
+        # No else_steps
+
+        await orchestrator.execute_plan([step], results=results)
+        assert step.result.data["condition_met"] is False
+        assert step.result.data["branch_results"] == []
+
+    @pytest.mark.asyncio
+    async def test_condition_with_string_check(self, orchestrator):
+        from apex_engine import PlanStep
+        results = {0: {"status": "active"}}
+        step = PlanStep(
+            id=1, description="check status", primitive="", operation="",
+            params={}, step_type="condition", condition="step_0.status == 'active'",
+        )
+        step.then_steps = [PlanStep(id=2, description="active", primitive="TASK", operation="create", params={"title": "active task"})]
+
+        await orchestrator.execute_plan([step], results=results)
+        assert step.result.data["condition_met"] is True
+
+
+class TestOrchestratorLoop:
+    """Test loop/iteration over lists."""
+
+    @pytest.fixture
+    def primitives(self):
+        from apex_engine import FilePrimitive, KnowledgePrimitive, TaskPrimitive
+        return {
+            "FILE": FilePrimitive(),
+            "KNOWLEDGE": KnowledgePrimitive(),
+            "TASK": TaskPrimitive(),
+        }
+
+    @pytest.fixture
+    def orchestrator(self, primitives):
+        from apex_engine import Orchestrator
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+        return Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal)
+
+    @pytest.mark.asyncio
+    async def test_loop_over_list(self, orchestrator):
+        from apex_engine import PlanStep
+        results = {0: {"items": ["task1", "task2", "task3"]}}
+        step = PlanStep(
+            id=1, description="create tasks", primitive="", operation="",
+            params={}, step_type="loop", loop_over="step_0.items", loop_var="item",
+        )
+        step.loop_body = [
+            PlanStep(id=2, description="create task", primitive="TASK", operation="create", params={"title": "{{item}}"}),
+        ]
+
+        await orchestrator.execute_plan([step], results=results)
+        assert step.result.success
+        assert len(step.result.data) == 3
+        # Each iteration should have created a task
+        for task_data in step.result.data:
+            assert "id" in task_data
+            assert task_data["status"] == "open"
+
+    @pytest.mark.asyncio
+    async def test_loop_over_dict_list(self, orchestrator):
+        from apex_engine import PlanStep
+        results = {0: [
+            {"name": "Alice", "email": "alice@test.com"},
+            {"name": "Bob", "email": "bob@test.com"},
+        ]}
+        step = PlanStep(
+            id=1, description="create tasks per person", primitive="", operation="",
+            params={}, step_type="loop", loop_over="step_0", loop_var="person",
+        )
+        step.loop_body = [
+            PlanStep(id=2, description="create task", primitive="TASK", operation="create", params={"title": "Review for {{person}}"}),
+        ]
+
+        await orchestrator.execute_plan([step], results=results)
+        assert step.result.success
+        assert len(step.result.data) == 2
+
+    @pytest.mark.asyncio
+    async def test_loop_over_non_list_fails(self, orchestrator):
+        from apex_engine import PlanStep
+        results = {0: "not a list"}
+        step = PlanStep(
+            id=1, description="bad loop", primitive="", operation="",
+            params={}, step_type="loop", loop_over="step_0", loop_var="item",
+        )
+        step.loop_body = [PlanStep(id=2, description="x", primitive="TASK", operation="create", params={"title": "{{item}}"})]
+
+        await orchestrator.execute_plan([step], results=results)
+        assert not step.result.success
+        assert "not resolve to a list" in step.result.error
+
+    @pytest.mark.asyncio
+    async def test_loop_empty_list(self, orchestrator):
+        from apex_engine import PlanStep
+        results = {0: []}
+        step = PlanStep(
+            id=1, description="empty loop", primitive="", operation="",
+            params={}, step_type="loop", loop_over="step_0", loop_var="item",
+        )
+        step.loop_body = [PlanStep(id=2, description="x", primitive="TASK", operation="create", params={"title": "{{item}}"})]
+
+        await orchestrator.execute_plan([step], results=results)
+        assert step.result.success
+        assert step.result.data == []
+
+
+class TestOrchestratorSubPlan:
+    """Test sub-plan delegation."""
+
+    @pytest.mark.asyncio
+    async def test_sub_plan_executes(self):
+        from apex_engine import Orchestrator, PlanStep, TaskPrimitive
+
+        primitives = {"TASK": TaskPrimitive()}
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+
+        # Create a mock planner that returns a simple plan
+        class MockPlanner:
+            async def plan(self, request, context=None):
+                return [PlanStep(id=0, description="sub task", primitive="TASK", operation="create", params={"title": request})]
+
+        orch = Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal, planner=MockPlanner())
+
+        step = PlanStep(
+            id=0, description="delegate", primitive="", operation="",
+            params={}, step_type="sub_plan", sub_request="Create a task called 'delegated'",
+        )
+
+        results = await orch.execute_plan([step])
+        assert step.result.success
+        assert results[0]["title"] == "Create a task called 'delegated'"
+
+    @pytest.mark.asyncio
+    async def test_sub_plan_no_planner_fails(self):
+        from apex_engine import Orchestrator, PlanStep, TaskPrimitive
+
+        primitives = {"TASK": TaskPrimitive()}
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+
+        orch = Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal, planner=None)
+
+        step = PlanStep(
+            id=0, description="delegate", primitive="", operation="",
+            params={}, step_type="sub_plan", sub_request="do something",
+        )
+
+        await orch.execute_plan([step])
+        assert not step.result.success
+        assert "No planner" in step.result.error
+
+
+class TestOrchestratorOnFail:
+    """Test error handling strategies."""
+
+    @pytest.fixture
+    def primitives(self):
+        from apex_engine import FilePrimitive, TaskPrimitive
+        return {"FILE": FilePrimitive(), "TASK": TaskPrimitive()}
+
+    @pytest.fixture
+    def orchestrator(self, primitives):
+        from apex_engine import Orchestrator
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+        return Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal)
+
+    @pytest.mark.asyncio
+    async def test_on_fail_stop_blocks_dependents(self, orchestrator):
+        from apex_engine import PlanStep
+        steps = [
+            PlanStep(id=0, description="fail", primitive="FILE", operation="read", params={"path": "/nonexistent_xyz"}, on_fail="stop"),
+            PlanStep(id=1, description="depends on 0", primitive="TASK", operation="create", params={"title": "after fail"}, depends_on=[0]),
+        ]
+        results = await orchestrator.execute_plan(steps)
+        assert not steps[0].result.success
+        assert not steps[1].result.success
+        assert "Dependency" in steps[1].result.error
+
+    @pytest.mark.asyncio
+    async def test_on_fail_continue_allows_next(self, orchestrator):
+        from apex_engine import PlanStep
+        steps = [
+            PlanStep(id=0, description="fail", primitive="FILE", operation="read", params={"path": "/nonexistent_xyz"}, on_fail="continue"),
+            PlanStep(id=1, description="independent", primitive="TASK", operation="create", params={"title": "still runs"}),
+        ]
+        results = await orchestrator.execute_plan(steps)
+        assert not steps[0].result.success
+        assert 0 in results  # on_fail=continue puts None in results
+        assert steps[1].result.success
+
+
+class TestOrchestratorMixedPlan:
+    """Test complex plans mixing multiple orchestration types."""
+
+    @pytest.mark.asyncio
+    async def test_sequential_then_parallel(self):
+        from apex_engine import Orchestrator, PlanStep, KnowledgePrimitive, TaskPrimitive
+
+        primitives = {"KNOWLEDGE": KnowledgePrimitive(), "TASK": TaskPrimitive()}
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+        orch = Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal)
+
+        steps = [
+            # Step 0: remember something
+            PlanStep(id=0, description="remember", primitive="KNOWLEDGE", operation="remember", params={"text": "test data", "category": "test"}),
+            # Step 1: create two tasks in parallel
+            PlanStep(id=1, description="parallel tasks", primitive="", operation="", params={}, step_type="parallel"),
+        ]
+        steps[1].parallel_steps = [
+            PlanStep(id=2, description="task a", primitive="TASK", operation="create", params={"title": "process a"}),
+            PlanStep(id=3, description="task b", primitive="TASK", operation="create", params={"title": "process b"}),
+        ]
+
+        results = await orch.execute_plan(steps)
+        assert steps[0].result.success
+        assert steps[1].result.success
+        assert len(results[1]) == 2  # Two parallel results
+
+    @pytest.mark.asyncio
+    async def test_condition_inside_loop(self):
+        """Test a loop where each iteration has a conditional."""
+        from apex_engine import Orchestrator, PlanStep, TaskPrimitive
+
+        primitives = {"TASK": TaskPrimitive()}
+        async def mock_llm(prompt): return ""
+        async def mock_heal(step, params, error): return None
+        orch = Orchestrator(primitives=primitives, llm_complete=mock_llm, self_heal=mock_heal)
+
+        results = {0: [{"name": "urgent task", "priority": "high"}, {"name": "normal task", "priority": "low"}]}
+
+        loop_step = PlanStep(
+            id=1, description="process each", primitive="", operation="",
+            params={}, step_type="loop", loop_over="step_0", loop_var="task",
+        )
+        loop_step.loop_body = [
+            PlanStep(id=2, description="create", primitive="TASK", operation="create", params={"title": "{{task}}"}),
+        ]
+
+        await orch.execute_plan([loop_step], results=results)
+        assert loop_step.result.success
+        assert len(loop_step.result.data) == 2
+
+
+class TestTaskPlannerParsing:
+    """Test that the TaskPlanner correctly parses orchestration steps."""
+
+    def test_parse_simple_steps(self):
+        from apex_engine import TaskPlanner, FilePrimitive
+        async def mock_llm(p): return ""
+        planner = TaskPlanner(mock_llm, {"FILE": FilePrimitive()})
+
+        steps = planner._parse_steps([
+            {"description": "list files", "primitive": "FILE", "operation": "list", "params": {"directory": "/tmp"}, "wires": {}},
+        ])
+        assert len(steps) == 1
+        assert steps[0].step_type == "action"
+        assert steps[0].primitive == "FILE"
+
+    def test_parse_parallel_steps(self):
+        from apex_engine import TaskPlanner, FilePrimitive
+        async def mock_llm(p): return ""
+        planner = TaskPlanner(mock_llm, {"FILE": FilePrimitive()})
+
+        steps = planner._parse_steps([
+            {
+                "description": "concurrent", "primitive": "", "operation": "", "params": {},
+                "step_type": "parallel",
+                "parallel_steps": [
+                    {"description": "a", "primitive": "FILE", "operation": "list", "params": {"directory": "/tmp"}},
+                    {"description": "b", "primitive": "FILE", "operation": "list", "params": {"directory": "/home"}},
+                ],
+            },
+        ])
+        assert len(steps) == 1
+        assert steps[0].step_type == "parallel"
+        assert len(steps[0].parallel_steps) == 2
+
+    def test_parse_condition_steps(self):
+        from apex_engine import TaskPlanner, FilePrimitive
+        async def mock_llm(p): return ""
+        planner = TaskPlanner(mock_llm, {"FILE": FilePrimitive()})
+
+        steps = planner._parse_steps([
+            {
+                "description": "branch", "primitive": "", "operation": "", "params": {},
+                "step_type": "condition", "condition": "step_0.count > 5",
+                "then_steps": [{"description": "yes", "primitive": "FILE", "operation": "list", "params": {}}],
+                "else_steps": [{"description": "no", "primitive": "FILE", "operation": "list", "params": {}}],
+            },
+        ])
+        assert steps[0].step_type == "condition"
+        assert steps[0].condition == "step_0.count > 5"
+        assert len(steps[0].then_steps) == 1
+        assert len(steps[0].else_steps) == 1
+
+    def test_parse_loop_steps(self):
+        from apex_engine import TaskPlanner, FilePrimitive
+        async def mock_llm(p): return ""
+        planner = TaskPlanner(mock_llm, {"FILE": FilePrimitive()})
+
+        steps = planner._parse_steps([
+            {
+                "description": "iterate", "primitive": "", "operation": "", "params": {},
+                "step_type": "loop", "loop_over": "step_0.files", "loop_var": "f",
+                "loop_body": [{"description": "read", "primitive": "FILE", "operation": "read", "params": {"path": "{{f}}"}}],
+            },
+        ])
+        assert steps[0].step_type == "loop"
+        assert steps[0].loop_over == "step_0.files"
+        assert steps[0].loop_var == "f"
+        assert len(steps[0].loop_body) == 1
+
+    def test_parse_on_fail(self):
+        from apex_engine import TaskPlanner, FilePrimitive
+        async def mock_llm(p): return ""
+        planner = TaskPlanner(mock_llm, {"FILE": FilePrimitive()})
+
+        steps = planner._parse_steps([
+            {"description": "skip errors", "primitive": "FILE", "operation": "list", "params": {}, "on_fail": "continue"},
+        ])
+        assert steps[0].on_fail == "continue"
+
+
+class TestApexOrchestrationIntegration:
+    """Test orchestration via Apex.do() with mock LLM."""
+
+    @pytest.mark.asyncio
+    async def test_do_with_simple_plan_still_works(self):
+        """Backward compatibility: simple sequential plans work via fast path."""
+        from apex_engine import Apex, PlanStep
+        from unittest.mock import AsyncMock
+
+        engine = Apex.__new__(Apex)
+        engine._api_key = "test"
+        engine._model = "test"
+        engine._storage_path = Path("/tmp/telic_test_orch")
+        engine._storage_path.mkdir(parents=True, exist_ok=True)
+        engine._connectors = {}
+        engine._safety_enabled = False
+        engine._redaction = None
+        engine._audit = None
+        engine._trust = None
+        engine._approval = None
+        engine._undo = None
+        engine._action_history = None
+        engine._primitives = {}
+        engine._init_primitives = Apex._init_primitives.__get__(engine, Apex)
+        engine._init_primitives()
+        engine._history = []
+        engine._llm_complete = AsyncMock(return_value="[]")
+
+        # Mock planner to return a simple task create (no path restrictions)
+        mock_planner = AsyncMock()
+        mock_planner.plan = AsyncMock(return_value=[
+            PlanStep(id=0, description="create task", primitive="TASK", operation="create", params={"title": "test task"}),
+        ])
+        engine._planner = mock_planner
+        engine._orchestrator = None  # Not needed for fast path
+
+        result = await engine.do("create a task")
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_do_recognizes_orchestration_steps(self):
+        """When plan has non-action steps, the orchestrator path is used."""
+        from apex_engine import Apex, PlanStep, Orchestrator
+        from unittest.mock import AsyncMock
+
+        engine = Apex.__new__(Apex)
+        engine._api_key = "test"
+        engine._model = "test"
+        engine._storage_path = Path("/tmp/telic_test_orch2")
+        engine._storage_path.mkdir(parents=True, exist_ok=True)
+        engine._connectors = {}
+        engine._safety_enabled = False
+        engine._redaction = None
+        engine._audit = None
+        engine._trust = None
+        engine._approval = None
+        engine._undo = None
+        engine._action_history = None
+        engine._primitives = {}
+        engine._init_primitives = Apex._init_primitives.__get__(engine, Apex)
+        engine._init_primitives()
+        engine._history = []
+        engine._llm_complete = AsyncMock(return_value="")
+        engine._self_heal = AsyncMock(return_value=None)
+        engine._resolve_wire = Apex._resolve_wire.__get__(engine, Apex)
+        engine._apply_wires = Apex._apply_wires.__get__(engine, Apex)
+        engine._resolve_params = Apex._resolve_params.__get__(engine, Apex)
+        engine._follow_path = Apex._follow_path.__get__(engine, Apex)
+
+        # Create orchestrator
+        engine._orchestrator = Orchestrator(
+            primitives=engine._primitives,
+            llm_complete=engine._llm_complete,
+            self_heal=engine._self_heal,
+        )
+
+        # Plan with a parallel step
+        parallel = PlanStep(id=0, description="parallel", primitive="", operation="", params={}, step_type="parallel")
+        parallel.parallel_steps = [
+            PlanStep(id=1, description="create task 1", primitive="TASK", operation="create", params={"title": "test1"}),
+            PlanStep(id=2, description="create task 2", primitive="TASK", operation="create", params={"title": "test2"}),
+        ]
+
+        mock_planner = AsyncMock()
+        mock_planner.plan = AsyncMock(return_value=[parallel])
+        engine._planner = mock_planner
+
+        result = await engine.do("do two things at once")
+        assert result.success
+        assert len(result.final_result) == 2
+
+
+# =============================================================================
 # MAIN
 # =============================================================================
 

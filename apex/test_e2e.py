@@ -101,7 +101,7 @@ async def test_file_primitive():
     # Test info
     result = await prim.execute("info", {"path": test_path})
     assert result.success, f"Info failed: {result.error}"
-    assert result.data["size"] == 12
+    assert result.data["size"] == 13  # len("Hello, Telic!") == 13
     print(f"✓ info: Size = {result.data['size']}, Modified = {result.data['modified']}")
     
     # Cleanup

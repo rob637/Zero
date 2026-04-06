@@ -174,6 +174,7 @@ async def demo_direct_operations():
 async def interactive_mode():
     """Run interactive mode with LLM planning."""
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
     
     if not api_key:
         print("\n⚠️  No API key found. Running in demo mode.")
@@ -181,26 +182,38 @@ async def interactive_mode():
         await demo_direct_operations()
         return
     
-    print("\n" + "="*60)
-    print(" TELIC - Interactive Mode")
-    print(" Type 'quit' to exit, 'help' for commands")
-    print("="*60)
+    print("""
+╔═══════════════════════════════════════════════════════════════╗
+║                     APEX — Interactive Demo                   ║
+║          Ask anything. AI decomposes. You approve.            ║
+╚═══════════════════════════════════════════════════════════════╝
+""")
+    print(f"  Model: {model}")
+    print(f"  Safety: Human-in-the-loop (you approve before execution)")
+    print()
+    print("  Commands:")
+    print("    help  — Show commands")
+    print("    caps  — List all capabilities")
+    print("    auto  — Toggle auto-approve mode (skip approval step)")
+    print("    quit  — Exit")
+    print()
+    print("  Examples:")
+    print('    "Find all PDF files in ~/Documents"')
+    print('    "Calculate amortization for $300,000 at 7% for 30 years"')
+    print('    "What Python files are in the current directory and how many?"')
+    print('    "Read README.md and summarize it"')
+    print()
     
-    apex = Apex(api_key=api_key)
+    apex = Apex(api_key=api_key, model=model, enable_safety=False)
     apex.add_contact("Fred", "fred@example.com")
     apex.add_contact("Alice", "alice@company.com")
     apex.add_contact("Bob", "bob@startup.io")
     
-    print("\nExample commands:")
-    print("  • find all PDF files in ~/Documents")
-    print("  • calculate amortization for $300,000 at 7% for 30 years")
-    print("  • list files in ~/Downloads")
-    print("  • find Fred's email address")
-    print()
+    auto_approve = False
     
     while True:
         try:
-            request = input("telic> ").strip()
+            request = input("apex> ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye!")
             break
@@ -213,27 +226,110 @@ async def interactive_mode():
             break
         
         if request.lower() == "help":
-            print("\nCommands:")
-            print("  help  - Show this help")
-            print("  caps  - List capabilities")
-            print("  quit  - Exit")
-            print("\nOr type any natural language request.")
+            print("\n  Commands:")
+            print("    help  — Show this help")
+            print("    caps  — List all capabilities")
+            print("    auto  — Toggle auto-approve mode")
+            print("    quit  — Exit")
+            print("\n  Or type any natural language request.\n")
+            continue
+        
+        if request.lower() == "auto":
+            auto_approve = not auto_approve
+            mode = "ON (plans execute immediately)" if auto_approve else "OFF (you approve each plan)"
+            print(f"  Auto-approve: {mode}\n")
             continue
         
         if request.lower() == "caps":
             for name, ops in apex.list_capabilities().items():
-                print(f"\n{name}:")
+                print(f"\n  {name}:")
                 for op, desc in ops.items():
-                    print(f"  • {op}: {desc}")
+                    print(f"    • {op}: {desc}")
+            print()
             continue
         
-        print("\n⏳ Planning and executing...")
+        # ── Step 1: Plan ──────────────────────────────────────
+        print("\n  ⏳ Planning...")
+        try:
+            result = await apex.do(request, require_approval=True)
+        except Exception as e:
+            print(f"  ❌ Planning failed: {e}\n")
+            continue
+        
+        # ── Step 2: Show plan ─────────────────────────────────
+        plan = result.plan
+        print(f"\n  📋 Plan ({len(plan)} steps):")
+        print("  " + "─" * 56)
+        for step in plan:
+            risk = _classify_risk_display(step.primitive, step.operation)
+            risk_icon = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(risk, "⚪")
+            print(f"  {risk_icon} [{step.id}] {step.primitive}.{step.operation}")
+            print(f"       {step.description}")
+            if step.params:
+                params_short = json.dumps(step.params)
+                if len(params_short) > 80:
+                    params_short = params_short[:77] + "..."
+                print(f"       params: {params_short}")
+            if step.wires:
+                print(f"       wires:  {json.dumps(step.wires)}")
+        print("  " + "─" * 56)
+        
+        # ── Step 3: Approval ──────────────────────────────────
+        if not auto_approve:
+            try:
+                choice = input("  Execute? [Y]es / [n]o / [a]uto-approve: ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                print("\n  Skipped.\n")
+                continue
+            
+            if choice in ("a", "auto"):
+                auto_approve = True
+                print("  Auto-approve enabled for future requests.")
+            elif choice in ("n", "no"):
+                print("  ⏭️  Skipped.\n")
+                continue
+            elif choice not in ("", "y", "yes"):
+                print("  ⏭️  Skipped.\n")
+                continue
+        
+        # ── Step 4: Execute ───────────────────────────────────
+        print("\n  ⚡ Executing...")
         try:
             result = await apex.do(request)
-            print(format_result(result))
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"  ❌ Execution failed: {e}\n")
+            continue
+        
+        # ── Step 5: Show results ──────────────────────────────
         print()
+        for step in result.plan:
+            if step.result and step.result.success:
+                print(f"  ✓ [{step.id}] {step.description}")
+            elif step.result:
+                print(f"  ✗ [{step.id}] {step.description}")
+                print(f"       Error: {step.result.error}")
+            else:
+                print(f"  ○ [{step.id}] {step.description} (not executed)")
+        
+        print()
+        if result.success:
+            print(format_result(result))
+        else:
+            print(f"  ❌ Failed: {result.error}")
+        print()
+
+
+def _classify_risk_display(primitive: str, operation: str) -> str:
+    """Classify risk for display purposes."""
+    high = {("EMAIL", "send"), ("FILE", "write"), ("SHELL", "run"), ("MESSAGE", "send")}
+    medium = {("CALENDAR", "create"), ("CALENDAR", "delete"), ("TASK", "create"), 
+              ("CONTACTS", "add"), ("NOTIFY", "alert")}
+    key = (primitive.upper(), operation.lower())
+    if key in high:
+        return "high"
+    elif key in medium:
+        return "medium"
+    return "low"
 
 
 def main():

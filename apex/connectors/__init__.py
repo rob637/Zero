@@ -81,6 +81,25 @@ from .unified import (
 
 # Workplace communication
 from .slack import SlackConnector, SlackUser, SlackChannel, SlackMessage, create_slack_connector
+from .teams import TeamsConnector, TeamsMessage, TeamsChannel
+from .discord import DiscordConnector, DiscordMessage, DiscordChannel
+from .twilio_sms import TwilioSMSConnector, SMSMessage
+
+# Task management
+from .todoist import TodoistConnector, TodoistTask, TodoistProject
+
+# Cloud storage
+from .dropbox import DropboxConnector, DropboxFile
+
+# Media services
+from .spotify import SpotifyConnector, SpotifyTrack
+from .youtube import YouTubeConnector, YouTubeVideo
+
+# Web search
+from .web_search import WebSearchConnector, SearchResult
+
+# Desktop notifications
+from .desktop_notify import DesktopNotifyConnector
 
 __all__ = [
     # Google Auth
@@ -133,5 +152,34 @@ __all__ = [
     'SlackChannel',
     'SlackMessage',
     'create_slack_connector',
+    # Teams
+    'TeamsConnector',
+    'TeamsMessage',
+    'TeamsChannel',
+    # Discord
+    'DiscordConnector',
+    'DiscordMessage',
+    'DiscordChannel',
+    # Twilio SMS
+    'TwilioSMSConnector',
+    'SMSMessage',
+    # Todoist
+    'TodoistConnector',
+    'TodoistTask',
+    'TodoistProject',
+    # Dropbox
+    'DropboxConnector',
+    'DropboxFile',
+    # Spotify
+    'SpotifyConnector',
+    'SpotifyTrack',
+    # YouTube
+    'YouTubeConnector',
+    'YouTubeVideo',
+    # Web Search
+    'WebSearchConnector',
+    'SearchResult',
+    # Desktop Notifications
+    'DesktopNotifyConnector',
 ]
 
