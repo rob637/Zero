@@ -1281,9 +1281,13 @@ class CalendarPrimitive(Primitive):
         try:
             if operation == "create":
                 if self._create_func:
-                    print(f"[CALENDAR] Using external create function")
+                    print(f"[CALENDAR] Using external calendar (Google/Outlook)")
                     result = await self._create_func(**params)
-                    return StepResult(True, data=result)
+                    return StepResult(True, data={
+                        **(result if isinstance(result, dict) else {"id": str(result)}),
+                        "storage": "google_calendar",
+                        "message": "Event created in Google Calendar"
+                    })
                 
                 print(f"[CALENDAR] Creating local event")
                 event = {
@@ -1295,11 +1299,16 @@ class CalendarPrimitive(Primitive):
                     "location": params.get("location", ""),
                     "attendees": params.get("attendees", []),
                     "created": datetime.now().isoformat(),
+                    "storage": "local",  # Indicate where event is stored
                 }
                 self._events.append(event)
                 self._save()
                 print(f"[CALENDAR] Event created: {event['id']} - {event['title']}")
-                return StepResult(True, data=event)
+                print(f"[CALENDAR] Saved to: {self._storage_path}")
+                return StepResult(True, data={
+                    **event,
+                    "message": f"Event '{event['title']}' created in local calendar. To sync with Google Calendar, connect your Google account in Settings."
+                })
             
             elif operation == "list":
                 if self._list_func:

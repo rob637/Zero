@@ -85,7 +85,32 @@ def get_telic_engine() -> Optional[TelicEngine]:
         api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if api_key:
             model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
-            _telic_engine = TelicEngine(api_key=api_key, model=model)
+            
+            # Wire up available connectors
+            connectors = {}
+            try:
+                from src.connectors import get_calendar_connector, get_gmail_connector, get_drive_connector
+                
+                cal = get_calendar_connector()
+                if cal:
+                    connectors["calendar"] = cal
+                    print("[ENGINE] Google Calendar connected")
+                
+                gmail = get_gmail_connector()
+                if gmail:
+                    connectors["gmail"] = gmail
+                    print("[ENGINE] Gmail connected")
+                
+                drive = get_drive_connector()
+                if drive:
+                    connectors["drive"] = drive
+                    print("[ENGINE] Google Drive connected")
+                    
+            except Exception as e:
+                print(f"[ENGINE] Connector init: {e}")
+            
+            _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
+            print(f"[ENGINE] Initialized with {len(connectors)} connectors")
     return _telic_engine
 
 # Phase 4-5: Intelligence Layer singletons
