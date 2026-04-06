@@ -835,6 +835,16 @@ Start directly with: def compute(inputs):"""
                 func = params.get("function", "sum").lower().strip()
                 field_name = params.get("field")
                 
+                # Debug: log what arrived so we can diagnose wiring issues
+                logger.info(f"[COMPUTE.aggregate] func={func}, data type={type(data).__name__}, len={len(data) if isinstance(data, list) else 'N/A'}, raw={str(data)[:200]}")
+                
+                # Coerce: if data arrived as a JSON string (wiring edge case), parse it
+                if isinstance(data, str):
+                    try:
+                        data = json.loads(data)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                
                 # Count operates on the raw data length (no numeric extraction needed)
                 if func == "count" and isinstance(data, list):
                     return StepResult(True, data=len(data))
@@ -3967,7 +3977,12 @@ class Apex:
             for dep_id in reversed(candidates):
                 if dep_id in results and isinstance(results[dep_id], list):
                     merged["data"] = results[dep_id]
+                    logger.info(f"[auto-wire] Injected step_{dep_id} result ({len(results[dep_id])} items) as 'data' for step {step.id}")
                     break
+        
+        # Debug: log final resolved params for tracing
+        data_val = merged.get("data")
+        logger.info(f"[_apply_wires] step {step.id} ({step.primitive}.{step.operation}): data type={type(data_val).__name__}, keys={list(merged.keys())}")
         
         return merged
     
