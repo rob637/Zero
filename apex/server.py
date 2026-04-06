@@ -75,6 +75,9 @@ orchestrator = Orchestrator()
 # Initialize the REAL Telic engine (all 8 primitives)
 _telic_engine: Optional[TelicEngine] = None
 
+# Cache approved plans so /execute runs the SAME plan the user saw (no re-planning)
+_pending_plans: Dict[str, Any] = {}  # message -> plan steps
+
 def get_telic_engine() -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton."""
     global _telic_engine
@@ -229,6 +232,10 @@ async def chat(req: ChatRequest):
                     require_approval=True,
                 )
                 
+                # Cache the plan so /execute runs this EXACT plan (no re-planning)
+                if exec_result.plan:
+                    _pending_plans[req.message] = exec_result.plan
+                
                 # Format plan steps for the UI
                 plan_steps = []
                 if exec_result.plan:
@@ -297,8 +304,15 @@ async def execute_plan(req: ExecuteRequest):
         })
     
     try:
-        print(f"[EXECUTE] Running engine.do()...")
-        exec_result = await engine.do(req.message, require_approval=False)
+        # Use cached plan from /chat if available (execute the EXACT plan user approved)
+        cached_plan = _pending_plans.pop(req.message, None)
+        
+        if cached_plan:
+            print(f"[EXECUTE] Using cached plan ({len(cached_plan)} steps)")
+            exec_result = await engine.execute_plan(cached_plan, request=req.message)
+        else:
+            print(f"[EXECUTE] No cached plan, re-planning...")
+            exec_result = await engine.do(req.message, require_approval=False)
         print(f"[EXECUTE] Engine completed. Success: {exec_result.success}")
         
         # Format results
@@ -398,11 +412,21 @@ async def execute_plan_stream(req: ExecuteRequest):
     async def run_engine():
         """Run the engine in background and signal completion."""
         try:
-            exec_result = await engine.do(
-                req.message, 
-                require_approval=False,
-                on_step_complete=step_callback,
-            )
+            # Use cached plan from /chat if available
+            cached_plan = _pending_plans.pop(req.message, None)
+            
+            if cached_plan:
+                exec_result = await engine.execute_plan(
+                    cached_plan, 
+                    request=req.message,
+                    on_step_complete=step_callback,
+                )
+            else:
+                exec_result = await engine.do(
+                    req.message, 
+                    require_approval=False,
+                    on_step_complete=step_callback,
+                )
             
             # Send final summary
             final = None

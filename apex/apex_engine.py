@@ -235,6 +235,14 @@ class Primitive(ABC):
         """
         return {}
     
+    def get_available_operations(self) -> Dict[str, str]:
+        """Return operations that are actually configured and ready to use.
+        
+        By default, returns all operations. Override to filter out operations
+        that require external providers that aren't connected.
+        """
+        return self.get_operations()
+    
     @abstractmethod
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         """Execute an operation."""
@@ -307,7 +315,7 @@ class FilePrimitive(Primitive):
                 directory = params.get("directory", str(Path.home()))
                 directory = str(Path(directory).expanduser())
                 recursive = params.get("recursive", True)
-                limit = params.get("limit", 50)
+                limit = params.get("limit", 5000)
                 
                 if not self._is_allowed(directory):
                     return StepResult(False, error=f"Directory not allowed: {directory}")
@@ -939,6 +947,17 @@ class EmailPrimitive(Primitive):
             },
         }
     
+    def get_available_operations(self) -> Dict[str, str]:
+        """Only show operations that have a connected provider."""
+        ops = self.get_operations()
+        if not self._send:
+            ops.pop("send", None)
+            ops.pop("draft", None)
+        if not self._list:
+            ops.pop("search", None)
+            ops.pop("list", None)
+        return ops
+    
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
             if operation == "send":
@@ -1236,7 +1255,7 @@ class CalendarPrimitive(Primitive):
             "list": {
                 "start_date": {"type": "str", "required": False, "description": "Start of range (ISO date, defaults to today)"},
                 "end_date": {"type": "str", "required": False, "description": "End of range (ISO date, defaults to 7 days out)"},
-                "limit": {"type": "int", "required": False, "description": "Max events to return"},
+                "limit": {"type": "int", "required": False, "description": "Max events to return (default 50)"},
             },
             "search": {
                 "query": {"type": "str", "required": True, "description": "Search term"},
@@ -1373,6 +1392,13 @@ class WebPrimitive(Primitive):
                 "what": {"type": "str", "required": True, "description": "What to extract (e.g. 'the main article text', 'all prices', 'contact info')"},
             },
         }
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        """Only show search if a search provider is configured."""
+        ops = self.get_operations()
+        if not self._search_provider:
+            ops.pop("search", None)
+        return ops
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
@@ -3489,19 +3515,29 @@ class TaskPlanner:
         self._primitives = primitives
     
     def _get_capabilities_prompt(self) -> str:
-        """Auto-generate capabilities + param schemas from primitives."""
+        """Auto-generate capabilities + param schemas from registered primitives.
+        
+        Only shows operations that are actually configured and ready to use,
+        so the LLM never plans for unavailable operations.
+        """
         lines = ["Available primitives:\n"]
         examples = ["\nPARAMETER SCHEMAS:"]
         
         for name, prim in self._primitives.items():
+            available_ops = prim.get_available_operations()
+            if not available_ops:
+                continue  # Skip primitives with no available operations
+            
             lines.append(f"\n{name}:")
-            for op, desc in prim.get_operations().items():
+            for op, desc in available_ops.items():
                 lines.append(f"  - {name}.{op}: {desc}")
             
-            # Auto-generate param examples from schema
+            # Auto-generate param examples from schema (only for available ops)
             schema = prim.get_param_schema()
             if schema:
                 for op, params in schema.items():
+                    if op not in available_ops:
+                        continue
                     example_params = {}
                     for pname, pdef in params.items():
                         if isinstance(pdef, dict):
@@ -4329,6 +4365,92 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
             error="; ".join(s.result.error for s in failed if s.result and s.result.error) if failed else None,
         )
         
+        self._history.append(result)
+        return result
+    
+    async def execute_plan(
+        self,
+        plan: list,
+        request: str = "",
+        on_step_complete: Optional[Callable] = None,
+    ) -> 'ExecutionResult':
+        """Execute a pre-built plan (from a previous require_approval=True call).
+        
+        This avoids re-planning — it runs the exact plan the user approved.
+        """
+        session_id = str(uuid.uuid4())[:12]
+        results: Dict[int, Any] = {}
+        
+        has_orchestration = any(s.step_type != "action" for s in plan)
+        
+        if has_orchestration:
+            results = await self._orchestrator.execute_plan(
+                plan, results,
+                resolve_wires_fn=self._resolve_wire,
+                apply_wires_fn=self._apply_wires,
+            )
+        else:
+            for step in plan:
+                dep_failed = False
+                for dep_id in step.depends_on:
+                    if dep_id not in results:
+                        step.result = StepResult(False, error=f"Dependency step_{dep_id} failed or not available")
+                        dep_failed = True
+                        break
+                if dep_failed:
+                    if step.on_fail == "continue":
+                        results[step.id] = None
+                    if on_step_complete:
+                        await on_step_complete(
+                            step.id, step.description, step.primitive, step.operation,
+                            False, None, step.result.error if step.result else "Dependency failed"
+                        )
+                    continue
+                
+                if on_step_complete:
+                    await on_step_complete(
+                        step.id, step.description, step.primitive, step.operation,
+                        None, None, None
+                    )
+                
+                resolved_params = self._apply_wires(step, results)
+                step.result = await self._safe_execute_step(step, resolved_params, request, session_id)
+                
+                if step.result.success:
+                    results[step.id] = step.result.data
+                elif step.on_fail == "continue":
+                    results[step.id] = None
+                
+                if on_step_complete:
+                    step_data = None
+                    if step.result.success and step.result.data is not None:
+                        try:
+                            json.dumps(step.result.data)
+                            step_data = step.result.data
+                        except (TypeError, ValueError):
+                            step_data = str(step.result.data)
+                    await on_step_complete(
+                        step.id, step.description, step.primitive, step.operation,
+                        step.result.success, step_data,
+                        step.result.error if not step.result.success else None
+                    )
+        
+        failed = [s for s in plan if s.result and not s.result.success]
+        success = len(failed) == 0
+        
+        final_result = None
+        for step in reversed(plan):
+            if step.result and step.result.success and step.result.data is not None:
+                final_result = step.result.data
+                break
+        
+        result = ExecutionResult(
+            success=success,
+            request=request,
+            plan=plan,
+            final_result=final_result,
+            error="; ".join(s.result.error for s in failed if s.result and s.result.error) if failed else None,
+        )
         self._history.append(result)
         return result
     
