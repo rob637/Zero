@@ -3927,6 +3927,10 @@ class Apex:
           {"body": "step_0.monthly_payment"} → sets body = step 0's monthly_payment
         
         Then any remaining {{step_N}} references in params are resolved too.
+        
+        Auto-wire fallback: if a step depends on a previous step and has an empty/missing
+        'data' param, automatically wire in the previous step's result. This covers the
+        common case where the LLM forgets to set an explicit wire.
         """
         # Start with static params
         merged = dict(step.params)
@@ -3938,7 +3942,20 @@ class Apex:
                 merged[param_name] = wired_value
         
         # Resolve any remaining {{step_N}} templates in params
-        return self._resolve_params(merged, results)
+        merged = self._resolve_params(merged, results)
+        
+        # AUTO-WIRE FALLBACK: if 'data' param is empty/missing and there are previous results,
+        # inject the most recent predecessor's result as 'data'.
+        # This handles the common LLM mistake of forgetting to wire step outputs.
+        if "data" not in merged or merged.get("data") in ([], {}, None, ""):
+            # Check explicit dependencies first, then fall back to previous step
+            candidates = step.depends_on if step.depends_on else ([step.id - 1] if step.id > 0 else [])
+            for dep_id in reversed(candidates):
+                if dep_id in results and isinstance(results[dep_id], list):
+                    merged["data"] = results[dep_id]
+                    break
+        
+        return merged
     
     async def _self_heal(self, step, params: Dict, error: str) -> Optional[Dict]:
         """Ask the LLM to fix parameters that caused a primitive to fail.
