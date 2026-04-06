@@ -39,6 +39,18 @@ if "%ANTHROPIC_API_KEY%"=="" (
 :: Get the directory where this script is located
 cd /d "%~dp0"
 
+:: Auto-setup if first run
+if not exist ".venv" (
+    echo First run detected — running setup...
+    echo.
+    python -m venv .venv
+    call .venv\Scripts\activate.bat
+    pip install -e ".[dev]" --quiet 2>nul || pip install -r requirements.txt --quiet
+    echo.
+) else (
+    call .venv\Scripts\activate.bat
+)
+
 echo Starting Telic...
 echo.
 
