@@ -180,8 +180,11 @@ Examples:
 # Routes
 @app.get("/")
 async def root():
-    """Serve the UI."""
-    return FileResponse(Path(__file__).parent / "ui" / "index.html")
+    """Serve the UI with no-cache headers so updates are always picked up."""
+    return FileResponse(
+        Path(__file__).parent / "ui" / "index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.post("/chat")
@@ -434,7 +437,15 @@ async def execute_plan_stream(req: ExecuteRequest):
             if not task.done():
                 task.cancel()
     
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(), 
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable proxy buffering
+        },
+    )
 
 
 @app.post("/submit")

@@ -3518,6 +3518,13 @@ class TaskPlanner:
 
 {capabilities}
 
+PRIMITIVE SELECTION GUIDE:
+- Appointments, meetings, schedules, events → CALENDAR.search or CALENDAR.list (NOT EMAIL or CONTACTS)
+- Finding people's info → CONTACTS.search
+- Emails, messages, correspondence → EMAIL.search
+- Files on disk → FILE.search
+- When results from step N are needed in step N+1, you MUST wire them: "wires": {{"data": "step_N"}}
+
 RULES:
 1. Each step uses ONE primitive and ONE operation
 2. "params" = static values known now. "wires" = data flowing from a previous step's output.
@@ -3527,6 +3534,7 @@ RULES:
 5. For COMPUTE.formula, always use: {{"name": "<formula>", "inputs": {{...}}}}
 6. Minimize steps — only what's necessary
 7. depends_on is auto-derived from wires — you can omit it
+8. ALWAYS wire data between dependent steps. If step 1 needs step 0's output, add: "wires": {{"data": "step_0"}}
 
 ORCHESTRATION (use only when needed):
 - step_type "action" (default): execute one primitive operation
