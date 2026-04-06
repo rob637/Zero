@@ -4171,6 +4171,7 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
         request: str, 
         context: Optional[Dict] = None,
         require_approval: bool = False,
+        on_step_complete: Optional[Callable] = None,
     ) -> ExecutionResult:
         """
         Execute a natural language request.
@@ -4178,6 +4179,8 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
         Args:
             request: What to do (e.g., "Find all PDFs and list them")
             context: Additional context
+            on_step_complete: Optional async callback called after each step finishes.
+                              Signature: async (step_id, description, primitive, operation, success, data, error) -> None
             require_approval: If True, returns plan for approval before executing
         
         Returns:
@@ -4237,7 +4240,20 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
                 if dep_failed:
                     if step.on_fail == "continue":
                         results[step.id] = None
+                    # Notify callback of dependency failure
+                    if on_step_complete:
+                        await on_step_complete(
+                            step.id, step.description, step.primitive, step.operation,
+                            False, None, step.result.error if step.result else "Dependency failed"
+                        )
                     continue
+                
+                # Notify callback that step is starting
+                if on_step_complete:
+                    await on_step_complete(
+                        step.id, step.description, step.primitive, step.operation,
+                        None, None, None  # success=None means "running"
+                    )
                 
                 # Resolve parameters: static params + wired connections
                 resolved_params = self._apply_wires(step, results)
@@ -4249,6 +4265,21 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
                     results[step.id] = step.result.data
                 elif step.on_fail == "continue":
                     results[step.id] = None
+                
+                # Notify callback of step completion
+                if on_step_complete:
+                    step_data = None
+                    if step.result.success and step.result.data is not None:
+                        try:
+                            json.dumps(step.result.data)
+                            step_data = step.result.data
+                        except (TypeError, ValueError):
+                            step_data = str(step.result.data)
+                    await on_step_complete(
+                        step.id, step.description, step.primitive, step.operation,
+                        step.result.success, step_data,
+                        step.result.error if not step.result.success else None
+                    )
         
         # Determine success
         failed = [s for s in plan if s.result and not s.result.success]

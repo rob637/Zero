@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -350,6 +350,91 @@ async def execute_plan(req: ExecuteRequest):
             "success": False,
             "results": None,
         })
+
+
+@app.post("/execute_stream")
+async def execute_plan_stream(req: ExecuteRequest):
+    """
+    Execute a plan with real-time step-by-step streaming via SSE.
+    
+    Each step sends an event as it starts and completes, so the UI
+    can show sequential progress instead of "all running at once".
+    """
+    import json as json_mod
+    
+    engine = get_telic_engine()
+    if not engine:
+        async def error_stream():
+            yield f"data: {json_mod.dumps({'type': 'error', 'error': 'Engine not initialized'})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+    
+    queue = asyncio.Queue()
+    
+    async def step_callback(step_id, description, primitive, operation, success, data, error):
+        """Called by the engine after each step starts/completes."""
+        step_data = None
+        if data is not None:
+            try:
+                json_mod.dumps(data)
+                step_data = data
+            except (TypeError, ValueError):
+                step_data = str(data)
+        
+        event = {
+            "type": "step_update",
+            "step_id": step_id,
+            "description": description,
+            "primitive": primitive,
+            "operation": operation,
+            "success": success,  # None = running, True = done, False = failed
+            "data": step_data,
+            "error": error,
+        }
+        await queue.put(event)
+    
+    async def run_engine():
+        """Run the engine in background and signal completion."""
+        try:
+            exec_result = await engine.do(
+                req.message, 
+                require_approval=False,
+                on_step_complete=step_callback,
+            )
+            
+            # Send final summary
+            final = None
+            if hasattr(exec_result, 'final_result') and exec_result.final_result is not None:
+                try:
+                    json_mod.dumps(exec_result.final_result)
+                    final = exec_result.final_result
+                except (TypeError, ValueError):
+                    final = str(exec_result.final_result)
+            
+            await queue.put({
+                "type": "complete",
+                "success": exec_result.success,
+                "final_result": final,
+                "summary": exec_result.error if not exec_result.success else "All steps completed successfully",
+            })
+        except Exception as e:
+            await queue.put({"type": "error", "error": str(e)})
+        finally:
+            await queue.put(None)  # Sentinel to end stream
+    
+    async def event_stream():
+        """SSE generator that yields events as they arrive."""
+        task = asyncio.create_task(run_engine())
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield f"data: {json_mod.dumps(event)}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/submit")

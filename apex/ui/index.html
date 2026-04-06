@@ -1818,123 +1818,142 @@
                 execBtn.textContent = '⏳ Executing...';
                 execBtn.style.opacity = '0.5';
             }
-            console.log('[Telic] Executing plan for:', originalMessage);
+            console.log('[Telic] Executing plan (streaming) for:', originalMessage);
             
-            // Update all step cards to "running" state
-            document.querySelectorAll('.plan-step .step-status').forEach(el => {
-                el.style.color = 'var(--text-muted)';
-                el.textContent = '⏳ running...';
-            });
+            // Keep all steps as "pending" - they'll update one-by-one
+            // (Don't mark them all as "running" like before)
             
             try {
-                console.log('[Telic] Sending /execute request...');
-                const res = await fetch(`${API}/execute`, {
+                console.log('[Telic] Opening SSE stream to /execute_stream...');
+                const res = await fetch(`${API}/execute_stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: originalMessage })
                 });
-                console.log('[Telic] Response status:', res.status);
-                const data = await res.json();
-                console.log('[Telic] Response data:', data);
                 
-                if (data.error) {
-                    addMessage(`Error: ${data.error}`, 'system');
-                    return;
-                }
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let finalData = null;
                 
-                // Update each step card in place
-                if (data.results && data.results.length > 0) {
-                    console.log('[Telic] Rendering', data.results.length, 'results');
-                    data.results.forEach(step => {
-                        const stepEl = document.querySelector(`.plan-step[data-step-id="${step.id}"]`);
-                        if (!stepEl) {
-                            console.warn('[Telic] No DOM element for step', step.id);
-                            return;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();  // Keep incomplete line in buffer
+                    
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        
+                        let event;
+                        try {
+                            event = JSON.parse(line.slice(6));
+                        } catch (e) {
+                            continue;
                         }
                         
-                        // Update status badge
-                        const statusEl = stepEl.querySelector('.step-status');
-                        if (statusEl) {
-                            if (step.success) {
+                        console.log('[Telic] SSE event:', event.type, event);
+                        
+                        if (event.type === 'step_update') {
+                            const stepEl = document.querySelector(`.plan-step[data-step-id="${event.step_id}"]`);
+                            if (!stepEl) continue;
+                            const statusEl = stepEl.querySelector('.step-status');
+                            if (!statusEl) continue;
+                            
+                            if (event.success === null) {
+                                // Step is starting / running
+                                statusEl.style.color = 'var(--warning, #fbbf24)';
+                                statusEl.textContent = '⏳ running...';
+                            } else if (event.success === true) {
                                 statusEl.style.color = 'var(--success, #4ade80)';
                                 statusEl.textContent = '✅ done';
+                                // Add result detail
+                                if (event.data) {
+                                    const detailEl = document.createElement('div');
+                                    detailEl.style.cssText = 'margin-top: 6px; padding-left: 32px; overflow: hidden;';
+                                    const dataStr = typeof event.data === 'string' ? event.data : JSON.stringify(event.data, null, 2);
+                                    const escaped = dataStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                    detailEl.innerHTML = `<pre style="font-size: 0.7rem; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; margin: 0; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">${escaped}</pre>`;
+                                    stepEl.appendChild(detailEl);
+                                }
                             } else {
                                 statusEl.style.color = 'var(--error, #f87171)';
                                 statusEl.textContent = '❌ failed';
+                                if (event.error) {
+                                    const detailEl = document.createElement('div');
+                                    detailEl.style.cssText = 'margin-top: 6px; padding-left: 32px;';
+                                    const escapedErr = String(event.error).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                    detailEl.innerHTML = `<div style="color: var(--error, #f87171); font-size: 0.75rem;">${escapedErr}</div>`;
+                                    stepEl.appendChild(detailEl);
+                                }
                             }
-                        }
-                        
-                        // Add result detail below the step
-                        const detailEl = document.createElement('div');
-                        detailEl.style.cssText = 'margin-top: 6px; padding-left: 32px; overflow: hidden;';
-                        if (step.success && step.data) {
-                            const dataStr = typeof step.data === 'string' ? step.data : JSON.stringify(step.data, null, 2);
-                            const escaped = dataStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                            detailEl.innerHTML = `<pre style="font-size: 0.7rem; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; margin: 0; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">${escaped}</pre>`;
-                        } else if (step.error) {
-                            const escapedErr = String(step.error).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                            detailEl.innerHTML = `<div style="color: var(--error, #f87171); font-size: 0.75rem;">${escapedErr}</div>`;
-                        }
-                        stepEl.appendChild(detailEl);
-                    });
-                }
-                
-                // Format and display the final answer
-                let answerHtml = '';
-                if (data.final_result !== null && data.final_result !== undefined) {
-                    const fr = data.final_result;
-                    if (typeof fr === 'number') {
-                        answerHtml = `<strong>${fr}</strong>`;
-                    } else if (typeof fr === 'string') {
-                        const escaped = fr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                        answerHtml = escaped;
-                    } else if (Array.isArray(fr)) {
-                        const count = fr.length;
-                        let items = fr.slice(0, 15).map(item => {
-                            if (typeof item === 'object' && item !== null) {
-                                const label = item.name || item.path || item.title || JSON.stringify(item);
-                                return label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                            }
-                            return String(item).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                        });
-                        answerHtml = `Found <strong>${count}</strong> item${count !== 1 ? 's' : ''}:`;
-                        answerHtml += '<ul style="margin: 6px 0 0 0; padding-left: 20px; list-style: disc;">';
-                        items.forEach(i => { answerHtml += `<li style="margin: 2px 0;">${i}</li>`; });
-                        if (count > 15) answerHtml += `<li style="margin: 2px 0; color: var(--text-muted);">… and ${count - 15} more</li>`;
-                        answerHtml += '</ul>';
-                    } else if (typeof fr === 'object') {
-                        // Special formatting for known shapes
-                        if (fr.monthly_payment !== undefined) {
-                            answerHtml = `<strong>Monthly Payment:</strong> $${Number(fr.monthly_payment).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}<br>`;
-                            if (fr.total_interest !== undefined) answerHtml += `<strong>Total Interest:</strong> $${Number(fr.total_interest).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}<br>`;
-                            if (fr.total_paid !== undefined) answerHtml += `<strong>Total Paid:</strong> $${Number(fr.total_paid).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-                        } else {
-                            // Generic object — show key: value pairs
-                            const entries = Object.entries(fr).slice(0, 20);
-                            answerHtml = '<div style="display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;">';
-                            entries.forEach(([k, v]) => {
-                                const key = k.replace(/_/g, ' ').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                                let val = typeof v === 'object' ? JSON.stringify(v) : String(v);
-                                val = val.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                                if (val.length > 200) val = val.slice(0, 200) + '…';
-                                answerHtml += `<span style="color: var(--text-muted); text-transform: capitalize;">${key}:</span><span>${val}</span>`;
-                            });
-                            answerHtml += '</div>';
+                        } else if (event.type === 'complete') {
+                            finalData = event;
+                        } else if (event.type === 'error') {
+                            addMessage(`Error: ${event.error}`, 'system');
                         }
                     }
                 }
-
-                if (answerHtml) {
-                    addMessage(answerHtml, 'assistant');
-                } else if (!data.success) {
-                    addMessage('⚠️ Some steps had issues — see details in the plan above.', 'assistant');
+                
+                // Show final answer
+                if (finalData) {
+                    let answerHtml = '';
+                    const fr = finalData.final_result;
+                    if (fr !== null && fr !== undefined) {
+                        if (typeof fr === 'number') {
+                            answerHtml = `<strong>${fr}</strong>`;
+                        } else if (typeof fr === 'string') {
+                            answerHtml = fr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                        } else if (Array.isArray(fr)) {
+                            const count = fr.length;
+                            let items = fr.slice(0, 15).map(item => {
+                                if (typeof item === 'object' && item !== null) {
+                                    const label = item.name || item.path || item.title || JSON.stringify(item);
+                                    return label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                }
+                                return String(item).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                            });
+                            answerHtml = `Found <strong>${count}</strong> item${count !== 1 ? 's' : ''}:`;
+                            answerHtml += '<ul style="margin: 6px 0 0 0; padding-left: 20px; list-style: disc;">';
+                            items.forEach(i => { answerHtml += `<li style="margin: 2px 0;">${i}</li>`; });
+                            if (count > 15) answerHtml += `<li style="margin: 2px 0; color: var(--text-muted);">… and ${count - 15} more</li>`;
+                            answerHtml += '</ul>';
+                        } else if (typeof fr === 'object') {
+                            if (fr.monthly_payment !== undefined) {
+                                answerHtml = `<strong>Monthly Payment:</strong> $${Number(fr.monthly_payment).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}<br>`;
+                                if (fr.total_interest !== undefined) answerHtml += `<strong>Total Interest:</strong> $${Number(fr.total_interest).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}<br>`;
+                                if (fr.total_paid !== undefined) answerHtml += `<strong>Total Paid:</strong> $${Number(fr.total_paid).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+                            } else {
+                                const entries = Object.entries(fr).slice(0, 20);
+                                answerHtml = '<div style="display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;">';
+                                entries.forEach(([k, v]) => {
+                                    const key = k.replace(/_/g, ' ').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                    let val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                                    val = val.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                    if (val.length > 200) val = val.slice(0, 200) + '…';
+                                    answerHtml += `<span style="color: var(--text-muted); text-transform: capitalize;">${key}:</span><span>${val}</span>`;
+                                });
+                                answerHtml += '</div>';
+                            }
+                        }
+                    }
+                    
+                    if (answerHtml) {
+                        addMessage(answerHtml, 'assistant');
+                    } else if (!finalData.success) {
+                        addMessage('⚠️ Some steps had issues — see details in the plan above.', 'assistant');
+                    }
                 }
                 
             } catch (e) {
-                console.error('[Telic] Execute error:', e);
+                console.error('[Telic] Execute stream error:', e);
                 document.querySelectorAll('.plan-step .step-status').forEach(el => {
-                    el.style.color = 'var(--error, #f87171)';
-                    el.textContent = '❌ error';
+                    if (el.textContent.includes('pending') || el.textContent.includes('running')) {
+                        el.style.color = 'var(--error, #f87171)';
+                        el.textContent = '❌ error';
+                    }
                 });
                 addMessage('Failed to execute plan: ' + e.message, 'system');
             }
