@@ -69,11 +69,11 @@ _ACTION_RISK: Dict[tuple, str] = {
     ("BROWSER", "fill_form"): "high",
     ("BROWSER", "execute_js"): "high",
     ("CALENDAR", "delete"): "high",
+    ("CALENDAR", "create"): "high",  # Creates external events - needs approval
     ("TASK", "delete"): "high",
+    ("TASK", "create"): "high",  # Creates external tasks - needs approval
     ("CONTACTS", "add"): "medium",
-    # Medium risk — creates or modifies data
-    ("CALENDAR", "create"): "medium",
-    ("TASK", "create"): "medium",
+    # Medium risk — modifies existing data
     ("TASK", "update"): "medium",
     ("TASK", "complete"): "medium",
     ("FILE", "list"): "low",
@@ -1274,14 +1274,18 @@ class CalendarPrimitive(Primitive):
             Path(self._storage_path).parent.mkdir(parents=True, exist_ok=True)
             with open(self._storage_path, "w") as f:
                 json.dump(self._events, f, indent=2)
+            print(f"[CALENDAR] Saved {len(self._events)} events to {self._storage_path}")
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        print(f"[CALENDAR] execute({operation}, {params})")
         try:
             if operation == "create":
                 if self._create_func:
+                    print(f"[CALENDAR] Using external create function")
                     result = await self._create_func(**params)
                     return StepResult(True, data=result)
                 
+                print(f"[CALENDAR] Creating local event")
                 event = {
                     "id": f"evt_{len(self._events)}_{int(datetime.now().timestamp())}",
                     "title": params.get("title", "Untitled"),
@@ -1294,6 +1298,7 @@ class CalendarPrimitive(Primitive):
                 }
                 self._events.append(event)
                 self._save()
+                print(f"[CALENDAR] Event created: {event['id']} - {event['title']}")
                 return StepResult(True, data=event)
             
             elif operation == "list":
@@ -4069,12 +4074,58 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
             pass
         return None
     
+    # Map primitive.operation to canonical trust level action types
+    _ACTION_TYPE_MAP = {
+        # Calendar
+        "CALENDAR.create": "create_calendar_event",
+        "CALENDAR.delete": "delete_event",
+        "CALENDAR.update": "update_event",
+        "CALENDAR.list": "search_calendar",
+        "CALENDAR.search": "search_calendar",
+        # Email
+        "EMAIL.send": "send_email",
+        "EMAIL.delete": "delete_email",
+        "EMAIL.search": "search_email",
+        "EMAIL.draft": "create_draft",
+        # File
+        "FILE.write": "modify_file",
+        "FILE.delete": "delete_file",
+        "FILE.move": "move_file",
+        "FILE.rename": "rename_file",
+        "FILE.read": "read_file",
+        "FILE.search": "search_files",
+        "FILE.list": "list_directory",
+        "FILE.info": "get_file_info",
+        # Task
+        "TASK.create": "create_task",
+        "TASK.delete": "delete_task",
+        "TASK.update": "update_task",
+        # Message
+        "MESSAGE.send": "send_message",
+        # Drive
+        "DRIVE.upload": "share_file",  # uploading to cloud involves sharing
+        "DRIVE.share": "share_file",
+        "DRIVE.search": "search_files",
+        # Document
+        "DOCUMENT.create": "create_document",
+        # Compute - all read-only calculations
+        "COMPUTE.amortization": "calculate",
+        "COMPUTE.compound": "calculate",
+        "COMPUTE.aggregate": "calculate",
+        "COMPUTE.convert": "calculate",
+        # Knowledge - memory operations are safe
+        "KNOWLEDGE.remember": "create_document",
+        "KNOWLEDGE.recall": "read_file",
+    }
+    
     def _check_trust(self, primitive: str, operation: str) -> str:
         """Check trust level for an action. Returns 'auto', 'ask', or 'block'."""
         if not self._safety_enabled or not self._trust:
             return "auto"
         
-        action_type = f"{primitive}.{operation}"
+        # Map to canonical action type for trust lookup
+        raw_action = f"{primitive}.{operation}"
+        action_type = self._ACTION_TYPE_MAP.get(raw_action, raw_action)
         level = self._trust.get_trust_level(action_type)
         
         if level == TrustLevel.AUTO_APPROVE:
@@ -4167,15 +4218,19 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
         session_id: str,
     ) -> StepResult:
         """Execute a step with full safety rails: trust check, undo, history, self-heal."""
+        print(f"[ENGINE] Executing step: {step.primitive}.{step.operation}")
         
         # 1. Trust level check
         trust = self._check_trust(step.primitive, step.operation)
+        risk = _classify_risk(step.primitive, step.operation)
+        print(f"[ENGINE] Trust={trust}, Risk={risk} for {step.primitive}.{step.operation}")
+        
         if trust == "ask":
-            risk = _classify_risk(step.primitive, step.operation)
             if risk in ("high", "critical"):
                 # For high-risk actions, mark as needing approval
                 # In a real UI flow, this would pause and wait for user input
                 # For now, we log it and proceed (the approval gateway records it)
+                print(f"[ENGINE] High-risk action queued for approval: {step.primitive}.{step.operation}")
                 if self._approval:
                     try:
                         from src.control.approval_gateway import PendingAction, ActionPreview

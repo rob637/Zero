@@ -231,6 +231,7 @@ async def chat(req: ChatRequest):
             engine = get_telic_engine()
             if engine:
                 # Generate plan (with approval required - show user first)
+                print(f"[CHAT] Generating plan for: {req.message[:80]}")
                 exec_result = await engine.do(
                     req.message,
                     require_approval=True,
@@ -239,6 +240,7 @@ async def chat(req: ChatRequest):
                 # Cache the plan so /execute runs this EXACT plan (no re-planning)
                 if exec_result.plan:
                     _pending_plans[req.message] = exec_result.plan
+                    print(f"[CHAT] Plan cached with {len(exec_result.plan)} steps")
                 
                 # Format plan steps for the UI
                 plan_steps = []
@@ -252,7 +254,9 @@ async def chat(req: ChatRequest):
                             "params": step.params,
                             "status": "pending",
                         })
+                        print(f"[CHAT]   Step {step.id}: {step.primitive}.{step.operation}")
                 
+                print(f"[CHAT] Returning plan with {len(plan_steps)} steps - UI should show approve buttons")
                 return JSONResponse({
                     "error": None,
                     "response": response_text,
