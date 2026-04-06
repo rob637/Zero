@@ -1887,6 +1887,14 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
     
+    # Load .env file (API keys, config) — checks both apex/ and repo root
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()  # apex/.env
+        load_dotenv(Path(__file__).parent.parent / ".env")  # repo root .env
+    except ImportError:
+        pass
+    
     print("""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                       TELIC AI OS                             ║
