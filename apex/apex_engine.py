@@ -3518,26 +3518,19 @@ class TaskPlanner:
 
 {capabilities}
 
-PRIMITIVE SELECTION GUIDE:
-- Adding/creating events, appointments, meetings to a calendar → CALENDAR.create (NOT FILE.write or DOCUMENT.create)
-  CALENDAR.create params: {{"title": "...", "start": "ISO datetime", "end": "ISO datetime", "description": "...", "location": "..."}}
-- Finding/looking up appointments, meetings, schedules → CALENDAR.search or CALENDAR.list (NOT EMAIL or CONTACTS)
-- Finding people's info → CONTACTS.search
-- Emails, messages, correspondence → EMAIL.search
-- Files on disk → FILE.search
-- NEVER use FILE.search + FILE.write to manage calendar events. Always use the CALENDAR primitive.
-- When results from step N are needed in step N+1, you MUST wire them: "wires": {{"data": "step_N"}}
+Choose the most specific primitive for each task. The primitive descriptions and parameter schemas above tell you everything available.
+
+WIRING — how steps pass data to each other:
+- "params" = static values known now
+- "wires" = data flowing from a previous step's output
+- Wire format: {{"param_name": "step_N"}} for the whole result, or {{"param_name": "step_N.field"}} to pick a field
+- If step 1 needs step 0's output, you MUST wire it: "wires": {{"data": "step_0"}}
 
 RULES:
 1. Each step uses ONE primitive and ONE operation
-2. "params" = static values known now. "wires" = data flowing from a previous step's output.
-3. Wire format: {{"param_name": "step_N.path.to.field"}} — e.g. {{"body": "step_0.monthly_payment"}}
-   Use "step_N" for the whole result, or "step_N.field" to pick a specific field.
-4. Match params to the PARAMETER SCHEMAS above exactly
-5. For COMPUTE.formula, always use: {{"name": "<formula>", "inputs": {{...}}}}
-6. Minimize steps — only what's necessary
-7. depends_on is auto-derived from wires — you can omit it
-8. ALWAYS wire data between dependent steps. If step 1 needs step 0's output, add: "wires": {{"data": "step_0"}}
+2. Match params to the PARAMETER SCHEMAS above exactly
+3. Minimize steps — only what's necessary
+4. depends_on is auto-derived from wires — you can omit it
 
 ORCHESTRATION (use only when needed):
 - step_type "action" (default): execute one primitive operation
