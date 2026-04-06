@@ -57,6 +57,16 @@ from intelligence.cross_service import CrossServiceIntelligence
 from intelligence.semantic_memory import SemanticMemory
 from connectors.devtools import UnifiedDevTools
 
+# Google Calendar connector (real API)
+try:
+    from connectors.google_auth import GoogleAuth, get_google_auth
+    from connectors.calendar import CalendarConnector
+    HAS_GOOGLE_CALENDAR = True
+except ImportError:
+    HAS_GOOGLE_CALENDAR = False
+    GoogleAuth = None
+    CalendarConnector = None
+
 # Initialize
 app = FastAPI(title="Telic", description="AI Operating System")
 
@@ -74,45 +84,36 @@ orchestrator = Orchestrator()
 
 # Initialize the REAL Telic engine (all 8 primitives)
 _telic_engine: Optional[TelicEngine] = None
+_google_calendar: Optional['CalendarConnector'] = None
 
 # Cache approved plans so /execute runs the SAME plan the user saw (no re-planning)
 _pending_plans: Dict[str, Any] = {}  # message -> plan steps
 
-def get_telic_engine() -> Optional[TelicEngine]:
+def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton."""
-    global _telic_engine
-    if _telic_engine is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
-        if api_key:
-            model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
-            
-            # Wire up available connectors (only if authenticated)
-            connectors = {}
-            try:
-                from src.connectors import get_calendar_connector, get_gmail_connector, get_drive_connector
-                
-                cal = get_calendar_connector()
-                if cal and cal.is_connected():
-                    connectors["calendar"] = cal
-                    print("[ENGINE] Google Calendar connected")
-                else:
-                    print("[ENGINE] Google Calendar not authenticated - using local storage")
-                
-                gmail = get_gmail_connector()
-                if gmail and gmail.is_connected():
-                    connectors["gmail"] = gmail
-                    print("[ENGINE] Gmail connected")
-                
-                drive = get_drive_connector()
-                if drive and drive.is_connected():
-                    connectors["drive"] = drive
-                    print("[ENGINE] Google Drive connected")
-                    
-            except Exception as e:
-                print(f"[ENGINE] Connector init: {e}")
-            
-            _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
-            print(f"[ENGINE] Initialized with {len(connectors)} connectors")
+    global _telic_engine, _google_calendar
+    
+    if _telic_engine is not None and not force_rebuild:
+        return _telic_engine
+    
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+        
+    model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
+    
+    # Wire up available connectors
+    connectors = {}
+    
+    # Check for Google Calendar connection
+    if HAS_GOOGLE_CALENDAR and _google_calendar and _google_calendar.connected:
+        connectors["calendar"] = _google_calendar
+        print("[ENGINE] Google Calendar connected - using real API")
+    else:
+        print("[ENGINE] Google Calendar not connected - using local storage")
+    
+    _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
+    print(f"[ENGINE] Initialized with {len(connectors)} connectors")
     return _telic_engine
 
 # Phase 4-5: Intelligence Layer singletons
@@ -146,6 +147,51 @@ def get_devtools() -> UnifiedDevTools:
     if _devtools is None:
         _devtools = UnifiedDevTools()
     return _devtools
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Try to reconnect Google Calendar if tokens exist from previous session."""
+    global _google_calendar
+    
+    if not HAS_GOOGLE_CALENDAR:
+        print("[STARTUP] Google Calendar libraries not available")
+        return
+    
+    try:
+        auth = get_google_auth()
+        
+        # Check if we have existing tokens (no OAuth prompt)
+        if auth._token_file.exists():
+            print("[STARTUP] Found existing Google tokens, attempting reconnect...")
+            
+            # Load existing credentials without triggering OAuth flow
+            from google.oauth2.credentials import Credentials
+            from google.auth.transport.requests import Request
+            
+            scopes = auth._resolve_scopes(['calendar'])
+            creds = Credentials.from_authorized_user_file(str(auth._token_file), scopes)
+            
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                auth._creds = creds
+                auth._save_token()
+            
+            if creds and creds.valid:
+                auth._creds = creds
+                _google_calendar = CalendarConnector(auth)
+                await _google_calendar.connect()
+                print(f"[STARTUP] Google Calendar reconnected!")
+                
+                # Rebuild engine with the connector
+                get_telic_engine(force_rebuild=True)
+            else:
+                print("[STARTUP] Google tokens expired or invalid")
+        else:
+            print("[STARTUP] No Google tokens found - user needs to connect")
+            
+    except Exception as e:
+        print(f"[STARTUP] Google reconnect failed: {e}")
 
 
 # Request models
@@ -995,6 +1041,118 @@ from src.connectors import (
     get_calendar_connector,
     get_drive_connector,
 )
+
+
+# =============================================================================
+# GOOGLE CALENDAR - SIMPLE OAUTH FLOW
+# =============================================================================
+
+@app.get("/google/status")
+async def google_status():
+    """Check Google Calendar connection status."""
+    global _google_calendar
+    
+    if not HAS_GOOGLE_CALENDAR:
+        return JSONResponse({
+            "connected": False,
+            "error": "Google API libraries not installed. Run: pip install google-api-python-client google-auth-oauthlib",
+            "has_credentials_file": False,
+        })
+    
+    auth = get_google_auth()
+    has_creds = auth.has_credentials_file()
+    connected = _google_calendar is not None and _google_calendar.connected
+    
+    calendars = []
+    if connected:
+        try:
+            calendars = await _google_calendar.list_calendars()
+        except Exception as e:
+            print(f"[GOOGLE] Error listing calendars: {e}")
+    
+    return JSONResponse({
+        "connected": connected,
+        "has_credentials_file": has_creds,
+        "calendars": calendars,
+        "setup_instructions": auth.get_setup_instructions() if not has_creds else None,
+    })
+
+
+@app.post("/google/connect")
+async def google_connect():
+    """Connect to Google Calendar via OAuth."""
+    global _google_calendar, _telic_engine
+    
+    if not HAS_GOOGLE_CALENDAR:
+        return JSONResponse({
+            "success": False,
+            "error": "Google API libraries not installed. Run: pip install google-api-python-client google-auth-oauthlib",
+        })
+    
+    auth = get_google_auth()
+    
+    if not auth.has_credentials_file():
+        return JSONResponse({
+            "success": False,
+            "error": "OAuth credentials file not found",
+            "setup_instructions": auth.get_setup_instructions(),
+        })
+    
+    try:
+        # This opens a browser for OAuth
+        print("[GOOGLE] Starting OAuth flow...")
+        creds = await auth.get_credentials(['calendar'])
+        
+        if not creds:
+            return JSONResponse({
+                "success": False,
+                "error": "OAuth flow failed or was cancelled",
+            })
+        
+        # Create and connect the calendar connector
+        _google_calendar = CalendarConnector(auth)
+        await _google_calendar.connect()
+        
+        # Rebuild the engine with the new connector
+        _telic_engine = None
+        get_telic_engine(force_rebuild=True)
+        
+        # List calendars to confirm connection
+        calendars = await _google_calendar.list_calendars()
+        
+        print(f"[GOOGLE] Connected! Found {len(calendars)} calendars")
+        
+        return JSONResponse({
+            "success": True,
+            "calendars": calendars,
+            "message": f"Connected to Google Calendar. Found {len(calendars)} calendars.",
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            "success": False,
+            "error": str(e),
+        })
+
+
+@app.get("/google/calendars")
+async def list_google_calendars():
+    """List all Google Calendars."""
+    global _google_calendar
+    
+    if not _google_calendar or not _google_calendar.connected:
+        return JSONResponse({
+            "error": "Not connected to Google Calendar",
+            "calendars": [],
+        })
+    
+    try:
+        calendars = await _google_calendar.list_calendars()
+        return JSONResponse({"calendars": calendars})
+    except Exception as e:
+        return JSONResponse({"error": str(e), "calendars": []})
 
 
 class OAuthInitRequest(BaseModel):

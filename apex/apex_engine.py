@@ -1282,11 +1282,28 @@ class CalendarPrimitive(Primitive):
             if operation == "create":
                 if self._create_func:
                     print(f"[CALENDAR] Using external calendar (Google/Outlook)")
-                    result = await self._create_func(**params)
+                    # Map param names: CalendarPrimitive uses 'title', Google API uses 'summary'
+                    api_params = {
+                        "summary": params.get("title") or params.get("summary", "Untitled"),
+                        "start": params.get("start"),
+                        "end": params.get("end"),
+                        "description": params.get("description", ""),
+                        "location": params.get("location", ""),
+                        "attendees": params.get("attendees", []),
+                        "calendar_id": params.get("calendar_id", "primary"),
+                    }
+                    result = await self._create_func(**api_params)
+                    # Handle CalendarEvent dataclass or dict
+                    if hasattr(result, 'to_dict'):
+                        result_dict = result.to_dict()
+                    elif isinstance(result, dict):
+                        result_dict = result
+                    else:
+                        result_dict = {"id": str(result)}
                     return StepResult(True, data={
-                        **(result if isinstance(result, dict) else {"id": str(result)}),
+                        **result_dict,
                         "storage": "google_calendar",
-                        "message": "Event created in Google Calendar"
+                        "message": f"Event '{api_params['summary']}' created in Google Calendar"
                     })
                 
                 print(f"[CALENDAR] Creating local event")

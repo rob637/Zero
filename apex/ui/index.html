@@ -2370,7 +2370,43 @@
         // ============================================
         
         async function connectGoogle() {
-            addMessage(`**Google Calendar Integration**\n\nGoogle Calendar sync requires OAuth2 setup:\n\n1. Create a project at console.cloud.google.com\n2. Enable Calendar API\n3. Create OAuth credentials\n4. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env\n\nFor now, calendar events are saved locally to ~/.telic/calendar.json`, 'system');
+            setThinking(true);
+            try {
+                // First check status
+                const statusRes = await fetch(`${API}/google/status`);
+                const status = await statusRes.json();
+                
+                if (!status.has_credentials_file) {
+                    setThinking(false);
+                    addMessage(`**Google Calendar Setup Required**\n\n${status.setup_instructions || 'Please set up OAuth credentials.'}\n\nOnce you have the credentials file, click Google again to connect.`, 'system');
+                    return;
+                }
+                
+                if (status.connected) {
+                    setThinking(false);
+                    const calList = status.calendars.map(c => `• ${c.summary}${c.primary ? ' (primary)' : ''}`).join('\n');
+                    addMessage(`**Already connected to Google Calendar!**\n\nAvailable calendars:\n${calList}`, 'assistant');
+                    document.getElementById('googleDot').classList.add('connected');
+                    return;
+                }
+                
+                // Trigger OAuth flow
+                addMessage('Opening browser for Google sign-in...', 'system');
+                const connectRes = await fetch(`${API}/google/connect`, { method: 'POST' });
+                const result = await connectRes.json();
+                setThinking(false);
+                
+                if (result.success) {
+                    document.getElementById('googleDot').classList.add('connected');
+                    const calList = result.calendars.map(c => `• ${c.summary}${c.primary ? ' (primary)' : ''}`).join('\n');
+                    addMessage(`✅ **Connected to Google Calendar!**\n\nAvailable calendars:\n${calList}\n\nYou can now create events with "add X to my calendar"`, 'assistant');
+                } else {
+                    addMessage(`❌ ${result.error}${result.setup_instructions ? '\n\n' + result.setup_instructions : ''}`, 'system');
+                }
+            } catch(e) {
+                setThinking(false);
+                addMessage(`Failed to connect to Google: ${e.message}`, 'system');
+            }
         }
 
         async function connectMicrosoft() {
@@ -2436,16 +2472,23 @@
         
         async function checkServiceStatus() {
             try {
+                // Check general health
                 const res = await fetch(`${API}/health`);
                 const data = await res.json();
                 
                 // Update service indicators based on response
                 if (data.services) {
-                    if (data.services.google) document.getElementById('googleDot').classList.add('connected');
                     if (data.services.microsoft) document.getElementById('microsoftDot').classList.add('connected');
                     if (data.services.github) document.getElementById('githubDot').classList.add('connected');
                     if (data.services.jira) document.getElementById('jiraDot').classList.add('connected');
                     if (data.services.slack) document.getElementById('slackDot').classList.add('connected');
+                }
+                
+                // Check Google Calendar separately (uses real OAuth)
+                const googleRes = await fetch(`${API}/google/status`);
+                const googleData = await googleRes.json();
+                if (googleData.connected) {
+                    document.getElementById('googleDot').classList.add('connected');
                 }
             } catch(e) {
                 console.log('Could not check service status');
