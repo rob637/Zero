@@ -1307,7 +1307,7 @@ class CalendarPrimitive(Primitive):
                 print(f"[CALENDAR] Saved to: {self._storage_path}")
                 return StepResult(True, data={
                     **event,
-                    "message": f"Event '{event['title']}' created in local calendar. To sync with Google Calendar, connect your Google account in Settings."
+                    "message": f"Event '{event['title']}' saved to local calendar ({self._storage_path}). Google Calendar sync coming soon."
                 })
             
             elif operation == "list":

@@ -1489,14 +1489,14 @@
         
         <div class="sidebar-section">
             <div class="sidebar-section-title">Connected Services</div>
-            <div class="sidebar-item" id="googleStatus">
+            <div class="sidebar-item" id="googleStatus" onclick="connectGoogle()">
                 <span class="sidebar-item-icon">📧</span>
                 <span>Google</span>
                 <div class="service-status">
                     <span class="status-dot" id="googleDot"></span>
                 </div>
             </div>
-            <div class="sidebar-item" id="microsoftStatus">
+            <div class="sidebar-item" id="microsoftStatus" onclick="connectMicrosoft()">
                 <span class="sidebar-item-icon">📨</span>
                 <span>Microsoft</span>
                 <div class="service-status">
@@ -1637,7 +1637,7 @@
         }
         
         function openSettings() {
-            addMessage('Settings panel coming soon!', 'system');
+            addMessage(`**Settings**\n\nConfigure integrations via environment variables in .env:\n\n• **LLM**: ANTHROPIC_API_KEY or OPENAI_API_KEY\n• **GitHub**: GITHUB_TOKEN\n• **Jira**: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN\n• **Slack**: SLACK_BOT_TOKEN\n\nCalendar events are saved locally to ~/.telic/calendar.json\n\nFull settings panel coming in a future update!`, 'system');
         }
 
         // ============================================
@@ -2369,6 +2369,14 @@
         // Service Connections
         // ============================================
         
+        async function connectGoogle() {
+            addMessage(`**Google Calendar Integration**\n\nGoogle Calendar sync requires OAuth2 setup:\n\n1. Create a project at console.cloud.google.com\n2. Enable Calendar API\n3. Create OAuth credentials\n4. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env\n\nFor now, calendar events are saved locally to ~/.telic/calendar.json`, 'system');
+        }
+
+        async function connectMicrosoft() {
+            addMessage(`**Microsoft Integration**\n\nOutlook Calendar/Email requires Azure AD setup:\n\n1. Register an app at portal.azure.com\n2. Add Calendar.ReadWrite, Mail.ReadWrite permissions\n3. Create a client secret\n4. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in .env\n\nFor now, calendar events are saved locally to ~/.telic/calendar.json`, 'system');
+        }
+
         async function connectGitHub() {
             setThinking(true);
             try {
