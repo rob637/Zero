@@ -86,23 +86,25 @@ def get_telic_engine() -> Optional[TelicEngine]:
         if api_key:
             model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
             
-            # Wire up available connectors
+            # Wire up available connectors (only if authenticated)
             connectors = {}
             try:
                 from src.connectors import get_calendar_connector, get_gmail_connector, get_drive_connector
                 
                 cal = get_calendar_connector()
-                if cal:
+                if cal and cal.is_connected():
                     connectors["calendar"] = cal
                     print("[ENGINE] Google Calendar connected")
+                else:
+                    print("[ENGINE] Google Calendar not authenticated - using local storage")
                 
                 gmail = get_gmail_connector()
-                if gmail:
+                if gmail and gmail.is_connected():
                     connectors["gmail"] = gmail
                     print("[ENGINE] Gmail connected")
                 
                 drive = get_drive_connector()
-                if drive:
+                if drive and drive.is_connected():
                     connectors["drive"] = drive
                     print("[ENGINE] Google Drive connected")
                     
