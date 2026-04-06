@@ -170,10 +170,10 @@ When detecting intent:
 2. For conversation only: set "action" to false
 
 IMPORTANT: Respond with valid JSON:
-{
+{{
     "response": "Your conversational message explaining what you'll do",
     "action": true | false
-}
+}}
 
 Examples:
 - "Find my loan document and create an amortization schedule" -> action: true, response explains the plan
