@@ -3952,6 +3952,16 @@ class Apex:
             if wired_value is not None:
                 merged[param_name] = wired_value
         
+        # Resolve bare step references: "step_0" or "step_0.field" (without {{ }})
+        # LLMs often write these in params instead of using proper wires or {{}} templates
+        for k, v in list(merged.items()):
+            if isinstance(v, str):
+                bare_match = re.match(r'^step_(\d+)(\.[\w.]+)?$', v.strip())
+                if bare_match:
+                    resolved = self._resolve_wire(v.strip(), results)
+                    if resolved is not None:
+                        merged[k] = resolved
+        
         # Resolve any remaining {{step_N}} templates in params
         merged = self._resolve_params(merged, results)
         
