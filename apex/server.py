@@ -291,10 +291,10 @@ async def chat(req: ChatRequest):
     
     Flow:
     1. Add message to conversation history
-    2. Plan with full context (understands follow-up responses)
-    3. Auto-run read-only steps
-    4. Show write steps for approval
-    5. User approves → execute
+    2. If pending clarification, go straight to planner
+    3. Otherwise, check intent then plan
+    4. Auto-run read-only steps
+    5. Show write steps for approval
     """
     global _conversation_history
     
@@ -317,6 +317,19 @@ async def chat(req: ChatRequest):
         if len(_conversation_history) > MAX_HISTORY:
             _conversation_history = _conversation_history[-MAX_HISTORY:]
         
+        # Check if this is a response to a clarification question
+        # (previous assistant message exists and had no plan = was a question)
+        is_clarification_response = False
+        if len(_conversation_history) >= 2:
+            # Look for pattern: user asked something, assistant asked clarifying question, user responded
+            for i in range(len(_conversation_history) - 2, -1, -1):
+                msg = _conversation_history[i]
+                if msg["role"] == "assistant":
+                    # If assistant's last message looks like a question, treat current as continuation
+                    if "?" in msg["content"]:
+                        is_clarification_response = True
+                    break
+        
         # Build context string from recent conversation
         context_str = ""
         if len(_conversation_history) > 1:
@@ -326,15 +339,20 @@ async def chat(req: ChatRequest):
                 context_str += f"{role}: {msg['content']}\n"
             context_str += "\nCurrent request:\n"
         
-        # Step 1: Ask LLM to understand intent
-        result = await llm.complete_json(
-            system=get_chat_system_prompt(),
-            user=context_str + req.message,
-            triggering_request=f"User chat: {req.message[:100]}"
-        )
-        
-        response_text = result.get("response", "I'm not sure how to help with that.")
-        needs_action = result.get("action", False)
+        # If this is a clarification response, skip intent detection and go straight to action
+        if is_clarification_response:
+            print(f"[CHAT] Clarification response detected, skipping intent check")
+            needs_action = True
+            response_text = "Processing your request..."
+        else:
+            # Step 1: Ask LLM to understand intent
+            result = await llm.complete_json(
+                system=get_chat_system_prompt(),
+                user=context_str + req.message,
+                triggering_request=f"User chat: {req.message[:100]}"
+            )
+            response_text = result.get("response", "I'm not sure how to help with that.")
+            needs_action = result.get("action", False)
         
         if needs_action:
             engine = get_telic_engine()

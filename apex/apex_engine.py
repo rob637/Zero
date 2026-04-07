@@ -3678,7 +3678,7 @@ class TaskPlanner:
                 for msg in conv[:-1]:  # Exclude the current request
                     role = "User" if msg["role"] == "user" else "Assistant"
                     conversation_context += f"  {role}: {msg['content']}\n"
-                conversation_context += "\n"
+                conversation_context += "\nThe current message is a response to the above conversation. Use the FULL conversation to understand what the user wants.\n\n"
         
         prompt = f"""You are a task planner. Break this request into primitive operations.
 
@@ -3692,10 +3692,10 @@ Rules:
 3. Wire dynamic data between steps
 4. If unclear or missing info, return: {{"clarify": "your question to user"}}
 
-Request: {request}
+Current message: {request}
 
 Return JSON array or clarify object:
-[{{"description": "...", "primitive": "WEB", "operation": "extract", "params": {{}}, "wires": {{}}, "side_effect": false}}]"""
+[{{"description": "...", "primitive": "CALENDAR", "operation": "create", "params": {{}}, "wires": {{}}, "side_effect": true}}]"""
 
         response = await self._llm(prompt)
         
