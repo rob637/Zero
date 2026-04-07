@@ -3669,11 +3669,22 @@ class TaskPlanner:
         from datetime import datetime
         today_iso = datetime.now().strftime("%Y-%m-%d")
         
+        # Build conversation context if available
+        conversation_context = ""
+        if context and "conversation" in context:
+            conv = context["conversation"]
+            if len(conv) > 1:  # More than just current message
+                conversation_context = "Conversation history:\n"
+                for msg in conv[:-1]:  # Exclude the current request
+                    role = "User" if msg["role"] == "user" else "Assistant"
+                    conversation_context += f"  {role}: {msg['content']}\n"
+                conversation_context += "\n"
+        
         prompt = f"""You are a task planner. Break this request into primitive operations.
 
 TODAY: {today_iso}
 
-{capabilities}
+{conversation_context}{capabilities}
 
 Rules:
 1. One primitive per step

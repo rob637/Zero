@@ -89,6 +89,10 @@ _google_calendar: Optional['CalendarConnector'] = None
 # Cache approved plans so /execute runs the SAME plan the user saw (no re-planning)
 _pending_plans: Dict[str, Any] = {}  # message -> plan steps
 
+# Conversation history for context (simple in-memory, last N messages)
+_conversation_history: list = []  # [{role: "user"/"assistant", content: "..."}]
+MAX_HISTORY = 10  # Keep last 10 messages for context
+
 def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton."""
     global _telic_engine, _google_calendar
@@ -283,15 +287,17 @@ def has_side_effect(step):
 @app.post("/chat")
 async def chat(req: ChatRequest):
     """
-    Main chat endpoint.
+    Main chat endpoint with conversation memory.
     
     Flow:
-    1. Plan (breaks into primitives with wires)
-    2. Auto-run read-only steps (e.g., WEB.extract to get game time)
-    3. Resolve wires with actual data
-    4. Show user resolved write steps for approval
-    5. User approves → execute write steps
+    1. Add message to conversation history
+    2. Plan with full context (understands follow-up responses)
+    3. Auto-run read-only steps
+    4. Show write steps for approval
+    5. User approves → execute
     """
+    global _conversation_history
+    
     llm = create_secure_client_from_env()
     
     if not llm:
@@ -306,10 +312,24 @@ async def chat(req: ChatRequest):
         import json
         import re
         
+        # Add user message to history
+        _conversation_history.append({"role": "user", "content": req.message})
+        if len(_conversation_history) > MAX_HISTORY:
+            _conversation_history = _conversation_history[-MAX_HISTORY:]
+        
+        # Build context string from recent conversation
+        context_str = ""
+        if len(_conversation_history) > 1:
+            context_str = "Recent conversation:\n"
+            for msg in _conversation_history[:-1]:  # Exclude current message
+                role = "User" if msg["role"] == "user" else "Assistant"
+                context_str += f"{role}: {msg['content']}\n"
+            context_str += "\nCurrent request:\n"
+        
         # Step 1: Ask LLM to understand intent
         result = await llm.complete_json(
             system=get_chat_system_prompt(),
-            user=req.message,
+            user=context_str + req.message,
             triggering_request=f"User chat: {req.message[:100]}"
         )
         
@@ -319,14 +339,20 @@ async def chat(req: ChatRequest):
         if needs_action:
             engine = get_telic_engine()
             if engine:
-                # Step 1: Generate plan
+                # Generate plan WITH conversation context
                 print(f"[CHAT] Generating plan for: {req.message[:80]}")
+                
+                # Pass conversation history as context
+                plan_context = {"conversation": _conversation_history} if len(_conversation_history) > 1 else None
+                
                 exec_result = await engine.do(
                     req.message,
+                    context=plan_context,
                     require_approval=True,
                 )
                 
                 if not exec_result.plan:
+                    _conversation_history.append({"role": "assistant", "content": response_text})
                     return JSONResponse({
                         "error": None,
                         "response": response_text,
@@ -337,6 +363,7 @@ async def chat(req: ChatRequest):
                 # Check if AI needs clarification
                 if exec_result.plan and exec_result.plan[0].primitive == "CLARIFY":
                     question = exec_result.plan[0].params.get("question", exec_result.plan[0].description)
+                    _conversation_history.append({"role": "assistant", "content": question})
                     return JSONResponse({
                         "error": None,
                         "response": question,
@@ -435,15 +462,19 @@ async def chat(req: ChatRequest):
                 if write_steps:
                     response_parts.append(f"Ready to execute ({len(write_steps)} action(s))")
                 
+                assistant_response = " — ".join(response_parts) if response_parts else "Here's the plan:"
+                _conversation_history.append({"role": "assistant", "content": assistant_response})
+                
                 return JSONResponse({
                     "error": None,
-                    "response": " — ".join(response_parts) if response_parts else "Here's the plan:",
+                    "response": assistant_response,
                     "completed_steps": completed_steps,
                     "plan": write_steps if write_steps else None,
                     "task_id": None,
                     "needs_execution": bool(write_steps),
                 })
             else:
+                _conversation_history.append({"role": "assistant", "content": response_text})
                 return JSONResponse({
                     "error": None,
                     "response": response_text + "\n\n(Engine not initialized - check API key)",
@@ -452,6 +483,7 @@ async def chat(req: ChatRequest):
                 })
         
         # No action needed, just conversation
+        _conversation_history.append({"role": "assistant", "content": response_text})
         return JSONResponse({
             "error": None,
             "response": response_text,
@@ -468,6 +500,14 @@ async def chat(req: ChatRequest):
             "plan": None,
             "task_id": None
         })
+
+
+@app.post("/clear")
+async def clear_conversation():
+    """Clear conversation history to start fresh."""
+    global _conversation_history
+    _conversation_history = []
+    return JSONResponse({"status": "ok", "message": "Conversation cleared"})
 
 
 class ExecuteRequest(BaseModel):
