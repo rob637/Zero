@@ -3658,11 +3658,12 @@ TODAY: {today_iso}
 Rules:
 1. One primitive per step
 2. "tonight" = {today_iso}, "tomorrow" = next day
-3. Wire dynamic data between steps (dates, times, details from lookups)
+3. Wire dynamic data between steps
 
 Request: {request}
 
-Return JSON array. Each step needs: description, primitive, operation, params, wires, side_effect."""
+Return JSON array:
+[{{"description": "...", "primitive": "WEB", "operation": "extract", "params": {{}}, "wires": {{}}, "side_effect": false}}]"""
 
         response = await self._llm(prompt)
         
