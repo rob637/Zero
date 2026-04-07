@@ -3660,9 +3660,10 @@ WIRING — how steps pass data to each other:
 RULES:
 1. Each step uses ONE primitive and ONE operation
 2. Match params to the PARAMETER SCHEMAS above exactly
-3. Minimize steps — only what's necessary
-4. depends_on is auto-derived from wires — you can omit it
+3. Minimize steps — ONLY what's actually necessary. If the user provides all info, use it directly.
+4. DO NOT add WEB.search or WEB.extract unless the user explicitly asks to look something up
 5. For dates: ALWAYS use {datetime.now().year} as the year. Never use 2024 or other past years.
+6. For calendar: use sensible defaults (evening events: 7pm, 3 hour duration)
 
 ORCHESTRATION (use only when needed):
 - step_type "action" (default): execute one primitive operation
@@ -3681,7 +3682,10 @@ Respond with ONLY a JSON array:
 [
   {{"description": "...", "primitive": "COMPUTE", "operation": "formula", "params": {{"name": "amortization", "inputs": {{"principal": 250000}}}}, "wires": {{}}}},
   {{"description": "...", "primitive": "EMAIL", "operation": "send", "params": {{"to": "x@y.com", "subject": "Results"}}, "wires": {{"body": "step_0"}}}}
-]"""
+]
+
+Example - "add game tonight to family calendar":
+[{{"description": "Create calendar event", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Game", "start": "{today_iso}T19:00:00", "end": "{today_iso}T22:00:00", "calendar_id": "FAMILY"}}, "wires": {{}}}}]"""
 
         response = await self._llm(prompt)
         
