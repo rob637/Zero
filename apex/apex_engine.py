@@ -3658,17 +3658,11 @@ TODAY: {today_iso}
 Rules:
 1. One primitive per step
 2. "tonight" = {today_iso}, "tomorrow" = next day
-3. Use wires to pass data between steps
+3. Wire dynamic data between steps (dates, times, details from lookups)
 
 Request: {request}
 
-Return JSON array. Each step must have:
-- "description": Human-readable summary of what this step does
-- "primitive": The primitive name (e.g., WEB, CALENDAR, FILE)
-- "operation": The operation (e.g., extract, create, search)
-- "params": Object with all required parameters filled in
-- "wires": Object mapping param names to "step_N.field" references
-- "side_effect": true if this step modifies external state (create, send, delete), false if read-only"""
+Return JSON array. Each step needs: description, primitive, operation, params, wires, side_effect."""
 
         response = await self._llm(prompt)
         
