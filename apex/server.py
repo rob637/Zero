@@ -649,11 +649,11 @@ async def execute_plan_stream(req: ExecuteRequest):
         """Run the engine in background and signal completion."""
         try:
             # Use cached plan from /chat if available
-            cached_plan = _pending_plans.pop(req.message, None)
+            cached = _pending_plans.pop(req.message, None)
             
-            if cached_plan:
+            if cached and isinstance(cached, dict) and "original_plan" in cached:
                 exec_result = await engine.execute_plan(
-                    cached_plan, 
+                    cached["original_plan"], 
                     request=req.message,
                     on_step_complete=step_callback,
                 )
