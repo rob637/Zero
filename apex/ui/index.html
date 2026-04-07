@@ -2042,6 +2042,12 @@
                     
                     if (receivedAnyEvent) {
                         showFinalResult(finalData);
+                        // Update button to show complete
+                        if (execBtn) {
+                            execBtn.textContent = '✓ Complete';
+                            execBtn.style.background = 'var(--success)';
+                            execBtn.style.opacity = '1';
+                        }
                         return; // Done — SSE worked
                     }
                     console.warn('[Telic] SSE stream returned no events, falling back to /execute');
@@ -2080,6 +2086,13 @@
                 }
                 
                 showFinalResult(data);
+                
+                // Update button to show complete
+                if (execBtn) {
+                    execBtn.textContent = '✓ Complete';
+                    execBtn.style.background = 'var(--success)';
+                    execBtn.style.opacity = '1';
+                }
                 
             } catch (e) {
                 console.error('[Telic] Execute error:', e);

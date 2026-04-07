@@ -1499,7 +1499,11 @@ class WebPrimitive(Primitive):
                     return StepResult(False, error="Missing 'url' parameter")
                 
                 if _has_httpx:
-                    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+                    async with httpx.AsyncClient(
+                        follow_redirects=True, 
+                        timeout=30,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; Telic/1.0; +https://github.com/rob637/Zero)"}
+                    ) as client:
                         resp = await client.get(url)
                         resp.raise_for_status()
                         text = resp.text[:max_len]
