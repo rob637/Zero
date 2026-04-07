@@ -1567,8 +1567,13 @@ class WebPrimitive(Primitive):
                 
                 content = fetch_result.data.get("content", "")
                 
+                # Inject today's date for time-sensitive extractions
+                today_iso = datetime.now().strftime("%Y-%m-%d")
+                
                 prompt = f"""Extract the following from this web page:
 What to extract: {what}
+
+IMPORTANT: Today's date is {today_iso}. If returning dates/times, use {today_iso} as the date.
 
 Web page content:
 {content[:12000]}
@@ -3664,9 +3669,12 @@ WIRING — how steps pass data to each other:
 RULES:
 1. Each step uses ONE primitive and ONE operation
 2. Match params to the PARAMETER SCHEMAS above exactly
-3. TODAY IS {today_iso} (year {current_year}). Use this date for "today", "tonight", "this evening".
-4. DATES: When user specifies a time ("tonight", "tomorrow at 3pm", "next Tuesday"), calculate the date from {today_iso}. Do NOT search the web for dates.
-5. Only use WEB.extract if user does NOT specify when and you need to find actual event times.
+3. TODAY IS {today_iso} (year {current_year}).
+4. For REAL-WORLD EVENTS (sports games, concerts, TV shows):
+   - Step 1: WEB.extract to find the actual start TIME, teams/performers, etc.
+   - Step 2: CALENDAR.create using TODAY's date ({today_iso}) + the time from step_0
+   - The WEB.extract "what" should ask for: start_time (HH:MM format), title, description
+5. For USER-SPECIFIED TIMES ("meeting at 3pm"): use that time directly, no web search.
 
 ORCHESTRATION (use only when needed):
 - step_type "action" (default): execute one primitive operation
@@ -3687,9 +3695,15 @@ Respond with ONLY a JSON array:
   {{"description": "...", "primitive": "EMAIL", "operation": "send", "params": {{"to": "x@y.com", "subject": "Results"}}, "wires": {{"body": "step_0"}}}}
 ]
 
-EXAMPLE - "add NCAA game tonight to family calendar" (today is {today_iso}):
-[{{"description": "Create calendar event for tonight's game", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "NCAA Championship Game", "start": "{today_iso}T20:00:00", "end": "{today_iso}T23:00:00", "calendar_id": "FAMILY", "description": "NCAA Basketball Championship Game"}}, "wires": {{}}}}]
-Note: User said "tonight" so use {today_iso}. No web search needed.
+REAL-WORLD EVENT EXAMPLE - "add NCAA game tonight to family calendar" (today is {today_iso}):
+[
+  {{"description": "Look up NCAA championship game tip-off time", "primitive": "WEB", "operation": "extract", "params": {{"url": "https://www.google.com/search?q=NCAA+championship+basketball+game+tip+off+time+tonight", "what": "Extract: 1) tip-off time, 2) teams playing. Return JSON with: start (full ISO datetime using {today_iso} as the date, e.g. {today_iso}T20:50:00), end (2.5 hours later), title (Team1 vs Team2), description (brief game summary)"}}, "wires": {{}}}},
+  {{"description": "Create calendar event for tonight", "primitive": "CALENDAR", "operation": "create", "params": {{"calendar_id": "FAMILY"}}, "wires": {{"start": "step_0.start", "end": "step_0.end", "title": "step_0.title", "description": "step_0.description"}}}}
+]
+NOTE: WEB.extract returns full ISO datetimes with {today_iso}, which get wired to CALENDAR.create.
+
+USER-SPECIFIED TIME EXAMPLE - "add meeting at 3pm tomorrow":
+[{{"description": "Create meeting", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Meeting", "start": "2026-04-08T15:00:00", "end": "2026-04-08T16:00:00"}}, "wires": {{}}}}]
 """
 
         response = await self._llm(prompt)
