@@ -151,6 +151,7 @@ class PlanStep:
     sub_request: Optional[str] = None        # For "sub_plan": natural language sub-request
     on_fail: str = "stop"                    # "stop" | "continue" | "retry"
     max_retries: int = 3                     # Max self-heal retries
+    side_effect: bool = True                 # True if modifies external state, False if read-only
     
     def to_dict(self) -> Dict:
         d = {
@@ -1440,10 +1441,10 @@ class WebPrimitive(Primitive):
     
     def get_operations(self) -> Dict[str, str]:
         return {
-            "fetch": "Fetch content from a URL (returns text/HTML)",
+            "fetch": "Fetch content from a URL (returns text/HTML). Works for static pages only.",
             "api": "Make an HTTP API call (GET, POST, PUT, DELETE)",
-            "search": "Search the web (requires search provider)",
-            "extract": "Fetch a URL and extract specific information using AI",
+            "search": "Search the web for current information (sports schedules, news, facts). Use this for questions about dates, times, events.",
+            "extract": "Fetch a static webpage URL and extract specific information. NOT for google.com, bing.com, or other search engines (JS-rendered). Use for news sites, wikipedia, official event pages.",
         }
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
@@ -3662,7 +3663,8 @@ Return JSON array. Each step must have:
 - "primitive": The primitive name (e.g., WEB, CALENDAR, FILE)
 - "operation": The operation (e.g., extract, create, search)
 - "params": Object with all required parameters filled in
-- "wires": Object mapping param names to "step_N.field" references"""
+- "wires": Object mapping param names to "step_N.field" references
+- "side_effect": true if this step modifies external state (create, send, delete), false if read-only"""
 
         response = await self._llm(prompt)
         
@@ -3705,6 +3707,7 @@ Return JSON array. Each step must have:
                 sub_request=s.get("sub_request"),
                 on_fail=s.get("on_fail", "stop"),
                 max_retries=s.get("max_retries", 3),
+                side_effect=s.get("side_effect", True),  # Default to true (safer)
             )
             
             # Parse nested step lists

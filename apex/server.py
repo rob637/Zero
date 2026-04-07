@@ -648,37 +648,65 @@ async def execute_plan_stream(req: ExecuteRequest):
     async def run_engine():
         """Run the engine in background and signal completion."""
         try:
-            # Use cached plan from /chat if available
+            # Use cached write_steps from /chat - these have resolved params
             cached = _pending_plans.pop(req.message, None)
             
-            if cached and isinstance(cached, dict) and "original_plan" in cached:
-                exec_result = await engine.execute_plan(
-                    cached["original_plan"], 
-                    request=req.message,
-                    on_step_complete=step_callback,
-                )
+            if cached and isinstance(cached, dict) and "write_steps" in cached:
+                # Execute only the pre-resolved write steps (read steps already ran in /chat)
+                write_steps = cached["write_steps"]
+                step_results = []
+                
+                for ws in write_steps:
+                    prim_name = ws["primitive"].upper()
+                    op = ws["operation"]
+                    params = ws["params"]  # Already has resolved data
+                    
+                    # Signal start
+                    await step_callback(ws["id"], ws["description"], prim_name, op, None, None, None)
+                    
+                    primitive = engine._primitives.get(prim_name)
+                    if primitive:
+                        try:
+                            result = await primitive.execute(op, params)
+                            await step_callback(ws["id"], ws["description"], prim_name, op, True, result, None)
+                            step_results.append({"success": True, "data": result})
+                        except Exception as e:
+                            await step_callback(ws["id"], ws["description"], prim_name, op, False, None, str(e))
+                            step_results.append({"success": False, "error": str(e)})
+                    else:
+                        await step_callback(ws["id"], ws["description"], prim_name, op, False, None, f"Unknown primitive: {prim_name}")
+                        step_results.append({"success": False, "error": f"Unknown primitive: {prim_name}"})
+                
+                all_success = all(r["success"] for r in step_results)
+                await queue.put({
+                    "type": "complete",
+                    "success": all_success,
+                    "final_result": step_results[-1].get("data") if step_results and step_results[-1]["success"] else None,
+                    "summary": "All steps completed successfully" if all_success else "Some steps failed",
+                })
             else:
+                # No cached data, run full plan
                 exec_result = await engine.do(
                     req.message, 
                     require_approval=False,
                     on_step_complete=step_callback,
                 )
-            
-            # Send final summary
-            final = None
-            if hasattr(exec_result, 'final_result') and exec_result.final_result is not None:
-                try:
-                    json_mod.dumps(exec_result.final_result)
-                    final = exec_result.final_result
-                except (TypeError, ValueError):
-                    final = str(exec_result.final_result)
-            
-            await queue.put({
-                "type": "complete",
-                "success": exec_result.success,
-                "final_result": final,
-                "summary": exec_result.error if not exec_result.success else "All steps completed successfully",
-            })
+                
+                # Send final summary
+                final = None
+                if hasattr(exec_result, 'final_result') and exec_result.final_result is not None:
+                    try:
+                        json_mod.dumps(exec_result.final_result)
+                        final = exec_result.final_result
+                    except (TypeError, ValueError):
+                        final = str(exec_result.final_result)
+                
+                await queue.put({
+                    "type": "complete",
+                    "success": exec_result.success,
+                    "final_result": final,
+                    "summary": exec_result.error if not exec_result.success else "All steps completed successfully",
+                })
         except Exception as e:
             await queue.put({"type": "error", "error": str(e)})
         finally:
