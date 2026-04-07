@@ -334,6 +334,16 @@ async def chat(req: ChatRequest):
                         "task_id": None,
                     })
                 
+                # Check if AI needs clarification
+                if exec_result.plan and exec_result.plan[0].primitive == "CLARIFY":
+                    question = exec_result.plan[0].params.get("question", exec_result.plan[0].description)
+                    return JSONResponse({
+                        "error": None,
+                        "response": question,
+                        "plan": None,
+                        "task_id": None,
+                    })
+                
                 # Step 2: Auto-run read-only steps to get actual data
                 read_results = {}  # step_id -> result
                 completed_steps = []

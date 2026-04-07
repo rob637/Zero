@@ -1239,7 +1239,7 @@ class CalendarPrimitive(Primitive):
     
     def get_operations(self) -> Dict[str, str]:
         return {
-            "create": "Create a calendar event",
+            "create": "Create a calendar event (supports birthdays, meetings, reminders, recurring events)",
             "list": "List events in a date range",
             "search": "Search events by keyword",
             "delete": "Delete an event by ID",
@@ -1256,6 +1256,8 @@ class CalendarPrimitive(Primitive):
                 "location": {"type": "str", "required": False, "description": "Event location"},
                 "attendees": {"type": "list", "required": False, "description": "List of attendee email addresses"},
                 "calendar_id": {"type": "str", "required": False, "description": "Calendar ID (use 'primary' for main calendar, or calendar name like 'FAMILY SHARED' for specific calendars)"},
+                "recurrence": {"type": "str", "required": False, "description": "Recurrence rule: 'yearly', 'monthly', 'weekly', 'daily', or RRULE string"},
+                "all_day": {"type": "bool", "required": False, "description": "True for all-day events like birthdays"},
             },
             "list": {
                 "start_date": {"type": "str", "required": False, "description": "Start of range (ISO date, defaults to today)"},
@@ -1326,6 +1328,22 @@ class CalendarPrimitive(Primitive):
                     raw_calendar_id = params.get("calendar_id", "primary")
                     resolved_calendar_id = await self._resolve_calendar_id(raw_calendar_id)
                     
+                    # Convert friendly recurrence to RRULE
+                    recurrence = params.get("recurrence")
+                    recurrence_rules = None
+                    if recurrence:
+                        recurrence_map = {
+                            "yearly": ["RRULE:FREQ=YEARLY"],
+                            "annually": ["RRULE:FREQ=YEARLY"],
+                            "monthly": ["RRULE:FREQ=MONTHLY"],
+                            "weekly": ["RRULE:FREQ=WEEKLY"],
+                            "daily": ["RRULE:FREQ=DAILY"],
+                        }
+                        if recurrence.lower() in recurrence_map:
+                            recurrence_rules = recurrence_map[recurrence.lower()]
+                        elif recurrence.startswith("RRULE:"):
+                            recurrence_rules = [recurrence]
+                    
                     # Map param names: CalendarPrimitive uses 'title', Google API uses 'summary'
                     api_params = {
                         "summary": params.get("title") or params.get("summary", "Untitled"),
@@ -1335,6 +1353,8 @@ class CalendarPrimitive(Primitive):
                         "location": params.get("location", ""),
                         "attendees": params.get("attendees", []),
                         "calendar_id": resolved_calendar_id,
+                        "all_day": params.get("all_day", False),
+                        "recurrence": recurrence_rules,
                     }
                     print(f"[CALENDAR] Creating event: {api_params}")
                     result = await self._create_func(**api_params)
@@ -3659,13 +3679,20 @@ Rules:
 1. One primitive per step
 2. "tonight" = {today_iso}, "tomorrow" = next day
 3. Wire dynamic data between steps
+4. If unclear or missing info, return: {{"clarify": "your question to user"}}
 
 Request: {request}
 
-Return JSON array:
+Return JSON array or clarify object:
 [{{"description": "...", "primitive": "WEB", "operation": "extract", "params": {{}}, "wires": {{}}, "side_effect": false}}]"""
 
         response = await self._llm(prompt)
+        
+        # Check for clarification request
+        clarify_match = re.search(r'\{\s*"clarify"\s*:\s*"([^"]+)"\s*\}', response)
+        if clarify_match:
+            # Return special step that signals clarification needed
+            return [PlanStep(0, clarify_match.group(1), "CLARIFY", "ask", {"question": clarify_match.group(1)}, side_effect=False)]
         
         # Parse response
         json_match = re.search(r'\[[\s\S]*\]', response)
