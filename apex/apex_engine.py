@@ -3652,13 +3652,12 @@ TODAY: {today_iso}
 
 Rules:
 1. One primitive per step
-2. "tonight" = {today_iso}T20:00:00, "tomorrow" = add one day
-3. Use wires to pass data between steps: {{"wires": {{"field": "step_0.result"}}}}
+2. "tonight" = {today_iso}, "tomorrow" = next day
+3. Use wires to pass data between steps
 
 Request: {request}
 
-Return JSON array only:
-[{{"description": "...", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Event", "start": "{today_iso}T20:00:00", "end": "{today_iso}T23:00:00"}}, "wires": {{}}}}]"""
+Return JSON array only."""
 
         response = await self._llm(prompt)
         
