@@ -3642,69 +3642,23 @@ class TaskPlanner:
         capabilities = self._get_capabilities_prompt()
         
         from datetime import datetime
-        today_display = datetime.now().strftime("%A, %B %d, %Y")
         today_iso = datetime.now().strftime("%Y-%m-%d")
-        current_year = datetime.now().year
         
-        prompt = f"""You are a task planner. Decompose this request into primitive operations.
+        prompt = f"""You are a task planner. Break this request into primitive operations.
 
-MANDATORY DATE RULES (FOLLOW EXACTLY):
-- TODAY IS: {today_display} ({today_iso})
-- Use EXACTLY {today_iso} for "today" or "tonight" - NO EXCEPTIONS
-- Use EXACTLY {current_year} for the year - NEVER use 2024 or any other year
-- "tonight" means {today_iso}T20:00:00 (8pm) to {today_iso}T23:00:00 (11pm)
-- "this evening" means {today_iso}T19:00:00 to {today_iso}T22:00:00
-- DO NOT use dates from your training data. Use ONLY the dates I provided above.
+TODAY: {today_iso}
 
 {capabilities}
 
-Choose the most specific primitive for each task. The primitive descriptions and parameter schemas above tell you everything available.
-
-WIRING — how steps pass data to each other:
-- "params" = static values known now
-- "wires" = data flowing from a previous step's output
-- Wire format: {{"param_name": "step_N"}} for the whole result, or {{"param_name": "step_N.field"}} to pick a field
-- If step 1 needs step 0's output, you MUST wire it: "wires": {{"data": "step_0"}}
-
-RULES:
-1. Each step uses ONE primitive and ONE operation
-2. Match params to the PARAMETER SCHEMAS above exactly
-3. TODAY IS {today_iso} (year {current_year}).
-4. For REAL-WORLD EVENTS (sports games, concerts, TV shows):
-   - Step 1: WEB.extract to find the actual start TIME, teams/performers, etc.
-   - Step 2: CALENDAR.create using TODAY's date ({today_iso}) + the time from step_0
-   - The WEB.extract "what" should ask for: start_time (HH:MM format), title, description
-5. For USER-SPECIFIED TIMES ("meeting at 3pm"): use that time directly, no web search.
-
-ORCHESTRATION (use only when needed):
-- step_type "action" (default): execute one primitive operation
-- step_type "parallel": run multiple steps concurrently
-  {{"step_type": "parallel", "description": "...", "primitive": "", "operation": "", "params": {{}}, "parallel_steps": [<steps>]}}
-- step_type "condition": branch based on a previous result
-  {{"step_type": "condition", "condition": "step_0.count > 5", "then_steps": [<steps>], "else_steps": [<steps>], ...}}
-- step_type "loop": iterate over a list from a previous step
-  {{"step_type": "loop", "loop_over": "step_0.results", "loop_var": "item", "loop_body": [<steps using {{{{item}}}} in params>], ...}}
-- on_fail: "stop" (default) | "continue" (skip failures and keep going)
+Rules:
+1. One primitive per step
+2. "tonight" = {today_iso}T20:00:00, "tomorrow" = add one day
+3. Use wires to pass data between steps: {{"wires": {{"field": "step_0.result"}}}}
 
 Request: {request}
-{f"Context: {json.dumps(context)}" if context else ""}
 
-Respond with ONLY a JSON array:
-[
-  {{"description": "...", "primitive": "COMPUTE", "operation": "formula", "params": {{"name": "amortization", "inputs": {{"principal": 250000}}}}, "wires": {{}}}},
-  {{"description": "...", "primitive": "EMAIL", "operation": "send", "params": {{"to": "x@y.com", "subject": "Results"}}, "wires": {{"body": "step_0"}}}}
-]
-
-REAL-WORLD EVENT EXAMPLE - "add NCAA game tonight to family calendar" (today is {today_iso}):
-[
-  {{"description": "Look up NCAA championship game tip-off time", "primitive": "WEB", "operation": "extract", "params": {{"url": "https://www.google.com/search?q=NCAA+championship+basketball+game+tip+off+time+tonight", "what": "Extract: 1) tip-off time, 2) teams playing. Return JSON with: start (full ISO datetime using {today_iso} as the date, e.g. {today_iso}T20:50:00), end (2.5 hours later), title (Team1 vs Team2), description (brief game summary)"}}, "wires": {{}}}},
-  {{"description": "Create calendar event for tonight", "primitive": "CALENDAR", "operation": "create", "params": {{"calendar_id": "FAMILY"}}, "wires": {{"start": "step_0.start", "end": "step_0.end", "title": "step_0.title", "description": "step_0.description"}}}}
-]
-NOTE: WEB.extract returns full ISO datetimes with {today_iso}, which get wired to CALENDAR.create.
-
-USER-SPECIFIED TIME EXAMPLE - "add meeting at 3pm tomorrow":
-[{{"description": "Create meeting", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Meeting", "start": "2026-04-08T15:00:00", "end": "2026-04-08T16:00:00"}}, "wires": {{}}}}]
-"""
+Return JSON array only:
+[{{"description": "...", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Event", "start": "{today_iso}T20:00:00", "end": "{today_iso}T23:00:00"}}, "wires": {{}}}}]"""
 
         response = await self._llm(prompt)
         
@@ -3719,7 +3673,7 @@ USER-SPECIFIED TIME EXAMPLE - "add meeting at 3pm tomorrow":
             return steps
         except json.JSONDecodeError:
             return [PlanStep(0, f"Process: {request}", "KNOWLEDGE", "recall", {"query": request})]
-    
+
     def _parse_steps(self, step_data: List[Dict], id_offset: int = 0) -> List[PlanStep]:
         """Parse step dicts into PlanStep objects, recursively handling nested steps."""
         steps = []
