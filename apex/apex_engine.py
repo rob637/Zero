@@ -1217,11 +1217,14 @@ class CalendarPrimitive(Primitive):
         storage_path: Optional[str] = None,
         create_func: Optional[Callable] = None,
         list_func: Optional[Callable] = None,
+        list_calendars_func: Optional[Callable] = None,
     ):
         self._events: List[Dict] = []
         self._storage_path = storage_path
         self._create_func = create_func
         self._list_func = list_func
+        self._list_calendars_func = list_calendars_func
+        self._calendars_cache: List[Dict] = []  # Cache of available calendars
         if storage_path and Path(storage_path).exists():
             try:
                 with open(storage_path, "r") as f:
@@ -1251,6 +1254,7 @@ class CalendarPrimitive(Primitive):
                 "description": {"type": "str", "required": False, "description": "Event description or notes"},
                 "location": {"type": "str", "required": False, "description": "Event location"},
                 "attendees": {"type": "list", "required": False, "description": "List of attendee email addresses"},
+                "calendar_id": {"type": "str", "required": False, "description": "Calendar ID (use 'primary' for main calendar, or calendar name like 'FAMILY SHARED' for specific calendars)"},
             },
             "list": {
                 "start_date": {"type": "str", "required": False, "description": "Start of range (ISO date, defaults to today)"},
@@ -1276,12 +1280,51 @@ class CalendarPrimitive(Primitive):
                 json.dump(self._events, f, indent=2)
             print(f"[CALENDAR] Saved {len(self._events)} events to {self._storage_path}")
     
+    async def _resolve_calendar_id(self, calendar_id: str) -> str:
+        """Resolve calendar name to ID.
+        
+        If calendar_id looks like a name (contains spaces or is a known name),
+        look it up in the list of calendars and return the actual ID.
+        """
+        if not calendar_id or calendar_id == "primary":
+            return "primary"
+        
+        # If it looks like an email/ID already (contains @), use as-is
+        if "@" in calendar_id:
+            return calendar_id
+        
+        # Try to resolve by name
+        if self._list_calendars_func:
+            try:
+                if not self._calendars_cache:
+                    self._calendars_cache = await self._list_calendars_func()
+                    print(f"[CALENDAR] Cached {len(self._calendars_cache)} calendars")
+                
+                # Search for matching calendar by name (case insensitive)
+                search_name = calendar_id.lower()
+                for cal in self._calendars_cache:
+                    cal_name = (cal.get("summary") or "").lower()
+                    if search_name in cal_name or cal_name in search_name:
+                        real_id = cal.get("id")
+                        print(f"[CALENDAR] Resolved '{calendar_id}' -> '{real_id}'")
+                        return real_id
+                
+                print(f"[CALENDAR] No calendar found matching '{calendar_id}', using as-is")
+            except Exception as e:
+                print(f"[CALENDAR] Error resolving calendar: {e}")
+        
+        return calendar_id
+
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         print(f"[CALENDAR] execute({operation}, {params})")
         try:
             if operation == "create":
                 if self._create_func:
                     print(f"[CALENDAR] Using external calendar (Google/Outlook)")
+                    # Resolve calendar name to ID (e.g., "FAMILY SHARED" -> actual ID)
+                    raw_calendar_id = params.get("calendar_id", "primary")
+                    resolved_calendar_id = await self._resolve_calendar_id(raw_calendar_id)
+                    
                     # Map param names: CalendarPrimitive uses 'title', Google API uses 'summary'
                     api_params = {
                         "summary": params.get("title") or params.get("summary", "Untitled"),
@@ -1290,8 +1333,9 @@ class CalendarPrimitive(Primitive):
                         "description": params.get("description", ""),
                         "location": params.get("location", ""),
                         "attendees": params.get("attendees", []),
-                        "calendar_id": params.get("calendar_id", "primary"),
+                        "calendar_id": resolved_calendar_id,
                     }
+                    print(f"[CALENDAR] Creating event: {api_params}")
                     result = await self._create_func(**api_params)
                     # Handle CalendarEvent dataclass or dict
                     if hasattr(result, 'to_dict'):
@@ -1303,7 +1347,8 @@ class CalendarPrimitive(Primitive):
                     return StepResult(True, data={
                         **result_dict,
                         "storage": "google_calendar",
-                        "message": f"Event '{api_params['summary']}' created in Google Calendar"
+                        "calendar": raw_calendar_id,
+                        "message": f"Event '{api_params['summary']}' created in Google Calendar ({raw_calendar_id})"
                     })
                 
                 print(f"[CALENDAR] Creating local event")
@@ -3802,11 +3847,13 @@ class Apex:
         # Calendar — wire Google Calendar and/or Outlook Calendar
         cal_create = None
         cal_list = None
+        cal_list_calendars = None
         gcal = c.get("calendar")
         ocal = c.get("outlook_calendar")
         if gcal:
             cal_create = gcal.create_event
             cal_list = gcal.list_events
+            cal_list_calendars = gcal.list_calendars
         elif ocal:
             cal_create = ocal.create_event
             cal_list = ocal.list_events
@@ -3814,6 +3861,7 @@ class Apex:
             str(self._storage_path / "calendar.json"),
             create_func=cal_create,
             list_func=cal_list,
+            list_calendars_func=cal_list_calendars,
         )
         
         self._primitives["WEB"] = WebPrimitive(self._llm_complete, search_provider=c.get("web_search"))

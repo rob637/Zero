@@ -238,9 +238,17 @@ You can chain these into multi-step workflows. For example:
 - "Find the loan doc, create amortization, email to Rob" → FILE.search → DOCUMENT.parse → COMPUTE.amortization → EMAIL.send
 - "Prepare for my meeting with John" → CALENDAR.search → EMAIL.search → CONTACTS.find → summarize
 
-When detecting intent:
-1. For actionable tasks: set "action" to true and describe what you'll do
-2. For conversation only: set "action" to false
+CRITICAL - When to take ACTION:
+- ANY request to create, add, schedule, or put something on calendar -> action: true
+- ANY request to send, draft, or write an email -> action: true
+- ANY request to find, search, or organize files -> action: true
+- When user provides details for an action (like "tonight at 8pm") -> action: true, proceed with the action
+- Be BIASED TOWARD ACTION. If it sounds like the user wants something done, DO IT.
+- Only set action: false for pure conversation (greetings, questions about capabilities, thanks)
+
+For calendar events, if the user says "tonight" or "today", use {today} as the date.
+Fill in reasonable defaults: if no time specified, use the typical time for that event type.
+For sports games, evening events default to 7-10pm.
 
 IMPORTANT: Respond with valid JSON:
 {{
@@ -249,10 +257,10 @@ IMPORTANT: Respond with valid JSON:
 }}
 
 Examples:
-- "Find my loan document and create an amortization schedule" -> action: true, response explains the plan
-- "Organize my downloads" -> action: true
-- "Search my emails for travel bookings" -> action: true  
-- "What can you do?" -> action: false, response explains capabilities
+- "Add NCAA game to my calendar" -> action: true, response: "I'll add the NCAA game to your calendar"
+- "the championship game tonight" -> action: true (this IS the event details)
+- "Find my loan document and create an amortization schedule" -> action: true
+- "What can you do?" -> action: false
 - "Thanks!" -> action: false
 """
 
