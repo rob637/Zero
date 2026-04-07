@@ -275,17 +275,9 @@ async def root():
     )
 
 
-def is_read_only_step(step):
-    """Check if a step is read-only (safe to auto-execute without approval)."""
-    prim = step.primitive.upper()
-    op = step.operation.lower()
-    # Read-only operations
-    if op in {"search", "list", "recall", "extract", "read", "get", "fetch", "lookup"}:
-        return True
-    # Write operations
-    if op in {"create", "send", "delete", "update", "write", "post"}:
-        return False
-    return False
+def has_side_effect(step):
+    """Check if step has side effects (needs approval). AI decides via side_effect field."""
+    return getattr(step, 'side_effect', True)  # Default to true (safer)
 
 
 @app.post("/chat")
@@ -347,7 +339,7 @@ async def chat(req: ChatRequest):
                 completed_steps = []
                 
                 for step in exec_result.plan:
-                    if is_read_only_step(step):
+                    if not has_side_effect(step):  # AI says no side effects = safe to auto-run
                         print(f"[CHAT] Auto-running read-only: {step.primitive}.{step.operation}")
                         try:
                             # Resolve any wire references from previous steps
@@ -366,7 +358,7 @@ async def chat(req: ChatRequest):
                                             resolved_params[key] = resolved
                             
                             # Execute
-                            primitive = engine.primitives.get(step.primitive.upper())
+                            primitive = engine._primitives.get(step.primitive.upper())
                             if primitive:
                                 step_result = await primitive.execute(step.operation, resolved_params)
                                 read_results[step.id] = step_result
@@ -393,7 +385,7 @@ async def chat(req: ChatRequest):
                 # Step 3: Resolve wires in write steps with actual data
                 write_steps = []
                 for step in exec_result.plan:
-                    if not is_read_only_step(step):
+                    if has_side_effect(step):  # AI says has side effects = needs approval
                         resolved_params = dict(step.params)
                         for key, val in step.params.items():
                             if isinstance(val, str) and "step_" in val:
@@ -509,7 +501,7 @@ async def execute_plan(req: ExecuteRequest):
                 
                 print(f"[EXECUTE]   Running {prim_name}.{op} with params: {params}")
                 
-                primitive = engine.primitives.get(prim_name)
+                primitive = engine._primitives.get(prim_name)
                 if primitive:
                     try:
                         result = await primitive.execute(op, params)
@@ -554,10 +546,10 @@ async def execute_plan(req: ExecuteRequest):
                 "summary": "All steps completed successfully" if all_success else "Some steps failed",
             })
         
-        elif cached:
-            # Old format: full plan, execute normally
-            print(f"[EXECUTE] Using old-format cached plan")
-            exec_result = await engine.execute_plan(cached, request=req.message)
+        elif cached and "original_plan" in cached:
+            # Old format: use original_plan from cache
+            print(f"[EXECUTE] Using cached original plan")
+            exec_result = await engine.execute_plan(cached["original_plan"], request=req.message)
         else:
             print(f"[EXECUTE] No cached plan, re-planning...")
             exec_result = await engine.do(req.message, require_approval=False)
