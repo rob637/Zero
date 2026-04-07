@@ -3637,10 +3637,15 @@ class TaskPlanner:
         capabilities = self._get_capabilities_prompt()
         
         from datetime import datetime
-        today = datetime.now().strftime("%A, %B %d, %Y")
+        today_display = datetime.now().strftime("%A, %B %d, %Y")
+        today_iso = datetime.now().strftime("%Y-%m-%d")
         
         prompt = f"""You are a task planner. Decompose this request into primitive operations.
-Today's date is {today}. Use this for any date-related parameters.
+
+CRITICAL - TODAY'S DATE: {today_display} ({today_iso})
+- "tonight" or "today" = {today_iso}
+- "tomorrow" = use the day after {today_iso}
+- ALL date parameters MUST use year {datetime.now().year}
 
 {capabilities}
 
@@ -3657,6 +3662,7 @@ RULES:
 2. Match params to the PARAMETER SCHEMAS above exactly
 3. Minimize steps — only what's necessary
 4. depends_on is auto-derived from wires — you can omit it
+5. For dates: ALWAYS use {datetime.now().year} as the year. Never use 2024 or other past years.
 
 ORCHESTRATION (use only when needed):
 - step_type "action" (default): execute one primitive operation
