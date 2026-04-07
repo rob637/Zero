@@ -3639,13 +3639,17 @@ class TaskPlanner:
         from datetime import datetime
         today_display = datetime.now().strftime("%A, %B %d, %Y")
         today_iso = datetime.now().strftime("%Y-%m-%d")
+        current_year = datetime.now().year
         
         prompt = f"""You are a task planner. Decompose this request into primitive operations.
 
-CRITICAL - TODAY'S DATE: {today_display} ({today_iso})
-- "tonight" or "today" = {today_iso}
-- "tomorrow" = use the day after {today_iso}
-- ALL date parameters MUST use year {datetime.now().year}
+MANDATORY DATE RULES (FOLLOW EXACTLY):
+- TODAY IS: {today_display} ({today_iso})
+- Use EXACTLY {today_iso} for "today" or "tonight" - NO EXCEPTIONS
+- Use EXACTLY {current_year} for the year - NEVER use 2024 or any other year
+- "tonight" means {today_iso}T20:00:00 (8pm) to {today_iso}T23:00:00 (11pm)
+- "this evening" means {today_iso}T19:00:00 to {today_iso}T22:00:00
+- DO NOT use dates from your training data. Use ONLY the dates I provided above.
 
 {capabilities}
 
@@ -3684,8 +3688,9 @@ Respond with ONLY a JSON array:
   {{"description": "...", "primitive": "EMAIL", "operation": "send", "params": {{"to": "x@y.com", "subject": "Results"}}, "wires": {{"body": "step_0"}}}}
 ]
 
-Example - "add game tonight to family calendar":
-[{{"description": "Create calendar event", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Game", "start": "{today_iso}T19:00:00", "end": "{today_iso}T22:00:00", "calendar_id": "FAMILY"}}, "wires": {{}}}}]"""
+CALENDAR EXAMPLE - "add game tonight to family calendar" (assuming today is {today_iso}):
+[{{"description": "Create calendar event", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Game", "start": "{today_iso}T20:00:00", "end": "{today_iso}T23:00:00", "calendar_id": "FAMILY"}}, "wires": {{}}}}]
+Note: Use {today_iso} for tonight, NOT any date from your training data."""
 
         response = await self._llm(prompt)
         
