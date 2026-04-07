@@ -275,15 +275,31 @@ async def root():
     )
 
 
+def is_read_only_step(step):
+    """Check if a step is read-only (safe to auto-execute without approval)."""
+    prim = step.primitive.upper()
+    op = step.operation.lower()
+    # Read-only operations
+    if op in {"search", "list", "recall", "extract", "read", "get", "fetch", "lookup"}:
+        return True
+    # Write operations
+    if op in {"create", "send", "delete", "update", "write", "post"}:
+        return False
+    return False
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     """
-    Main chat endpoint - the AI assistant interface.
+    Main chat endpoint.
     
-    This is where natural language becomes action.
-    Uses the Telic engine with real primitives (FILE, DOCUMENT, COMPUTE, EMAIL, etc.)
+    Flow:
+    1. Plan (breaks into primitives with wires)
+    2. Auto-run read-only steps (e.g., WEB.extract to get game time)
+    3. Resolve wires with actual data
+    4. Show user resolved write steps for approval
+    5. User approves → execute write steps
     """
-    # Use privacy-wrapped LLM client for intent detection
     llm = create_secure_client_from_env()
     
     if not llm:
@@ -296,6 +312,7 @@ async def chat(req: ChatRequest):
     
     try:
         import json
+        import re
         
         # Step 1: Ask LLM to understand intent
         result = await llm.complete_json(
@@ -308,45 +325,121 @@ async def chat(req: ChatRequest):
         needs_action = result.get("action", False)
         
         if needs_action:
-            # Step 2: Use the REAL Telic engine to plan and execute
             engine = get_telic_engine()
             if engine:
-                # Generate plan (with approval required - show user first)
+                # Step 1: Generate plan
                 print(f"[CHAT] Generating plan for: {req.message[:80]}")
                 exec_result = await engine.do(
                     req.message,
                     require_approval=True,
                 )
                 
-                # Cache the plan so /execute runs this EXACT plan (no re-planning)
-                if exec_result.plan:
-                    _pending_plans[req.message] = exec_result.plan
-                    print(f"[CHAT] Plan cached with {len(exec_result.plan)} steps")
+                if not exec_result.plan:
+                    return JSONResponse({
+                        "error": None,
+                        "response": response_text,
+                        "plan": None,
+                        "task_id": None,
+                    })
                 
-                # Format plan steps for the UI
-                plan_steps = []
-                if exec_result.plan:
-                    for step in exec_result.plan:
-                        plan_steps.append({
+                # Step 2: Auto-run read-only steps to get actual data
+                read_results = {}  # step_id -> result
+                completed_steps = []
+                
+                for step in exec_result.plan:
+                    if is_read_only_step(step):
+                        print(f"[CHAT] Auto-running read-only: {step.primitive}.{step.operation}")
+                        try:
+                            # Resolve any wire references from previous steps
+                            resolved_params = dict(step.params)
+                            for key, val in step.params.items():
+                                if isinstance(val, str) and "step_" in val:
+                                    m = re.match(r'step_(\d+)\.(.+)', val)
+                                    if m:
+                                        ref_id = int(m.group(1))
+                                        path = m.group(2)
+                                        if ref_id in read_results:
+                                            resolved = read_results[ref_id]
+                                            for part in path.split('.'):
+                                                if isinstance(resolved, dict):
+                                                    resolved = resolved.get(part, val)
+                                            resolved_params[key] = resolved
+                            
+                            # Execute
+                            primitive = engine.primitives.get(step.primitive.upper())
+                            if primitive:
+                                step_result = await primitive.execute(step.operation, resolved_params)
+                                read_results[step.id] = step_result
+                                completed_steps.append({
+                                    "id": step.id,
+                                    "description": step.description,
+                                    "primitive": step.primitive,
+                                    "operation": step.operation,
+                                    "status": "completed",
+                                    "result_summary": str(step_result)[:300] if step_result else None
+                                })
+                                print(f"[CHAT]   Got: {str(step_result)[:200]}")
+                        except Exception as e:
+                            print(f"[CHAT]   Failed: {e}")
+                            completed_steps.append({
+                                "id": step.id,
+                                "description": step.description,
+                                "primitive": step.primitive,
+                                "operation": step.operation,
+                                "status": "failed",
+                                "error": str(e)
+                            })
+                
+                # Step 3: Resolve wires in write steps with actual data
+                write_steps = []
+                for step in exec_result.plan:
+                    if not is_read_only_step(step):
+                        resolved_params = dict(step.params)
+                        for key, val in step.params.items():
+                            if isinstance(val, str) and "step_" in val:
+                                m = re.match(r'step_(\d+)\.(.+)', val)
+                                if m:
+                                    ref_id = int(m.group(1))
+                                    path = m.group(2)
+                                    if ref_id in read_results:
+                                        resolved = read_results[ref_id]
+                                        for part in path.split('.'):
+                                            if isinstance(resolved, dict):
+                                                resolved = resolved.get(part, val)
+                                        resolved_params[key] = resolved
+                        
+                        write_steps.append({
                             "id": step.id,
                             "description": step.description,
                             "primitive": step.primitive,
                             "operation": step.operation,
-                            "params": step.params,
+                            "params": resolved_params,  # Now contains ACTUAL data, not wire refs
                             "status": "pending",
                         })
-                        print(f"[CHAT]   Step {step.id}: {step.primitive}.{step.operation}")
+                        print(f"[CHAT]   Resolved write step: {step.primitive}.{step.operation}")
+                        print(f"[CHAT]     Params: {resolved_params}")
                 
-                # Generate a response that reflects the actual plan, not chat LLM's guess
-                plan_summary = "Here's what I'll do. Review the details below:"
+                # Cache for /execute - store the resolved params
+                _pending_plans[req.message] = {
+                    "original_plan": exec_result.plan,
+                    "read_results": read_results,
+                    "write_steps": write_steps,
+                }
                 
-                print(f"[CHAT] Returning plan with {len(plan_steps)} steps - UI should show approve buttons")
+                # Build response
+                response_parts = []
+                if completed_steps:
+                    response_parts.append(f"Gathered info ({len(completed_steps)} step(s))")
+                if write_steps:
+                    response_parts.append(f"Ready to execute ({len(write_steps)} action(s))")
+                
                 return JSONResponse({
                     "error": None,
-                    "response": plan_summary,
-                    "plan": plan_steps if plan_steps else None,
+                    "response": " — ".join(response_parts) if response_parts else "Here's the plan:",
+                    "completed_steps": completed_steps,
+                    "plan": write_steps if write_steps else None,
                     "task_id": None,
-                    "needs_execution": True,
+                    "needs_execution": bool(write_steps),
                 })
             else:
                 return JSONResponse({
@@ -365,6 +458,8 @@ async def chat(req: ChatRequest):
         })
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JSONResponse({
             "error": str(e),
             "response": "Sorry, I encountered an error. Please try again.",
@@ -380,10 +475,10 @@ class ExecuteRequest(BaseModel):
 @app.post("/execute")
 async def execute_plan(req: ExecuteRequest):
     """
-    Execute a plan using the Telic engine.
+    Execute write steps after user approval.
     
-    Called after the user approves a plan from /chat.
-    Actually runs the primitives (FILE.search, COMPUTE.amortization, etc.)
+    Read-only steps were already executed during /chat.
+    This runs ONLY the write steps with resolved parameters.
     """
     print(f"[EXECUTE] Received request: {req.message[:100]}")
     
@@ -397,27 +492,86 @@ async def execute_plan(req: ExecuteRequest):
         })
     
     try:
-        # Use cached plan from /chat if available (execute the EXACT plan user approved)
-        cached_plan = _pending_plans.pop(req.message, None)
+        # Use cached data from /chat
+        cached = _pending_plans.pop(req.message, None)
         
-        if cached_plan:
-            print(f"[EXECUTE] Using cached plan ({len(cached_plan)} steps)")
-            exec_result = await engine.execute_plan(cached_plan, request=req.message)
+        step_results = []
+        
+        if cached and isinstance(cached, dict) and "write_steps" in cached:
+            # New format: execute only the write steps with resolved params
+            write_steps = cached["write_steps"]
+            print(f"[EXECUTE] Executing {len(write_steps)} write step(s)")
+            
+            for ws in write_steps:
+                prim_name = ws["primitive"].upper()
+                op = ws["operation"]
+                params = ws["params"]  # Already resolved with actual data
+                
+                print(f"[EXECUTE]   Running {prim_name}.{op} with params: {params}")
+                
+                primitive = engine.primitives.get(prim_name)
+                if primitive:
+                    try:
+                        result = await primitive.execute(op, params)
+                        step_results.append({
+                            "id": ws["id"],
+                            "description": ws["description"],
+                            "primitive": prim_name,
+                            "operation": op,
+                            "success": True,
+                            "data": result if isinstance(result, (dict, list, str, int, float, bool, type(None))) else str(result),
+                            "error": None,
+                        })
+                        print(f"[EXECUTE]   Success: {str(result)[:200]}")
+                    except Exception as e:
+                        step_results.append({
+                            "id": ws["id"],
+                            "description": ws["description"],
+                            "primitive": prim_name,
+                            "operation": op,
+                            "success": False,
+                            "data": None,
+                            "error": str(e),
+                        })
+                        print(f"[EXECUTE]   Failed: {e}")
+                else:
+                    step_results.append({
+                        "id": ws["id"],
+                        "description": ws["description"],
+                        "primitive": prim_name,
+                        "operation": op,
+                        "success": False,
+                        "data": None,
+                        "error": f"Unknown primitive: {prim_name}",
+                    })
+            
+            all_success = all(r["success"] for r in step_results)
+            return JSONResponse({
+                "error": None,
+                "success": all_success,
+                "results": step_results,
+                "final_result": step_results[-1]["data"] if step_results and step_results[-1]["success"] else None,
+                "summary": "All steps completed successfully" if all_success else "Some steps failed",
+            })
+        
+        elif cached:
+            # Old format: full plan, execute normally
+            print(f"[EXECUTE] Using old-format cached plan")
+            exec_result = await engine.execute_plan(cached, request=req.message)
         else:
             print(f"[EXECUTE] No cached plan, re-planning...")
             exec_result = await engine.do(req.message, require_approval=False)
+        
         print(f"[EXECUTE] Engine completed. Success: {exec_result.success}")
         
-        # Format results
-        step_results = []
+        # Format results from engine execution
         if exec_result.plan:
             for step in exec_result.plan:
-                # Safely serialize data
                 step_data = None
                 if step.result and step.result.success and step.result.data is not None:
                     try:
                         import json as json_mod
-                        json_mod.dumps(step.result.data)  # Test serializable
+                        json_mod.dumps(step.result.data)
                         step_data = step.result.data
                     except (TypeError, ValueError):
                         step_data = str(step.result.data)
@@ -431,9 +585,7 @@ async def execute_plan(req: ExecuteRequest):
                     "data": step_data,
                     "error": step.result.error if step.result and not step.result.success else None,
                 })
-                print(f"[EXECUTE]   Step {step.id}: {step.primitive}.{step.operation} -> {'OK' if step.result and step.result.success else 'FAIL'}")
         
-        # Safely handle final_result
         final = None
         if hasattr(exec_result, 'final_result') and exec_result.final_result is not None:
             try:
@@ -443,7 +595,6 @@ async def execute_plan(req: ExecuteRequest):
             except (TypeError, ValueError):
                 final = str(exec_result.final_result)
         
-        print(f"[EXECUTE] Returning {len(step_results)} results")
         return JSONResponse({
             "error": None,
             "success": exec_result.success,

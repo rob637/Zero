@@ -1703,6 +1703,14 @@
                 // Check for plan from Telic engine
                 if (data.plan && data.plan.length > 0) {
                     lastPlanMessage = message;  // Store for execute
+                    
+                    // Show completed read-only steps (info gathering)
+                    let completedHtml = '';
+                    if (data.completed_steps && data.completed_steps.length > 0) {
+                        completedHtml = renderCompletedSteps(data.completed_steps);
+                    }
+                    
+                    // Show pending write steps for approval
                     const planHtml = renderTelicPlan(data.plan);
                     const executeBtn = `
                         <div style="margin-top: 16px; display: flex; gap: 12px; justify-content: center;">
@@ -1713,7 +1721,7 @@
                                 ✗ Cancel
                             </button>
                         </div>`;
-                    addMessage(data.response, 'assistant', planHtml + executeBtn);
+                    addMessage(data.response, 'assistant', completedHtml + planHtml + executeBtn);
                     return;
                 }
 
@@ -1730,6 +1738,51 @@
         // ============================================
         // Plan Rendering
         // ============================================
+        
+        function renderCompletedSteps(steps) {
+            const stepsHtml = steps.map(step => {
+                const statusIcon = step.status === 'completed' ? '✓' : '✗';
+                const statusColor = step.status === 'completed' ? 'var(--success)' : 'var(--error)';
+                
+                let resultHtml = '';
+                if (step.result_summary) {
+                    resultHtml = `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; 
+                        padding: 6px 8px; background: rgba(0,0,0,0.2); border-radius: 4px; 
+                        max-height: 80px; overflow: auto; white-space: pre-wrap;">
+                        ${escapeHtml(step.result_summary)}
+                    </div>`;
+                }
+                if (step.error) {
+                    resultHtml = `<div style="font-size: 0.75rem; color: var(--error); margin-top: 4px;">
+                        Error: ${escapeHtml(step.error)}
+                    </div>`;
+                }
+                
+                return `
+                    <div style="padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 6px; margin-bottom: 4px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="color: ${statusColor}; font-weight: bold;">${statusIcon}</span>
+                            <div style="flex: 1;">
+                                <div style="font-size: 0.85rem; color: var(--text-primary)">${step.description}</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted)">${step.primitive}.${step.operation}</div>
+                            </div>
+                        </div>
+                        ${resultHtml}
+                    </div>
+                `;
+            }).join('');
+            
+            return `
+                <div style="margin-bottom: 16px; border: 1px solid var(--success); border-radius: 10px; 
+                            padding: 12px; background: rgba(16, 185, 129, 0.05);">
+                    <div style="font-size: 0.75rem; font-weight: 600; color: var(--success); 
+                                text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                        ✓ Information Gathered
+                    </div>
+                    ${stepsHtml}
+                </div>
+            `;
+        }
 
         function renderWorkflow(workflow, summary) {
             if (!workflow) return '';

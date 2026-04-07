@@ -3657,7 +3657,12 @@ Rules:
 
 Request: {request}
 
-Return JSON array only."""
+Return JSON array. Each step must have:
+- "description": Human-readable summary of what this step does
+- "primitive": The primitive name (e.g., WEB, CALENDAR, FILE)
+- "operation": The operation (e.g., extract, create, search)
+- "params": Object with all required parameters filled in
+- "wires": Object mapping param names to "step_N.field" references"""
 
         response = await self._llm(prompt)
         
