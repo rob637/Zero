@@ -269,6 +269,24 @@ class CalendarConnector:
         elif isinstance(end, str):
             end = datetime.fromisoformat(end.replace('Z', '+00:00'))
         
+        # Get local timezone (user's timezone, not UTC)
+        import time
+        if time.daylight:
+            local_tz_name = time.tzname[1]
+            utc_offset = -time.altzone
+        else:
+            local_tz_name = time.tzname[0]
+            utc_offset = -time.timezone
+        
+        # Map common timezone names to IANA names
+        tz_map = {
+            'EST': 'America/New_York', 'EDT': 'America/New_York',
+            'CST': 'America/Chicago', 'CDT': 'America/Chicago',
+            'MST': 'America/Denver', 'MDT': 'America/Denver',
+            'PST': 'America/Los_Angeles', 'PDT': 'America/Los_Angeles',
+        }
+        local_tz = tz_map.get(local_tz_name, 'America/New_York')  # Default to ET
+        
         # Build event body
         event_body = {
             'summary': summary,
@@ -278,13 +296,14 @@ class CalendarConnector:
             event_body['start'] = {'date': start.strftime('%Y-%m-%d')}
             event_body['end'] = {'date': end.strftime('%Y-%m-%d')}
         else:
+            # Use local timezone for events without explicit timezone
             event_body['start'] = {
                 'dateTime': start.isoformat(),
-                'timeZone': 'UTC',
+                'timeZone': local_tz,
             }
             event_body['end'] = {
                 'dateTime': end.isoformat(),
-                'timeZone': 'UTC',
+                'timeZone': local_tz,
             }
         
         if description:
