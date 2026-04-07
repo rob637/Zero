@@ -1705,11 +1705,11 @@
                     lastPlanMessage = message;  // Store for execute
                     const planHtml = renderTelicPlan(data.plan);
                     const executeBtn = `
-                        <div style="margin-top: 12px; display: flex; gap: 10px;">
-                            <button class="btn btn-approve btn-sm" onclick="executePlan()">
-                                ✓ Execute Plan
+                        <div style="margin-top: 16px; display: flex; gap: 12px; justify-content: center;">
+                            <button class="btn btn-approve" onclick="executePlan()" style="padding: 12px 28px; font-size: 1rem; font-weight: 600;">
+                                ✓ Approve & Run
                             </button>
-                            <button class="btn btn-reject btn-sm" onclick="this.parentElement.innerHTML='<span style=color:var(--text-muted)>Cancelled</span>'">
+                            <button class="btn btn-reject" onclick="this.parentElement.innerHTML='<span style=color:var(--text-muted)>Cancelled by user</span>'" style="padding: 12px 28px; font-size: 1rem;">
                                 ✗ Cancel
                             </button>
                         </div>`;
@@ -1775,26 +1775,47 @@
             
             const stepsHtml = steps.map((step, i) => {
                 const icon = primitiveIcons[step.primitive] || '⚙️';
+                
+                // Build cleaner param display for calendar events
+                let paramDisplay = '';
+                if (step.params && Object.keys(step.params).length > 0) {
+                    const params = step.params;
+                    if (step.primitive === 'CALENDAR') {
+                        // Special formatting for calendar events
+                        const lines = [];
+                        if (params.title) lines.push(`📌 <b>${params.title}</b>`);
+                        if (params.start) {
+                            const startDate = new Date(params.start);
+                            lines.push(`📅 ${startDate.toLocaleDateString()} at ${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
+                        }
+                        if (params.calendar_id) lines.push(`📂 Calendar: ${params.calendar_id}`);
+                        if (params.description) lines.push(`📝 ${params.description}`);
+                        paramDisplay = `<div style="font-size: 0.8rem; color: var(--text-primary); margin-top: 6px; padding: 8px 10px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid var(--accent-primary); border-radius: 4px;">${lines.join('<br>')}</div>`;
+                    } else {
+                        // Generic param display
+                        paramDisplay = `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                            ${Object.entries(params).map(([k, v]) => {
+                                const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                                const display = val.length > 80 ? val.slice(0, 80) + '...' : val;
+                                return `<span style="color: var(--accent-secondary)">${k}</span>: ${display.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}`;
+                            }).join(' &nbsp;|&nbsp; ')}
+                        </div>`;
+                    }
+                }
+                
                 return `
                     <div class="plan-step" data-step-id="${step.id}" style="
                         padding: 10px 14px; background: rgba(255,255,255,0.03); 
                         border-radius: 8px; margin-bottom: 6px;
                     ">
-                        <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="display: flex; align-items: flex-start; gap: 10px;">
                             <span style="font-size: 1.2em">${icon}</span>
                             <div style="flex: 1; min-width: 0">
                                 <div style="font-size: 0.85rem; color: var(--text-primary)">${step.description}</div>
                                 <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px">
                                     ${step.primitive}.${step.operation}
                                 </div>
-                                ${step.params && Object.keys(step.params).length > 0 ? `
-                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 4px;">
-                                    ${Object.entries(step.params).map(([k, v]) => {
-                                        const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
-                                        const display = val.length > 80 ? val.slice(0, 80) + '...' : val;
-                                        return `<span style="color: var(--accent-secondary)">${k}</span>: ${display.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}`;
-                                    }).join(' &nbsp;|&nbsp; ')}
-                                </div>` : ''}
+                                ${paramDisplay}
                             </div>
                             <span class="step-status" style="font-size: 0.75rem; color: var(--warning); white-space: nowrap">⏳ pending</span>
                         </div>
@@ -1803,11 +1824,14 @@
             }).join('');
             
             return `
-                <div style="margin-top: 12px; border: 1px solid var(--border-subtle); border-radius: 10px; 
-                            padding: 14px; background: rgba(0,0,0,0.2);">
-                    <div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-primary); 
-                                text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px">
-                        Execution Plan (${steps.length} steps)
+                <div style="margin-top: 12px; border: 2px solid var(--warning); border-radius: 10px; 
+                            padding: 14px; background: rgba(251, 191, 36, 0.05);">
+                    <div style="font-size: 0.8rem; font-weight: 600; color: var(--warning); 
+                                text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        <span>⚠️</span> REVIEW BEFORE APPROVING
+                    </div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 12px;">
+                        The following action(s) will be performed when you click Approve:
                     </div>
                     ${stepsHtml}
                 </div>
@@ -1826,8 +1850,8 @@
             const execBtn = document.querySelector('[onclick="executePlan()"]');
             if (execBtn) {
                 execBtn.disabled = true;
-                execBtn.textContent = '⏳ Executing...';
-                execBtn.style.opacity = '0.5';
+                execBtn.textContent = '✓ Approved - Running...';
+                execBtn.style.opacity = '0.7';
             }
             console.log('[Telic] Executing plan for:', originalMessage);
             
