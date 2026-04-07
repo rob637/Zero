@@ -337,10 +337,13 @@ async def chat(req: ChatRequest):
                         })
                         print(f"[CHAT]   Step {step.id}: {step.primitive}.{step.operation}")
                 
+                # Generate a response that reflects the actual plan, not chat LLM's guess
+                plan_summary = "Here's what I'll do. Review the details below:"
+                
                 print(f"[CHAT] Returning plan with {len(plan_steps)} steps - UI should show approve buttons")
                 return JSONResponse({
                     "error": None,
-                    "response": response_text,
+                    "response": plan_summary,
                     "plan": plan_steps if plan_steps else None,
                     "task_id": None,
                     "needs_execution": True,
