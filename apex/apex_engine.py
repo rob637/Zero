@@ -3664,12 +3664,9 @@ WIRING — how steps pass data to each other:
 RULES:
 1. Each step uses ONE primitive and ONE operation
 2. Match params to the PARAMETER SCHEMAS above exactly
-3. For dates: ALWAYS use {current_year} as the year. Never use 2024 or other past years.
-4. For REAL-WORLD EVENTS (sports games, concerts, TV shows, movies): 
-   - FIRST use WEB.extract to find the actual date and time from a search
-   - THEN use CALENDAR.create with the real time WIRED from step_0
-   - The extraction should return JSON with: title, start (ISO datetime), end (ISO datetime), description
-5. For USER-SPECIFIED TIMES: If user says "meeting at 3pm", use that time directly without searching.
+3. TODAY IS {today_iso} (year {current_year}). Use this date for "today", "tonight", "this evening".
+4. DATES: When user specifies a time ("tonight", "tomorrow at 3pm", "next Tuesday"), calculate the date from {today_iso}. Do NOT search the web for dates.
+5. Only use WEB.extract if user does NOT specify when and you need to find actual event times.
 
 ORCHESTRATION (use only when needed):
 - step_type "action" (default): execute one primitive operation
@@ -3690,14 +3687,9 @@ Respond with ONLY a JSON array:
   {{"description": "...", "primitive": "EMAIL", "operation": "send", "params": {{"to": "x@y.com", "subject": "Results"}}, "wires": {{"body": "step_0"}}}}
 ]
 
-REAL-WORLD EVENT EXAMPLE - "add NCAA championship game to my family calendar":
-[
-  {{"description": "Look up NCAA championship game details", "primitive": "WEB", "operation": "extract", "params": {{"url": "https://www.google.com/search?q=NCAA+championship+basketball+game+time+{today_iso}", "what": "Extract the game matchup, date, and start time. Return JSON with: title (team1 vs team2), start (ISO datetime), end (ISO datetime 2-3 hours later), description (brief summary)"}}, "wires": {{}}}},
-  {{"description": "Create calendar event with game time", "primitive": "CALENDAR", "operation": "create", "params": {{"calendar_id": "FAMILY"}}, "wires": {{"title": "step_0.title", "start": "step_0.start", "end": "step_0.end", "description": "step_0.description"}}}}
-]
-
-USER-SPECIFIED TIME EXAMPLE - "add meeting at 3pm tomorrow":
-[{{"description": "Create meeting", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "Meeting", "start": "2026-04-08T15:00:00", "end": "2026-04-08T16:00:00"}}, "wires": {{}}}}]
+EXAMPLE - "add NCAA game tonight to family calendar" (today is {today_iso}):
+[{{"description": "Create calendar event for tonight's game", "primitive": "CALENDAR", "operation": "create", "params": {{"title": "NCAA Championship Game", "start": "{today_iso}T20:00:00", "end": "{today_iso}T23:00:00", "calendar_id": "FAMILY", "description": "NCAA Basketball Championship Game"}}, "wires": {{}}}}]
+Note: User said "tonight" so use {today_iso}. No web search needed.
 """
 
         response = await self._llm(prompt)
