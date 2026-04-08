@@ -117,10 +117,14 @@ _react_state: Optional[AgentState] = None
 
 def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton."""
-    global _telic_engine, _google_calendar
+    global _telic_engine, _google_calendar, _react_agent
     
     if _telic_engine is not None and not force_rebuild:
         return _telic_engine
+    
+    # When rebuilding engine, also reset the react agent so it picks up new tools
+    if force_rebuild:
+        _react_agent = None
     
     api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
