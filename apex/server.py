@@ -174,9 +174,9 @@ def get_react_agent() -> Optional[ReActAgent]:
     if not engine:
         return None
     
-    # Convert primitives to tools
+    # Convert ALL primitives to tools - selection happens per-request now
     tools = primitives_to_tools(engine._primitives)
-    print(f"[REACT] Created {len(tools)} tools from primitives")
+    print(f"[REACT] Loaded {len(tools)} tools from {len(engine._primitives)} primitives")
     
     # Create LLM client
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -1398,6 +1398,86 @@ def state_to_response(state: AgentState) -> Dict[str, Any]:
     }
 
 
+async def select_primitives_for_request(message: str, all_primitives: dict) -> dict:
+    """
+    Use a quick LLM call to select which primitives are relevant for this request.
+    Returns a subset of primitives to use.
+    """
+    import anthropic
+    import openai
+    
+    # Build primitive catalog for selection
+    primitive_names = list(all_primitives.keys())
+    primitive_descriptions = []
+    for name, prim in all_primitives.items():
+        desc = getattr(prim, 'description', '') or f"Handles {name.lower()} operations"
+        primitive_descriptions.append(f"- {name}: {desc}")
+    
+    selection_prompt = f"""Given this user request, select which primitives are needed.
+
+USER REQUEST: {message}
+
+AVAILABLE PRIMITIVES:
+{chr(10).join(primitive_descriptions)}
+
+Return ONLY a JSON array of primitive names needed. Example: ["FILE", "EMAIL"]
+Be minimal - only include what's actually needed for this specific request.
+Common mappings:
+- Photos/images/pictures → FILE, PHOTOS  
+- Email/message/send → EMAIL, CONTACTS
+- Meeting/calendar/schedule → CALENDAR, CONTACTS
+- Task/todo/reminder → TASK
+- Search/find files → FILE
+- Code/github/repo → DEVTOOLS, GITHUB
+- Smart home/lights/thermostat → SMARTHOME
+
+Return JSON array only, no explanation."""
+
+    try:
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            client = anthropic.Anthropic()
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=100,
+                messages=[{"role": "user", "content": selection_prompt}]
+            )
+            result_text = response.content[0].text.strip()
+        else:
+            client = openai.OpenAI()
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=100,
+                messages=[{"role": "user", "content": selection_prompt}]
+            )
+            result_text = response.choices[0].message.content.strip()
+        
+        # Parse JSON array
+        import json
+        # Handle markdown code blocks
+        if "```" in result_text:
+            result_text = result_text.split("```")[1]
+            if result_text.startswith("json"):
+                result_text = result_text[4:]
+        
+        selected_names = json.loads(result_text)
+        
+        # Filter to selected primitives
+        selected = {name: all_primitives[name] for name in selected_names if name in all_primitives}
+        
+        # Always include FILE as fallback (most versatile)
+        if not selected and "FILE" in all_primitives:
+            selected["FILE"] = all_primitives["FILE"]
+        
+        print(f"[REACT] Selected primitives for request: {list(selected.keys())}")
+        return selected
+        
+    except Exception as e:
+        print(f"[REACT] Primitive selection failed: {e}, using defaults")
+        # Fallback to core primitives
+        defaults = ["FILE", "EMAIL", "CALENDAR", "TASK", "CONTACTS", "KNOWLEDGE"]
+        return {name: all_primitives[name] for name in defaults if name in all_primitives}
+
+
 @app.post("/react/chat")
 async def react_chat(req: ReactRequest):
     """
@@ -1412,10 +1492,11 @@ async def react_chat(req: ReactRequest):
     - is_complete: True if AI has finished
     - response: Final response text (if complete)
     """
-    global _react_state
+    global _react_state, _react_agent
     
-    agent = get_react_agent()
-    if not agent:
+    # Check for API key
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
         return JSONResponse({
             "error": "No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
             "steps": [],
@@ -1424,8 +1505,52 @@ async def react_chat(req: ReactRequest):
             "response": None,
         })
     
+    engine = get_telic_engine()
+    if not engine:
+        return JSONResponse({
+            "error": "Engine not initialized",
+            "steps": [],
+            "pending_approval": None,
+            "is_complete": True,
+            "response": None,
+        })
+    
     try:
         print(f"[REACT] User: {req.message[:80]}...")
+        
+        # Dynamic primitive selection per request
+        selected_primitives = await select_primitives_for_request(req.message, engine._primitives)
+        tools = primitives_to_tools(selected_primitives)
+        print(f"[REACT] Using {len(tools)} tools from {len(selected_primitives)} primitives")
+        
+        # Create fresh agent with selected tools
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            import anthropic
+            llm_client = anthropic.Anthropic()
+        else:
+            import openai
+            llm_client = openai.OpenAI()
+        
+        from datetime import datetime
+        system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
+
+TODAY: {datetime.now().strftime("%Y-%m-%d")}
+
+Use the available tools to accomplish what the user asks. Call tools ONE AT A TIME, observe the result, then decide what to do next.
+
+IMPORTANT BEHAVIORS:
+- If a search returns multiple results, STOP and ask the user which one they want
+- If information is unclear or missing, ASK before guessing  
+- Be conversational - explain what you're doing and what you found
+
+When you have completed the task, respond with a summary of what was done."""
+        
+        agent = ReActAgent(
+            llm_client=llm_client,
+            tools=tools,
+            system_prompt=system_prompt
+        )
+        _react_agent = agent  # Store for approve/continue endpoints
         
         # Run the agent
         state = await agent.run(req.message)

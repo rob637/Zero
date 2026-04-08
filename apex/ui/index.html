@@ -1713,9 +1713,10 @@
                     return;
                 }
 
-                // Conversation stays active until explicitly cleared
-                // This maintains context for follow-up questions
-                conversationActive = true;
+                // Conversation active only if pending approval (waiting for user input)
+                // If complete, next message should start fresh
+                conversationActive = !!data.pending_approval;
+                console.log(`[UI] is_complete=${data.is_complete}, pending=${!!data.pending_approval}, conversationActive=${conversationActive}`);
 
                 // Render the current state
                 renderReactState(data);
@@ -1875,6 +1876,9 @@
                 const data = await res.json();
                 removeTypingIndicator();
                 setThinking(false);
+                
+                // Update conversation state - active only if more approvals pending
+                conversationActive = !!data.pending_approval;
                 
                 // Render the updated state
                 renderReactState(data);
