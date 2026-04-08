@@ -259,10 +259,18 @@ class FilePrimitive(Primitive):
     
     def __init__(self, allowed_roots: Optional[List[str]] = None):
         import tempfile
+        home = Path.home()
         self._allowed = allowed_roots or [
-            str(Path.home()),
+            str(home),
             str(Path.cwd()),
             tempfile.gettempdir(),
+            # Windows OneDrive and common locations
+            str(home / "OneDrive"),
+            str(home / "OneDrive - Personal"),
+            str(home / "Documents"),
+            str(home / "Downloads"),
+            str(home / "Desktop"),
+            str(home / "Pictures"),
         ]
     
     @property
@@ -338,8 +346,15 @@ class FilePrimitive(Primitive):
                 recursive = params.get("recursive", True)
                 limit = params.get("limit", 5000)
                 
+                # Auto-fix drive roots (C:\, D:\) to user home - users mean their files
+                import os
+                if os.name == 'nt' and len(directory) <= 3 and directory.endswith((':', ':\\')):
+                    logger.info(f"[FilePrimitive] Auto-fixing drive root {directory} → {Path.home()}")
+                    directory = str(Path.home())
+                
                 if not self._is_allowed(directory):
-                    return StepResult(False, error=f"Directory not allowed: {directory}")
+                    home = str(Path.home())
+                    return StepResult(False, error=f"Directory not allowed: {directory}. Try searching in {home} instead.")
                 
                 base = Path(directory)
                 if not base.exists():
@@ -387,8 +402,15 @@ class FilePrimitive(Primitive):
             
             elif operation == "list":
                 directory = str(Path(params.get("directory", "")).expanduser())
+                
+                # Auto-fix drive roots (C:\, D:\) to user home
+                import os
+                if os.name == 'nt' and len(directory) <= 3 and directory.endswith((':', ':\\')):
+                    directory = str(Path.home())
+                
                 if not self._is_allowed(directory):
-                    return StepResult(False, error=f"Directory not allowed: {directory}")
+                    home = str(Path.home())
+                    return StepResult(False, error=f"Directory not allowed: {directory}. Try {home} instead.")
                 
                 base = Path(directory)
                 if not base.exists():
