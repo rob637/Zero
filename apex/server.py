@@ -706,8 +706,15 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                     "setup_instructions": auth.get_setup_instructions(),
                 }, status_code=400)
             
-            # Determine scopes to request
-            scope_names = scopes.split(",") if scopes else ["calendar", "gmail"]
+            # Always request all common Google scopes to avoid losing access
+            # When user connects any Google service, we ask for all commonly needed ones
+            scope_names = ["calendar", "gmail"]  # Always include both core services
+            if scopes:
+                # Add any additionally requested scopes
+                for s in scopes.split(","):
+                    if s not in scope_names:
+                        scope_names.append(s)
+            
             resolved_scopes = auth._resolve_scopes(scope_names)
             
             # Generate auth URL

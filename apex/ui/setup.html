@@ -697,7 +697,22 @@
                 
                 if (provider === 'google' || provider === 'microsoft') {
                     // OAuth flow - open popup
-                    const res = await fetch(`${API}/oauth/start/${provider}`);
+                    // Map service ID to scope name
+                    const scopeMap = {
+                        'gmail': 'gmail',
+                        'google_calendar': 'calendar',
+                        'google_drive': 'drive',
+                        'google_contacts': 'contacts',
+                        'google_sheets': 'sheets',
+                        'google_slides': 'slides',
+                        'google_photos': 'photos',
+                        'outlook': 'mail',
+                        'outlook_calendar': 'calendar',
+                        'onedrive': 'onedrive',
+                        'microsoft_todo': 'tasks',
+                    };
+                    const scopeParam = scopeMap[id] || id;
+                    const res = await fetch(`${API}/oauth/start/${provider}?scopes=${scopeParam}`);
                     const data = await res.json();
                     
                     if (data.error) {
