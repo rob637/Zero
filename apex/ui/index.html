@@ -1713,10 +1713,12 @@
                     return;
                 }
 
-                // Conversation active only if pending approval (waiting for user input)
-                // If complete, next message should start fresh
-                conversationActive = !!data.pending_approval;
-                console.log(`[UI] is_complete=${data.is_complete}, pending=${!!data.pending_approval}, conversationActive=${conversationActive}`);
+                // Conversation stays active if:
+                // 1. Pending approval (explicit wait for user)
+                // 2. AI response ends with "?" (asking clarifying question)
+                const responseEndsWithQuestion = data.response && data.response.trim().endsWith('?');
+                conversationActive = !!data.pending_approval || responseEndsWithQuestion;
+                console.log(`[UI] is_complete=${data.is_complete}, pending=${!!data.pending_approval}, asksQuestion=${responseEndsWithQuestion}, conversationActive=${conversationActive}`);
 
                 // Render the current state
                 renderReactState(data);
@@ -1877,8 +1879,9 @@
                 removeTypingIndicator();
                 setThinking(false);
                 
-                // Update conversation state - active only if more approvals pending
-                conversationActive = !!data.pending_approval;
+                // Update conversation state - active if pending approval or asking question
+                const responseEndsWithQuestion = data.response && data.response.trim().endsWith('?');
+                conversationActive = !!data.pending_approval || responseEndsWithQuestion;
                 
                 // Render the updated state
                 renderReactState(data);
