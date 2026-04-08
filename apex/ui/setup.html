@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telic - Setup</title>
+    <title>Ziggy - Setup</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -414,7 +414,7 @@
     <header class="header">
         <a href="/" class="logo">
             <div class="logo-orb"></div>
-            <span class="logo-text">Telic</span>
+            <span class="logo-text">Ziggy</span>
         </a>
         <span class="header-title">Setup & Connections</span>
         <a href="/" class="back-link">← Back to Chat</a>
@@ -423,21 +423,21 @@
     <div class="container">
         <h1 class="page-title">Connect Your Services</h1>
         <p class="page-description">
-            Telic works with your existing accounts. Connect the services you use and Telic will help you manage them all from one place.
+            Ziggy works with your existing accounts. Connect the services you use and Ziggy will help you manage them all from one place.
         </p>
 
         <div class="info-box">
             <span class="info-icon">💡</span>
             <div class="info-content">
                 <h4>How it works</h4>
-                <p>Each capability (Email, Calendar, etc.) can be powered by different services. Connect Gmail for email, or Outlook — your choice. Telic adapts to however you work.</p>
+                <p>Each capability (Email, Calendar, etc.) can be powered by different services. Connect Gmail for email, or Outlook — your choice. Ziggy adapts to however you work.</p>
             </div>
         </div>
 
         <section class="section">
             <h2 class="section-title">
                 Capabilities
-                <span class="section-subtitle">— What do you want Telic to handle?</span>
+                <span class="section-subtitle">— What do you want Ziggy to handle?</span>
             </h2>
             <div class="capabilities-grid" id="capabilitiesGrid">
                 <!-- Populated by JS -->
@@ -645,9 +645,9 @@
             if (provider === 'google' || provider === 'microsoft') {
                 // OAuth providers - will open popup
                 desc.innerHTML = `
-                    <p>Connect your ${provider === 'google' ? 'Google' : 'Microsoft'} account to use ${name} with Telic.</p>
+                    <p>Connect your ${provider === 'google' ? 'Google' : 'Microsoft'} account to use ${name} with Ziggy.</p>
                     <p style="margin-top: 12px; color: var(--text-muted); font-size: 0.8rem;">
-                        A popup window will open for you to sign in and authorize access. Telic will only access the data you approve.
+                        A popup window will open for you to sign in and authorize access. Ziggy will only access the data you approve.
                     </p>
                 `;
                 connectBtn.textContent = 'Sign in with ' + (provider === 'google' ? 'Google' : 'Microsoft');

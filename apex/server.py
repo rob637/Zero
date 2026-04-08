@@ -200,7 +200,7 @@ This week:
         d = now + timedelta(days=i)
         date_context += f"  {d.strftime('%A %b %d')}: {d.strftime('%Y-%m-%d')}\n"
     
-    system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
+    system_prompt = f"""You are Ziggy, an AI assistant that helps users get things done.
 
 {date_context}
 
@@ -356,7 +356,7 @@ class RejectRequest(BaseModel):
 def get_chat_system_prompt():
     from datetime import datetime
     today = datetime.now().strftime("%A, %B %d, %Y")
-    return f"""You are Telic, a privacy-first AI operating system that lives on the user's PC.
+    return f"""You are Ziggy, an AI assistant that connects all your services and takes action for you.
 Today's date is {today}.
 
 Your capabilities (powered by universal primitives):
@@ -1468,7 +1468,7 @@ This week:
         d = now + timedelta(days=i)
         date_context += f"  {d.strftime('%A %b %d')}: {d.strftime('%Y-%m-%d')}\n"
     
-    system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
+    system_prompt = f"""You are Ziggy, an AI assistant that helps users get things done.
 
 {date_context}
 
