@@ -1102,7 +1102,7 @@ class EmailPrimitive(Primitive):
                 
                 result = await self._list(
                     query=params.get("query", ""),
-                    limit=params.get("limit", 20),
+                    max_results=params.get("limit", 20),
                 )
                 return StepResult(True, data=result)
             
