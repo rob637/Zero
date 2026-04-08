@@ -422,7 +422,7 @@ def primitives_to_tools(primitives: Dict[str, Any]) -> List[Tool]:
                 return handler
             
             tool = Tool(
-                name=f"{prim_name.lower()}.{op_name}",
+                name=f"{prim_name.lower()}_{op_name}",
                 description=description,
                 parameters={"properties": properties, "required": required},
                 handler=make_handler(primitive, op_name),
