@@ -1741,17 +1741,6 @@
             }
         }
 
-                // Render the current state
-                renderReactState(data);
-
-            } catch (e) {
-                removeTypingIndicator();
-                setThinking(false);
-                addMessage('Cannot connect to Telic. Is the server running?', 'system');
-                conversationActive = false;
-            }
-        }
-
         function renderReactState(data) {
             // Build HTML for all steps so far
             let html = '';
