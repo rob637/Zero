@@ -147,6 +147,10 @@ When you have completed the task, respond with a summary of what was done."""
         if not self.state.pending_approval:
             return self.state
         
+        # Clear previous response - we're continuing, not repeating
+        self.state.is_complete = False
+        self.state.final_response = None
+        
         step = self.state.pending_approval
         self.state.pending_approval = None
         
@@ -189,6 +193,10 @@ When you have completed the task, respond with a summary of what was done."""
     
     async def continue_with_input(self, user_input: str) -> AgentState:
         """Continue after user provides additional input."""
+        # Clear previous response - we're continuing, not repeating
+        self.state.is_complete = False
+        self.state.final_response = None
+        
         self.state.messages.append({"role": "user", "content": user_input})
         return await self._execute_loop()
     
