@@ -14,6 +14,14 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+# Load .env FIRST before any other imports that might use env vars
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # apex/.env
+    load_dotenv(Path(__file__).parent.parent / ".env")  # repo root .env
+except ImportError:
+    pass
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -814,6 +822,8 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
         if provider == "discord":
             client_id = os.environ.get("DISCORD_CLIENT_ID")
             client_secret = os.environ.get("DISCORD_CLIENT_SECRET")
+            
+            print(f"[DISCORD] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
             
             if client_id and client_secret:
                 import secrets
@@ -4256,6 +4266,12 @@ if __name__ == "__main__":
         print()
     else:
         print("✅ LLM API key configured")
+    
+    # Check for Discord credentials
+    if os.environ.get("DISCORD_CLIENT_ID"):
+        print("✅ Discord OAuth configured")
+    else:
+        print("⚠️  Discord credentials not found in .env")
     
     print("\n🌐 Opening http://localhost:8000 ...\n")
     
