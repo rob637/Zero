@@ -6363,8 +6363,38 @@ class Apex:
         return result_text
     
     def _follow_path(self, data: Any, path: str) -> Any:
-        """Navigate into data via dot-path: 'monthly_payment', 'schedule.0.amount', etc."""
-        for part in path.split('.'):
+        """Navigate into data via dot-path or bracket syntax.
+        
+        Supports:
+          - 'monthly_payment' → data['monthly_payment']
+          - 'schedule.0.amount' → data['schedule'][0]['amount']
+          - 'results[0].path' → data['results'][0]['path']
+          - 'files[*].path' → [item['path'] for item in data['files']] (wildcard)
+        """
+        # Normalize bracket syntax to dot syntax: results[0].path → results.0.path
+        # But handle [*] wildcard specially
+        if '[*]' in path:
+            # Wildcard: extract array field paths
+            parts = re.split(r'\[\*\]', path, maxsplit=1)
+            before = parts[0].rstrip('.')
+            after = parts[1].lstrip('.') if len(parts) > 1 else None
+            
+            # Navigate to the array
+            arr = self._follow_path(data, before) if before else data
+            if not isinstance(arr, list):
+                return None
+            
+            # Extract the field from each item
+            if after:
+                return [self._follow_path(item, after) for item in arr if self._follow_path(item, after) is not None]
+            return arr
+        
+        # Normalize [N] to .N
+        normalized = re.sub(r'\[(\d+)\]', r'.\1', path)
+        
+        for part in normalized.split('.'):
+            if not part:
+                continue
             if data is None:
                 return None
             if isinstance(data, dict):
@@ -6379,7 +6409,7 @@ class Apex:
         return data
     
     def _resolve_wire(self, ref: str, results: Dict[int, Any]) -> Any:
-        """Resolve a wire reference like 'step_0' or 'step_0.monthly_payment'."""
+        """Resolve a wire reference like 'step_0' or 'step_0.results[0].path'."""
         match = re.match(r'step_(\d+)(?:\.(.+))?', ref)
         if not match:
             return None
@@ -6401,10 +6431,10 @@ class Apex:
         resolved = {}
         for k, v in params.items():
             if isinstance(v, str):
-                for match in re.findall(r'\{\{step_(\d+(?:\.[\w.]+)?)\}\}', v):
-                    ref = f"step_{match}"
-                    ref_data = self._resolve_wire(ref, results)
-                    placeholder = "{{" + f"step_{match}" + "}}"
+                # Match both {{step_0.field}} and {{step_0.results[0].path}} syntax
+                for match in re.findall(r'\{\{(step_\d+(?:[\.\[\]\w\*]+)?)\}\}', v):
+                    ref_data = self._resolve_wire(match, results)
+                    placeholder = "{{" + match + "}}"
                     
                     if ref_data is not None:
                         if v == placeholder:
@@ -6471,6 +6501,66 @@ class Apex:
                     merged["data"] = results[dep_id]
                     logger.info(f"[auto-wire] Injected step_{dep_id} result ({len(results[dep_id])} items) as 'data' for step {step.id}")
                     break
+        
+        # AUTO-WIRE PATH: Operations like DOCUMENT.parse, FILE.read, MEDIA.info need a 'path'
+        # If path is missing/unresolved (still contains {{ }}), try to get it from previous FILE.search
+        path_val = merged.get("path", "")
+        if step.operation in ("parse", "read", "info", "checksum", "move", "copy", "delete"):
+            needs_path = (
+                "path" not in merged or 
+                merged.get("path") in (None, "", []) or
+                (isinstance(path_val, str) and "{{" in path_val)  # Unresolved placeholder
+            )
+            if needs_path:
+                # Look for file paths from previous steps
+                candidates = step.depends_on if step.depends_on else list(range(step.id))
+                for dep_id in reversed(candidates):
+                    if dep_id not in results:
+                        continue
+                    prev_result = results[dep_id]
+                    # Handle list of files from FILE.search
+                    if isinstance(prev_result, list) and len(prev_result) > 0:
+                        first_item = prev_result[0]
+                        if isinstance(first_item, dict) and 'path' in first_item:
+                            merged["path"] = first_item['path']
+                            logger.info(f"[auto-wire] Set path from step_{dep_id}[0].path: {first_item['path'][:50]}...")
+                            break
+                        elif isinstance(first_item, str) and ('/' in first_item or '\\' in first_item):
+                            merged["path"] = first_item
+                            logger.info(f"[auto-wire] Set path from step_{dep_id}[0]: {first_item[:50]}...")
+                            break
+                    # Handle dict with path key
+                    elif isinstance(prev_result, dict) and 'path' in prev_result:
+                        merged["path"] = prev_result['path']
+                        logger.info(f"[auto-wire] Set path from step_{dep_id}.path: {prev_result['path'][:50]}...")
+                        break
+        
+        # AUTO-WIRE CONTENT: Operations like DOCUMENT.extract, DOCUMENT.summarize need 'content'
+        content_val = merged.get("content", "")
+        if step.operation in ("extract", "summarize"):
+            needs_content = (
+                "content" not in merged or
+                merged.get("content") in (None, "", []) or
+                (isinstance(content_val, str) and "{{" in content_val)
+            )
+            if needs_content:
+                candidates = step.depends_on if step.depends_on else list(range(step.id))
+                for dep_id in reversed(candidates):
+                    if dep_id not in results:
+                        continue
+                    prev_result = results[dep_id]
+                    # DOCUMENT.parse returns text content as string
+                    if isinstance(prev_result, str) and len(prev_result) > 20:
+                        merged["content"] = prev_result
+                        logger.info(f"[auto-wire] Set content from step_{dep_id} (text, {len(prev_result)} chars)")
+                        break
+                    # Or dict with text/content key
+                    elif isinstance(prev_result, dict):
+                        for key in ('text', 'content', 'body', 'raw'):
+                            if key in prev_result and isinstance(prev_result[key], str):
+                                merged["content"] = prev_result[key]
+                                logger.info(f"[auto-wire] Set content from step_{dep_id}.{key}")
+                                break
         
         # Debug: log final resolved params for tracing
         data_val = merged.get("data")
