@@ -1705,27 +1705,35 @@
                     return;
                 }
 
-                // Check for plan from Telic engine
-                if (data.plan && data.plan.length > 0) {
+                // Check for plan or completed steps from Telic engine
+                const hasCompletedSteps = data.completed_steps && data.completed_steps.length > 0;
+                const hasWriteSteps = data.plan && data.plan.length > 0;
+                
+                if (hasCompletedSteps || hasWriteSteps) {
                     lastPlanMessage = message;  // Store for execute
                     
                     // Show completed read-only steps (info gathering)
                     let completedHtml = '';
-                    if (data.completed_steps && data.completed_steps.length > 0) {
+                    if (hasCompletedSteps) {
                         completedHtml = renderCompletedSteps(data.completed_steps);
                     }
                     
-                    // Show pending write steps for approval
-                    const planHtml = renderTelicPlan(data.plan);
-                    const executeBtn = `
-                        <div style="margin-top: 16px; display: flex; gap: 12px; justify-content: center;">
-                            <button class="btn btn-approve" onclick="executePlan()" style="padding: 12px 28px; font-size: 1rem; font-weight: 600;">
-                                ✓ Approve & Run
-                            </button>
-                            <button class="btn btn-reject" onclick="this.parentElement.innerHTML='<span style=color:var(--text-muted)>Cancelled by user</span>'" style="padding: 12px 28px; font-size: 1rem;">
-                                ✗ Cancel
-                            </button>
-                        </div>`;
+                    // Show pending write steps for approval (if any)
+                    let planHtml = '';
+                    let executeBtn = '';
+                    if (hasWriteSteps) {
+                        planHtml = renderTelicPlan(data.plan);
+                        executeBtn = `
+                            <div style="margin-top: 16px; display: flex; gap: 12px; justify-content: center;">
+                                <button class="btn btn-approve" onclick="executePlan()" style="padding: 12px 28px; font-size: 1rem; font-weight: 600;">
+                                    ✓ Approve & Run
+                                </button>
+                                <button class="btn btn-reject" onclick="this.parentElement.innerHTML='<span style=color:var(--text-muted)>Cancelled by user</span>'" style="padding: 12px 28px; font-size: 1rem;">
+                                    ✗ Cancel
+                                </button>
+                            </div>`;
+                    }
+                    
                     addMessage(data.response, 'assistant', completedHtml + planHtml + executeBtn);
                     return;
                 }

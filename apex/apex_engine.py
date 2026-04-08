@@ -5906,11 +5906,12 @@ HOW THIS WORKS:
 2. Action steps (send email, create file, delete) wait for user approval AFTER they see the results
 3. If a search might find multiple items (documents, emails, etc.), plan to show choices to the user
 
-IMPORTANT BEHAVIORS:
+IMPORTANT:
+- Set "side_effect": false for SEARCH, READ, COMPUTE, EXTRACT (info gathering runs automatically)
+- Set "side_effect": true for SEND, CREATE, DELETE, WRITE (actions need approval)
 - If you find multiple matching items, ASK which one before proceeding
-- If any required info is unclear or missing, ASK first with: {{"clarify": "your question"}}
+- If any required info is unclear, ASK first with: {{"clarify": "your question"}}
 - The user will see computed results (like an amortization schedule) BEFORE approving send/create actions
-- Mark steps that change things with "side_effect": true
 
 Think through this:
 1. What does the user want?
@@ -5920,10 +5921,11 @@ Think through this:
 
 If you need clarification: {{"clarify": "your question"}}
 
-Otherwise provide your plan:
-```json
-[{{"description": "...", "primitive": "NAME", "operation": "op", "params": {{}}, "wires": {{}}, "side_effect": false}}]
-```
+Otherwise provide your plan as a JSON array. Example structure:
+[
+  {{"description": "Search for X", "primitive": "...", "operation": "search", "params": {{}}, "wires": {{}}, "side_effect": false}},
+  {{"description": "Send result", "primitive": "...", "operation": "send", "params": {{}}, "wires": {{}}, "side_effect": true}}
+]
 
 Think first, then output the plan:"""
 
