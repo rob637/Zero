@@ -772,6 +772,80 @@ async def root():
     )
 
 
+def resolve_wire_value(val, read_results: dict, primitive_to_step: dict):
+    """
+    Resolve wire references in a value. Handles multiple formats:
+    - step_N.path (e.g., step_0.results[0].email)
+    - {{PRIMITIVE.operation.path}} (e.g., {{CONTACTS.search.results[0].email}})
+    - Inline placeholders within strings
+    """
+    if not isinstance(val, str):
+        return val
+    
+    import re
+    
+    def follow_path(data, path):
+        """Navigate a path like 'results[0].email' through data."""
+        if data is None:
+            return None
+        current = data
+        # Split on dots, but handle brackets
+        parts = re.split(r'\.(?![^\[]*\])', path)
+        for part in parts:
+            if current is None:
+                return None
+            # Handle array index like results[0]
+            bracket_match = re.match(r'(\w+)\[(\d+)\]', part)
+            if bracket_match:
+                key, idx = bracket_match.groups()
+                if isinstance(current, dict) and key in current:
+                    current = current[key]
+                    if isinstance(current, list) and int(idx) < len(current):
+                        current = current[int(idx)]
+                    else:
+                        return None
+                else:
+                    return None
+            elif isinstance(current, dict):
+                current = current.get(part)
+            else:
+                return None
+        return current
+    
+    # Check for {{PRIMITIVE.operation.path}} format (can be multiple in string)
+    def replace_placeholder(match):
+        placeholder = match.group(1)  # e.g., "CONTACTS.search.results[0].email"
+        parts = placeholder.split('.', 2)  # Split into [PRIMITIVE, operation, path]
+        if len(parts) >= 2:
+            prim_op = f"{parts[0]}.{parts[1]}".upper()
+            step_id = primitive_to_step.get(prim_op)
+            if step_id is not None and step_id in read_results:
+                if len(parts) > 2:
+                    result = follow_path(read_results[step_id], parts[2])
+                else:
+                    result = read_results[step_id]
+                if result is not None:
+                    return str(result) if not isinstance(result, str) else result
+        return match.group(0)  # Keep original if can't resolve
+    
+    # Replace all {{...}} placeholders
+    if '{{' in val:
+        resolved = re.sub(r'\{\{([^}]+)\}\}', replace_placeholder, val)
+        return resolved
+    
+    # Check for step_N.path format
+    step_match = re.match(r'step_(\d+)\.(.+)', val)
+    if step_match:
+        step_id = int(step_match.group(1))
+        path = step_match.group(2)
+        if step_id in read_results:
+            result = follow_path(read_results[step_id], path)
+            if result is not None:
+                return result
+    
+    return val
+
+
 def has_side_effect(step):
     """Check if step has side effects (needs approval). AI decides via side_effect field."""
     return getattr(step, 'side_effect', True)  # Default to true (safer)
@@ -886,6 +960,14 @@ async def chat(req: ChatRequest):
                 read_results = {}  # step_id -> result
                 completed_steps = []
                 
+                # Build mapping: primitive.operation -> step_id for wire resolution
+                primitive_to_step = {}
+                for step in exec_result.plan:
+                    key = f"{step.primitive}.{step.operation}".upper()
+                    primitive_to_step[key] = step.id
+                    # Also map with common aliases
+                    primitive_to_step[f"{step.primitive}.SEARCH".upper()] = step.id
+                
                 for step in exec_result.plan:
                     if not has_side_effect(step):  # AI says no side effects = safe to auto-run
                         print(f"[CHAT] Auto-running read-only: {step.primitive}.{step.operation}")
@@ -893,17 +975,7 @@ async def chat(req: ChatRequest):
                             # Resolve any wire references from previous steps
                             resolved_params = dict(step.params)
                             for key, val in step.params.items():
-                                if isinstance(val, str) and "step_" in val:
-                                    m = re.match(r'step_(\d+)\.(.+)', val)
-                                    if m:
-                                        ref_id = int(m.group(1))
-                                        path = m.group(2)
-                                        if ref_id in read_results:
-                                            resolved = read_results[ref_id]
-                                            for part in path.split('.'):
-                                                if isinstance(resolved, dict):
-                                                    resolved = resolved.get(part, val)
-                                            resolved_params[key] = resolved
+                                resolved_params[key] = resolve_wire_value(val, read_results, primitive_to_step)
                             
                             # Execute
                             primitive = engine._primitives.get(step.primitive.upper())
@@ -916,10 +988,12 @@ async def chat(req: ChatRequest):
                                     "primitive": step.primitive,
                                     "operation": step.operation,
                                     "status": "completed",
-                                    "result_summary": str(step_result)[:300] if step_result else None
+                                    "result_summary": str(step_result)[:500] if step_result else None
                                 })
                                 print(f"[CHAT]   Got: {str(step_result)[:200]}")
                         except Exception as e:
+                            import traceback
+                            traceback.print_exc()
                             print(f"[CHAT]   Failed: {e}")
                             completed_steps.append({
                                 "id": step.id,
@@ -936,17 +1010,7 @@ async def chat(req: ChatRequest):
                     if has_side_effect(step):  # AI says has side effects = needs approval
                         resolved_params = dict(step.params)
                         for key, val in step.params.items():
-                            if isinstance(val, str) and "step_" in val:
-                                m = re.match(r'step_(\d+)\.(.+)', val)
-                                if m:
-                                    ref_id = int(m.group(1))
-                                    path = m.group(2)
-                                    if ref_id in read_results:
-                                        resolved = read_results[ref_id]
-                                        for part in path.split('.'):
-                                            if isinstance(resolved, dict):
-                                                resolved = resolved.get(part, val)
-                                        resolved_params[key] = resolved
+                            resolved_params[key] = resolve_wire_value(val, read_results, primitive_to_step)
                         
                         write_steps.append({
                             "id": step.id,
