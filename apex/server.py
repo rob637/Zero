@@ -810,6 +810,41 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 "provider": provider,
             })
         
+        # For Discord, check env vars first
+        if provider == "discord":
+            client_id = os.environ.get("DISCORD_CLIENT_ID")
+            client_secret = os.environ.get("DISCORD_CLIENT_SECRET")
+            
+            if client_id and client_secret:
+                import secrets
+                state = secrets.token_urlsafe(32)
+                
+                # Discord OAuth scopes
+                discord_scopes = ["identify", "guilds", "bot"]
+                scope_str = "%20".join(discord_scopes)
+                
+                redirect_uri = "http://localhost:8000/oauth/callback"
+                auth_url = (
+                    f"https://discord.com/api/oauth2/authorize"
+                    f"?client_id={client_id}"
+                    f"&redirect_uri={redirect_uri}"
+                    f"&response_type=code"
+                    f"&scope={scope_str}"
+                    f"&state={state}"
+                )
+                
+                _oauth_pending_states[state] = {
+                    "provider": "discord",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                }
+                
+                return JSONResponse({
+                    "auth_url": auth_url,
+                    "state": state,
+                    "provider": provider,
+                })
+        
         # For other providers, use generic OAuth flow (requires client credentials setup)
         from connectors.oauth_flow import get_oauth_flow
         flow = get_oauth_flow()
@@ -1003,6 +1038,84 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                             window.opener.postMessage({{
                                 type: 'oauth_success',
                                 provider: 'google'
+                            }}, '*');
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    </script>
+                </body>
+                </html>
+                """)
+            
+            elif provider_used == "discord":
+                # Exchange code for Discord token
+                import httpx
+                
+                client_id = pending["client_id"]
+                client_secret = pending["client_secret"]
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://discord.com/api/oauth2/token",
+                        data={
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "grant_type": "authorization_code",
+                            "code": code,
+                            "redirect_uri": "http://localhost:8000/oauth/callback",
+                        },
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"Discord token exchange failed: {response.text}")
+                    
+                    tokens = response.json()
+                
+                # Store tokens
+                store = get_cred_store()
+                store.save_token(
+                    provider="discord",
+                    access_token=tokens.get("access_token"),
+                    refresh_token=tokens.get("refresh_token"),
+                    expires_in=tokens.get("expires_in"),
+                    scopes=tokens.get("scope", "").split(),
+                )
+                
+                print(f"[OAUTH] Discord connected!")
+                
+                return HTMLResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Discord Connected</title>
+                    <style>
+                        body {{
+                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                            background: #0a0a0f;
+                            color: #f4f4f5;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                        }}
+                        .card {{ text-align: center; padding: 40px; }}
+                        .checkmark {{ font-size: 48px; margin-bottom: 16px; }}
+                        h2 {{ margin-bottom: 8px; }}
+                        p {{ color: #a1a1aa; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="checkmark">✓</div>
+                        <h2>Discord Connected!</h2>
+                        <p>You can close this window.</p>
+                    </div>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{
+                                type: 'oauth_success',
+                                provider: 'discord'
                             }}, '*');
                         }}
                         setTimeout(() => window.close(), 1500);

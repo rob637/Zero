@@ -688,13 +688,13 @@
         // Categorize services by setup difficulty
         const setupDifficulty = {
             // One-Click: OAuth with pre-configured credentials
-            oneClick: ['google'],
+            oneClick: ['google', 'discord'],
             
             // API Key: Just paste a token
             apiKey: ['github', 'todoist', 'dropbox', 'twilio', 'smartthings', 'spotify'],
             
             // Developer Setup: Requires registering an OAuth app
-            devSetup: ['microsoft', 'slack', 'discord', 'twitter', 'jira']
+            devSetup: ['microsoft', 'slack', 'twitter', 'jira']
         };
 
         function getServiceDifficulty(provider) {
@@ -840,15 +840,20 @@
             tokenForm.style.display = 'none';
             connectBtn.textContent = 'Connect';
             
-            if (provider === 'google' || provider === 'microsoft') {
+            if (provider === 'google' || provider === 'microsoft' || provider === 'discord') {
                 // OAuth providers - will open popup
+                const providerNames = {
+                    'google': 'Google',
+                    'microsoft': 'Microsoft',
+                    'discord': 'Discord'
+                };
                 desc.innerHTML = `
-                    <p>Connect your ${provider === 'google' ? 'Google' : 'Microsoft'} account to use ${name} with Ziggy.</p>
+                    <p>Connect your ${providerNames[provider]} account to use ${name} with Ziggy.</p>
                     <p style="margin-top: 12px; color: var(--text-muted); font-size: 0.8rem;">
                         A popup window will open for you to sign in and authorize access. Ziggy will only access the data you approve.
                     </p>
                 `;
-                connectBtn.textContent = 'Sign in with ' + (provider === 'google' ? 'Google' : 'Microsoft');
+                connectBtn.textContent = 'Sign in with ' + providerNames[provider];
             } else if (tokenConfig[provider] || tokenConfig[id]) {
                 // Token-based providers - show input form
                 const config = tokenConfig[provider] || tokenConfig[id] || { label: 'API Token', help: '', placeholder: 'Your token' };
@@ -893,7 +898,7 @@
             try {
                 const { id, name, provider } = currentService;
                 
-                if (provider === 'google' || provider === 'microsoft') {
+                if (provider === 'google' || provider === 'microsoft' || provider === 'discord') {
                     // OAuth flow - open popup
                     // Map service ID to scope name
                     const scopeMap = {
@@ -908,6 +913,7 @@
                         'outlook_calendar': 'calendar',
                         'onedrive': 'onedrive',
                         'microsoft_todo': 'tasks',
+                        'discord': 'bot',
                     };
                     const scopeParam = scopeMap[id] || id;
                     const res = await fetch(`${API}/oauth/start/${provider}?scopes=${scopeParam}`);
