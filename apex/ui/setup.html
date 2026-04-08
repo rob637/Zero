@@ -302,6 +302,38 @@
             line-height: 1.5;
         }
 
+        .coming-soon-box {
+            background: var(--bg-secondary);
+            border: 1px dashed var(--border-light);
+            border-radius: 12px;
+            padding: 32px;
+            text-align: center;
+        }
+        .coming-soon-box h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .coming-soon-box p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+        .dev-mode-btn {
+            background: transparent;
+            border: 1px solid var(--border-light);
+            color: var(--text-muted);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .dev-mode-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-color: var(--accent-primary);
+        }
+
         /* Modal */
         .modal-overlay {
             display: none;
@@ -429,28 +461,38 @@
         <div class="info-box">
             <span class="info-icon">💡</span>
             <div class="info-content">
-                <h4>How it works</h4>
-                <p>Each capability (Email, Calendar, etc.) can be powered by different services. Connect Gmail for email, or Outlook — your choice. Ziggy adapts to however you work.</p>
+                <h4>Quick Setup</h4>
+                <p>Just click any Google service below and sign in with your Google account. That's it!</p>
             </div>
         </div>
 
         <section class="section">
             <h2 class="section-title">
-                Capabilities
-                <span class="section-subtitle">— What do you want Ziggy to handle?</span>
+                Google Services
+                <span class="section-subtitle">— One-click connection</span>
             </h2>
-            <div class="capabilities-grid" id="capabilitiesGrid">
+            <div class="capabilities-grid" id="googleServicesGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <section class="section" id="devModeSection" style="display: none;">
+            <h2 class="section-title">
+                Other Services
+                <span class="section-subtitle">— Requires API key setup</span>
+            </h2>
+            <div class="capabilities-grid" id="otherServicesGrid">
                 <!-- Populated by JS -->
             </div>
         </section>
 
         <section class="section">
-            <h2 class="section-title">
-                All Services
-                <span class="section-subtitle">— Quick connect</span>
-            </h2>
-            <div class="services-grid" id="servicesGrid">
-                <!-- Populated by JS -->
+            <div class="coming-soon-box" id="comingSoonBox">
+                <h3>🚀 More Services Coming Soon</h3>
+                <p>Microsoft (Outlook, OneDrive, Teams), Slack, Spotify, and more will be available with one-click setup.</p>
+                <button class="dev-mode-btn" onclick="toggleDevMode()">
+                    I'm a developer — show advanced setup
+                </button>
             </div>
         </section>
     </div>
@@ -561,6 +603,14 @@
             }
         });
 
+        let devMode = false;
+
+        function toggleDevMode() {
+            devMode = !devMode;
+            document.getElementById('devModeSection').style.display = devMode ? 'block' : 'none';
+            document.getElementById('comingSoonBox').style.display = devMode ? 'none' : 'block';
+        }
+
         async function loadCapabilities() {
             try {
                 const [capRes, svcRes, credRes] = await Promise.all([
@@ -580,9 +630,25 @@
                     if (!c.is_expired) connected[c.provider] = true;
                 });
                 
-                // Render capabilities
-                const grid = document.getElementById('capabilitiesGrid');
-                grid.innerHTML = capabilities.map(cap => {
+                // Separate Google capabilities from others
+                const googleCaps = [];
+                const otherCaps = [];
+                
+                capabilities.forEach(cap => {
+                    const googleServices = cap.services.filter(s => s.provider === 'google');
+                    const otherServices = cap.services.filter(s => s.provider !== 'google');
+                    
+                    if (googleServices.length > 0) {
+                        googleCaps.push({ ...cap, services: googleServices });
+                    }
+                    if (otherServices.length > 0) {
+                        otherCaps.push({ ...cap, services: otherServices });
+                    }
+                });
+                
+                // Render Google services (always visible)
+                const googleGrid = document.getElementById('googleServicesGrid');
+                googleGrid.innerHTML = googleCaps.map(cap => {
                     const anyConnected = cap.services.some(s => connected[s.id]);
                     return `
                         <div class="capability-card">
@@ -606,19 +672,31 @@
                     `;
                 }).join('');
                 
-                // Render all services
-                const svcGrid = document.getElementById('servicesGrid');
-                svcGrid.innerHTML = services.map(s => `
-                    <div class="service-card ${connected[s.id] ? 'connected' : ''}" 
-                         onclick="connectService('${s.id}', '${s.name}', '${s.provider}')">
-                        <div class="service-icon">${providerIcons[s.provider] || '⚡'}</div>
-                        <div class="service-info">
-                            <div class="service-name">${s.name}</div>
-                            <div class="service-provider">${s.provider}</div>
+                // Render other services (dev mode only)
+                const otherGrid = document.getElementById('otherServicesGrid');
+                otherGrid.innerHTML = otherCaps.map(cap => {
+                    const anyConnected = cap.services.some(s => connected[s.id]);
+                    return `
+                        <div class="capability-card">
+                            <div class="capability-header">
+                                <span class="capability-icon">${cap.icon}</span>
+                                <span class="capability-name">${cap.name}</span>
+                                <span class="capability-status ${anyConnected ? 'connected' : ''}">
+                                    ${anyConnected ? '✓ Ready' : 'Not connected'}
+                                </span>
+                            </div>
+                            <p class="capability-description">${cap.description}</p>
+                            <div class="capability-services">
+                                ${cap.services.map(s => `
+                                    <button class="service-btn ${connected[s.id] ? 'connected' : ''}" 
+                                            onclick="connectService('${s.id}', '${s.name}', '${s.provider}')">
+                                        ${providerIcons[s.provider] || '⚡'} ${s.name}
+                                    </button>
+                                `).join('')}
+                            </div>
                         </div>
-                        <div class="service-status-dot ${connected[s.id] ? 'connected' : ''}"></div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
                 
             } catch (e) {
                 console.error('Failed to load capabilities:', e);
