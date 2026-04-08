@@ -302,22 +302,42 @@
             line-height: 1.5;
         }
 
-        .coming-soon-box {
-            background: var(--bg-secondary);
-            border: 1px dashed var(--border-light);
-            border-radius: 12px;
-            padding: 32px;
-            text-align: center;
-        }
-        .coming-soon-box h3 {
-            font-size: 1.1rem;
+        /* Difficulty Headers */
+        .difficulty-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
             margin-bottom: 8px;
         }
-        .coming-soon-box p {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-            margin-bottom: 20px;
+        .difficulty-badge {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
         }
+        .difficulty-header.easy .difficulty-badge {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+        }
+        .difficulty-header.medium .difficulty-badge {
+            background: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+        }
+        .difficulty-header.hard .difficulty-badge {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+        .difficulty-header .section-title {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+        .difficulty-desc {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+        }
+
+        /* Modal */
         .dev-mode-btn {
             background: transparent;
             border: 1px solid var(--border-light);
@@ -455,44 +475,42 @@
     <div class="container">
         <h1 class="page-title">Connect Your Services</h1>
         <p class="page-description">
-            Ziggy works with your existing accounts. Connect the services you use and Ziggy will help you manage them all from one place.
+            Ziggy works with your existing accounts. Services are organized by how easy they are to connect.
         </p>
 
-        <div class="info-box">
-            <span class="info-icon">💡</span>
-            <div class="info-content">
-                <h4>Quick Setup</h4>
-                <p>Just click any Google service below and sign in with your Google account. That's it!</p>
-            </div>
-        </div>
-
+        <!-- One-Click Section -->
         <section class="section">
-            <h2 class="section-title">
-                Google Services
-                <span class="section-subtitle">— One-click connection</span>
-            </h2>
-            <div class="capabilities-grid" id="googleServicesGrid">
+            <div class="difficulty-header easy">
+                <span class="difficulty-badge">⚡ One-Click</span>
+                <h2 class="section-title">Just Sign In</h2>
+            </div>
+            <p class="difficulty-desc">Click connect, sign in with your account, done. No setup required.</p>
+            <div class="capabilities-grid" id="oneClickGrid">
                 <!-- Populated by JS -->
             </div>
         </section>
 
-        <section class="section" id="devModeSection" style="display: none;">
-            <h2 class="section-title">
-                Other Services
-                <span class="section-subtitle">— Requires API key setup</span>
-            </h2>
-            <div class="capabilities-grid" id="otherServicesGrid">
+        <!-- API Key Section -->
+        <section class="section">
+            <div class="difficulty-header medium">
+                <span class="difficulty-badge">🔑 API Key</span>
+                <h2 class="section-title">Paste a Token</h2>
+            </div>
+            <p class="difficulty-desc">Get a token from the service's settings page and paste it here. Takes ~30 seconds.</p>
+            <div class="capabilities-grid" id="apiKeyGrid">
                 <!-- Populated by JS -->
             </div>
         </section>
 
+        <!-- Developer Setup Section -->
         <section class="section">
-            <div class="coming-soon-box" id="comingSoonBox">
-                <h3>🚀 More Services Coming Soon</h3>
-                <p>Microsoft (Outlook, OneDrive, Teams), Slack, Spotify, and more will be available with one-click setup.</p>
-                <button class="dev-mode-btn" onclick="toggleDevMode()">
-                    I'm a developer — show advanced setup
-                </button>
+            <div class="difficulty-header hard">
+                <span class="difficulty-badge">🛠️ Developer Setup</span>
+                <h2 class="section-title">Register an App</h2>
+            </div>
+            <p class="difficulty-desc">Requires creating an OAuth app in the provider's developer portal. Takes ~5-10 minutes.</p>
+            <div class="capabilities-grid" id="devSetupGrid">
+                <!-- Populated by JS -->
             </div>
         </section>
     </div>
@@ -603,12 +621,23 @@
             }
         });
 
-        let devMode = false;
+        // Categorize services by setup difficulty
+        const setupDifficulty = {
+            // One-Click: OAuth with pre-configured credentials
+            oneClick: ['google'],
+            
+            // API Key: Just paste a token
+            apiKey: ['github', 'todoist', 'dropbox', 'twilio', 'smartthings', 'spotify'],
+            
+            // Developer Setup: Requires registering an OAuth app
+            devSetup: ['microsoft', 'slack', 'discord', 'twitter', 'jira']
+        };
 
-        function toggleDevMode() {
-            devMode = !devMode;
-            document.getElementById('devModeSection').style.display = devMode ? 'block' : 'none';
-            document.getElementById('comingSoonBox').style.display = devMode ? 'none' : 'block';
+        function getServiceDifficulty(provider) {
+            if (setupDifficulty.oneClick.includes(provider)) return 'oneClick';
+            if (setupDifficulty.apiKey.includes(provider)) return 'apiKey';
+            if (setupDifficulty.devSetup.includes(provider)) return 'devSetup';
+            return 'apiKey'; // Default to API key
         }
 
         async function loadCapabilities() {
@@ -623,32 +652,34 @@
                 const { services } = await svcRes.json();
                 const { credentials } = await credRes.json();
                 
-                // Build service connection map - combine env-based and credential-based
+                // Build service connection map
                 const connected = {};
                 services.forEach(s => connected[s.id] = s.connected);
                 credentials.forEach(c => {
                     if (!c.is_expired) connected[c.provider] = true;
                 });
                 
-                // Separate Google capabilities from others
-                const googleCaps = [];
-                const otherCaps = [];
+                // Group capabilities by difficulty
+                const groups = { oneClick: [], apiKey: [], devSetup: [] };
                 
                 capabilities.forEach(cap => {
-                    const googleServices = cap.services.filter(s => s.provider === 'google');
-                    const otherServices = cap.services.filter(s => s.provider !== 'google');
+                    // Split services by difficulty
+                    const byDifficulty = { oneClick: [], apiKey: [], devSetup: [] };
+                    cap.services.forEach(s => {
+                        const diff = getServiceDifficulty(s.provider);
+                        byDifficulty[diff].push(s);
+                    });
                     
-                    if (googleServices.length > 0) {
-                        googleCaps.push({ ...cap, services: googleServices });
-                    }
-                    if (otherServices.length > 0) {
-                        otherCaps.push({ ...cap, services: otherServices });
+                    // Add to appropriate groups
+                    for (const diff of ['oneClick', 'apiKey', 'devSetup']) {
+                        if (byDifficulty[diff].length > 0) {
+                            groups[diff].push({ ...cap, services: byDifficulty[diff] });
+                        }
                     }
                 });
                 
-                // Render Google services (always visible)
-                const googleGrid = document.getElementById('googleServicesGrid');
-                googleGrid.innerHTML = googleCaps.map(cap => {
+                // Render function for capability cards
+                const renderCards = (caps) => caps.map(cap => {
                     const anyConnected = cap.services.some(s => connected[s.id]);
                     return `
                         <div class="capability-card">
@@ -672,31 +703,10 @@
                     `;
                 }).join('');
                 
-                // Render other services (dev mode only)
-                const otherGrid = document.getElementById('otherServicesGrid');
-                otherGrid.innerHTML = otherCaps.map(cap => {
-                    const anyConnected = cap.services.some(s => connected[s.id]);
-                    return `
-                        <div class="capability-card">
-                            <div class="capability-header">
-                                <span class="capability-icon">${cap.icon}</span>
-                                <span class="capability-name">${cap.name}</span>
-                                <span class="capability-status ${anyConnected ? 'connected' : ''}">
-                                    ${anyConnected ? '✓ Ready' : 'Not connected'}
-                                </span>
-                            </div>
-                            <p class="capability-description">${cap.description}</p>
-                            <div class="capability-services">
-                                ${cap.services.map(s => `
-                                    <button class="service-btn ${connected[s.id] ? 'connected' : ''}" 
-                                            onclick="connectService('${s.id}', '${s.name}', '${s.provider}')">
-                                        ${providerIcons[s.provider] || '⚡'} ${s.name}
-                                    </button>
-                                `).join('')}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+                // Render each section
+                document.getElementById('oneClickGrid').innerHTML = renderCards(groups.oneClick);
+                document.getElementById('apiKeyGrid').innerHTML = renderCards(groups.apiKey);
+                document.getElementById('devSetupGrid').innerHTML = renderCards(groups.devSetup);
                 
             } catch (e) {
                 console.error('Failed to load capabilities:', e);
