@@ -115,6 +115,10 @@ MAX_HISTORY = 10  # Keep last 10 messages for context
 _react_agent: Optional[ReActAgent] = None
 _react_state: Optional[AgentState] = None
 
+# Session-based conversation (like ChatGPT/Gemini)
+_session_messages: list = []  # Full conversation history for session
+_session_agent: Optional[ReActAgent] = None   # Persistent agent for session
+
 def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton."""
     global _telic_engine, _google_calendar, _react_agent
@@ -1400,103 +1404,92 @@ def state_to_response(state: AgentState) -> Dict[str, Any]:
 
 async def select_primitives_for_request(message: str, all_primitives: dict) -> dict:
     """
-    Use a quick LLM call to select which primitives are relevant for this request.
-    Returns a subset of primitives to use.
+    DEPRECATED: Dynamic primitive selection caused conversation context issues.
+    Now we use all primitives and let the LLM choose which to use.
+    Keeping this function for potential future use with smarter filtering.
     """
-    import anthropic
-    import openai
+    return all_primitives
+
+
+def get_session_agent(force_new: bool = False) -> Optional[ReActAgent]:
+    """
+    Get or create a session-persistent ReAct agent.
     
-    # Build primitive catalog for selection
-    primitive_names = list(all_primitives.keys())
-    primitive_descriptions = []
-    for name, prim in all_primitives.items():
-        desc = getattr(prim, 'description', '') or f"Handles {name.lower()} operations"
-        primitive_descriptions.append(f"- {name}: {desc}")
+    Unlike the old approach that created fresh agents per request,
+    this maintains conversation context like ChatGPT/Gemini.
+    """
+    global _session_agent, _session_messages
     
-    selection_prompt = f"""Given this user request, select which primitives are needed.
+    if force_new:
+        _session_agent = None
+        _session_messages = []
+    
+    if _session_agent is not None:
+        return _session_agent
+    
+    # Need API key
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    
+    # Get the Telic engine
+    engine = get_telic_engine()
+    if not engine:
+        return None
+    
+    # Use ALL primitives - let the LLM decide what's relevant
+    tools = primitives_to_tools(engine._primitives)
+    print(f"[SESSION] Created agent with {len(tools)} tools")
+    
+    # Create LLM client
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        import anthropic
+        llm_client = anthropic.Anthropic()
+    else:
+        import openai
+        llm_client = openai.OpenAI()
+    
+    from datetime import datetime
+    system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
 
-USER REQUEST: {message}
+TODAY: {datetime.now().strftime("%Y-%m-%d")}
 
-AVAILABLE PRIMITIVES:
-{chr(10).join(primitive_descriptions)}
+You have access to the user's email, calendar, files, tasks, and other services.
+Use tools to accomplish what the user asks. Call tools ONE AT A TIME, observe results, then decide next steps.
 
-Return ONLY a JSON array of primitive names needed. Example: ["FILE", "EMAIL"]
-Be minimal - only include what's actually needed for this specific request.
-Common mappings:
-- Photos/images/pictures → FILE, PHOTOS  
-- Email/message/send → EMAIL, CONTACTS
-- Meeting/calendar/schedule → CALENDAR, CONTACTS
-- Task/todo/reminder → TASK
-- Search/find files → FILE
-- Code/github/repo → DEVTOOLS, GITHUB
-- Smart home/lights/thermostat → SMARTHOME
+CONVERSATION CONTEXT:
+- You have full memory of this conversation session
+- References like "the first one", "send it", "the information above" refer to earlier in THIS conversation
+- If user mentions something from earlier, use that context
 
-Return JSON array only, no explanation."""
+IMPORTANT BEHAVIORS:
+- When you find multiple matches, ask user which one they want
+- When information is missing, ask before guessing
+- Be conversational - explain what you're doing
 
-    try:
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            client = anthropic.Anthropic()
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=100,
-                messages=[{"role": "user", "content": selection_prompt}]
-            )
-            result_text = response.content[0].text.strip()
-        else:
-            client = openai.OpenAI()
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                max_tokens=100,
-                messages=[{"role": "user", "content": selection_prompt}]
-            )
-            result_text = response.choices[0].message.content.strip()
-        
-        # Parse JSON array
-        import json
-        # Handle markdown code blocks
-        if "```" in result_text:
-            result_text = result_text.split("```")[1]
-            if result_text.startswith("json"):
-                result_text = result_text[4:]
-        
-        selected_names = json.loads(result_text)
-        
-        # Filter to selected primitives
-        selected = {name: all_primitives[name] for name in selected_names if name in all_primitives}
-        
-        # Always include FILE as fallback (most versatile)
-        if not selected and "FILE" in all_primitives:
-            selected["FILE"] = all_primitives["FILE"]
-        
-        print(f"[REACT] Selected primitives for request: {list(selected.keys())}")
-        return selected
-        
-    except Exception as e:
-        print(f"[REACT] Primitive selection failed: {e}, using defaults")
-        # Fallback to core primitives
-        defaults = ["FILE", "EMAIL", "CALENDAR", "TASK", "CONTACTS", "KNOWLEDGE"]
-        return {name: all_primitives[name] for name in defaults if name in all_primitives}
+When complete, summarize what was done."""
+    
+    _session_agent = ReActAgent(
+        llm_client=llm_client,
+        tools=tools,
+        system_prompt=system_prompt,
+    )
+    
+    return _session_agent
 
 
 @app.post("/react/chat")
 async def react_chat(req: ReactRequest):
     """
-    ReAct-based chat endpoint.
+    Main chat endpoint - continues the current session.
     
-    Uses native function calling - AI calls tools one at a time,
-    sees results, and decides what to do next.
-    
-    Returns:
-    - steps: List of completed steps with results
-    - pending_approval: Step waiting for approval (if any)
-    - is_complete: True if AI has finished
-    - response: Final response text (if complete)
+    Unlike before, this ALWAYS continues the same conversation session.
+    Use /react/new to start a fresh conversation.
     """
-    global _react_state, _react_agent
+    global _react_state, _session_messages, _session_agent
     
-    # Check for API key
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    agent = get_session_agent()
+    if not agent:
         return JSONResponse({
             "error": "No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
             "steps": [],
@@ -1505,67 +1498,50 @@ async def react_chat(req: ReactRequest):
             "response": None,
         })
     
-    engine = get_telic_engine()
-    if not engine:
-        return JSONResponse({
-            "error": "Engine not initialized",
-            "steps": [],
-            "pending_approval": None,
-            "is_complete": True,
-            "response": None,
-        })
-    
     try:
-        print(f"[REACT] User: {req.message[:80]}...")
+        print(f"[SESSION] User: {req.message[:80]}...")
+        print(f"[SESSION] Conversation history: {len(_session_messages)} messages")
         
-        # Dynamic primitive selection per request
-        selected_primitives = await select_primitives_for_request(req.message, engine._primitives)
-        tools = primitives_to_tools(selected_primitives)
-        print(f"[REACT] Using {len(tools)} tools from {len(selected_primitives)} primitives")
-        
-        # Create fresh agent with selected tools
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            import anthropic
-            llm_client = anthropic.Anthropic()
+        # Build context from conversation history for the agent
+        if _session_messages:
+            # Summarize recent conversation for context
+            context_lines = []
+            for m in _session_messages[-10:]:  # Last 10 messages
+                role = 'User' if m['role'] == 'user' else 'Assistant'
+                content = m['content'][:300] + "..." if len(m['content']) > 300 else m['content']
+                context_lines.append(f"{role}: {content}")
+            context_summary = "\n".join(context_lines)
+            
+            full_message = f"""[CONVERSATION CONTEXT - This is a continuation of an ongoing conversation]
+Previous messages in this session:
+{context_summary}
+
+[CURRENT USER MESSAGE]
+{req.message}
+
+Remember: References like "the first one", "send it to him", "the information above" refer to the context above."""
         else:
-            import openai
-            llm_client = openai.OpenAI()
+            full_message = req.message
         
-        from datetime import datetime
-        system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
-
-TODAY: {datetime.now().strftime("%Y-%m-%d")}
-
-Use the available tools to accomplish what the user asks. Call tools ONE AT A TIME, observe the result, then decide what to do next.
-
-IMPORTANT BEHAVIORS:
-- If a search returns multiple results, STOP and ask the user which one they want
-- If information is unclear or missing, ASK before guessing  
-- Be conversational - explain what you're doing and what you found
-
-When you have completed the task, respond with a summary of what was done."""
-        
-        agent = ReActAgent(
-            llm_client=llm_client,
-            tools=tools,
-            system_prompt=system_prompt
-        )
-        _react_agent = agent  # Store for approve/continue endpoints
-        
-        # Run the agent
-        state = await agent.run(req.message)
+        # Run the agent with context
+        state = await agent.run(full_message)
         _react_state = state
+        
+        # Record in session history
+        _session_messages.append({"role": "user", "content": req.message})
+        if state.final_response:
+            _session_messages.append({"role": "assistant", "content": state.final_response})
         
         # Log what happened
         for step in state.steps:
             status = "✓" if step.status == StepStatus.COMPLETED else "⏸" if step.status == StepStatus.PENDING_APPROVAL else "✗"
-            print(f"[REACT] {status} {step.tool_call.name}")
+            print(f"[SESSION] {status} {step.tool_call.name}")
         
         if state.pending_approval:
-            print(f"[REACT] Waiting for approval: {state.pending_approval.tool_call.name}")
+            print(f"[SESSION] Waiting for approval: {state.pending_approval.tool_call.name}")
         
         if state.is_complete:
-            print(f"[REACT] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
+            print(f"[SESSION] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
         
         return JSONResponse(state_to_response(state))
         
@@ -1581,6 +1557,17 @@ When you have completed the task, respond with a summary of what was done."""
         })
 
 
+@app.post("/react/new")
+async def react_new_conversation():
+    """Start a fresh conversation - clears session history."""
+    global _session_messages, _session_agent, _react_state
+    _session_messages = []
+    _session_agent = None
+    _react_state = None
+    print("[SESSION] Started new conversation")
+    return JSONResponse({"status": "ok", "message": "New conversation started"})
+
+
 @app.post("/react/approve")
 async def react_approve(req: ReactApproveRequest):
     """
@@ -1588,9 +1575,9 @@ async def react_approve(req: ReactApproveRequest):
     
     After approval, the agent continues executing.
     """
-    global _react_state
+    global _react_state, _session_messages
     
-    agent = get_react_agent()
+    agent = get_session_agent()
     if not agent or not _react_state:
         return JSONResponse({
             "error": "No pending action",
@@ -1603,12 +1590,16 @@ async def react_approve(req: ReactApproveRequest):
     try:
         action = "Approved" if req.approved else "Rejected"
         if _react_state.pending_approval:
-            print(f"[REACT] {action}: {_react_state.pending_approval.tool_call.name}")
+            print(f"[SESSION] {action}: {_react_state.pending_approval.tool_call.name}")
         
         # Continue with approval decision
         state = await agent.continue_with_approval(req.approved)
         _react_state = state
         
+        # Record result in session history
+        if state.final_response:
+            _session_messages.append({"role": "assistant", "content": state.final_response})
+        
         return JSONResponse(state_to_response(state))
         
     except Exception as e:
@@ -1623,53 +1614,27 @@ async def react_approve(req: ReactApproveRequest):
         })
 
 
+# /react/continue is now deprecated - /react/chat handles all messages with session context
 @app.post("/react/continue")
 async def react_continue(req: ReactRequest):
     """
-    Continue conversation with additional user input.
-    
-    Use this when the AI asks a question and user responds.
+    DEPRECATED: Use /react/chat instead.
+    Redirects to /react/chat for backwards compatibility.
     """
-    global _react_state
-    
-    agent = get_react_agent()
-    if not agent:
-        return JSONResponse({
-            "error": "No agent initialized",
-            "steps": [],
-            "pending_approval": None,
-            "is_complete": True,
-            "response": None,
-        })
-    
-    try:
-        print(f"[REACT] User continues: {req.message[:80]}...")
-        
-        # Continue with user input
-        state = await agent.continue_with_input(req.message)
-        _react_state = state
-        
-        return JSONResponse(state_to_response(state))
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({
-            "error": str(e),
-            "steps": [],
-            "pending_approval": None,
-            "is_complete": True,
-            "response": f"Error: {str(e)}",
-        })
+    return await react_chat(req)
+    return await react_chat(req)
 
 
 @app.post("/clear")
 async def clear_conversation():
     """Clear conversation history to start fresh."""
-    global _conversation_history, _react_state, _react_agent
+    global _conversation_history, _react_state, _react_agent, _session_messages, _session_agent
     _conversation_history = []
     _react_state = None
-    _react_agent = None  # Force recreation with fresh state
+    _react_agent = None
+    _session_messages = []
+    _session_agent = None
+    print("[SESSION] Cleared all conversation state")
     return JSONResponse({"status": "ok", "message": "Conversation cleared"})
 
 

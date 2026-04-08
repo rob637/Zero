@@ -1547,6 +1547,9 @@
                 Ready
             </span>
             <div class="top-bar-actions">
+                <button class="icon-btn" onclick="startNewChat()" title="New Chat" style="font-size: 0.85rem; padding: 6px 12px; margin-right: 8px;">
+                    + New
+                </button>
                 <button class="icon-btn" onclick="toggleAlerts()" id="alertsBtn" style="position:relative;">
                     🔔
                 </button>
@@ -1681,7 +1684,6 @@
         // ============================================
 
         let currentMsgElement = null;  // Track the message being updated
-        let conversationActive = false;  // Track if we're in an ongoing conversation
 
         async function sendMessage(text) {
             const input = document.getElementById('input');
@@ -1694,11 +1696,8 @@
             addTypingIndicator();
 
             try {
-                // Use /continue if conversation is active, /chat for new requests
-                const endpoint = conversationActive ? '/react/continue' : '/react/chat';
-                console.log(`[UI] Using ${endpoint}, conversationActive=${conversationActive}`);
-                
-                const res = await fetch(`${API}${endpoint}`, {
+                // Always use /react/chat - server maintains session context
+                const res = await fetch(`${API}/react/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message })
@@ -1709,16 +1708,38 @@
 
                 if (data.error && !data.steps.length) {
                     addMessage(data.error, 'system');
-                    conversationActive = false;
                     return;
                 }
 
-                // Conversation stays active if:
-                // 1. Pending approval (explicit wait for user)
-                // 2. AI response ends with "?" (asking clarifying question)
-                const responseEndsWithQuestion = data.response && data.response.trim().endsWith('?');
-                conversationActive = !!data.pending_approval || responseEndsWithQuestion;
-                console.log(`[UI] is_complete=${data.is_complete}, pending=${!!data.pending_approval}, asksQuestion=${responseEndsWithQuestion}, conversationActive=${conversationActive}`);
+                // Render the current state
+                renderReactState(data);
+
+            } catch (e) {
+                removeTypingIndicator();
+                setThinking(false);
+                addMessage('Cannot connect to Telic. Is the server running?', 'system');
+            }
+        }
+        
+        async function startNewChat() {
+            // Clear UI
+            const container = document.getElementById('chat');
+            container.innerHTML = `
+                <div class="welcome" id="welcome">
+                    <div class="welcome-orb"></div>
+                    <h1>Hey! I'm Telic</h1>
+                    <p>Your AI operating system. Ask me anything or try these:</p>
+                </div>
+            `;
+            
+            // Clear server session
+            try {
+                await fetch(`${API}/react/new`, { method: 'POST' });
+                console.log('[UI] Started new conversation');
+            } catch (e) {
+                console.error('[UI] Error starting new conversation', e);
+            }
+        }
 
                 // Render the current state
                 renderReactState(data);
@@ -1878,10 +1899,6 @@
                 const data = await res.json();
                 removeTypingIndicator();
                 setThinking(false);
-                
-                // Update conversation state - active if pending approval or asking question
-                const responseEndsWithQuestion = data.response && data.response.trim().endsWith('?');
-                conversationActive = !!data.pending_approval || responseEndsWithQuestion;
                 
                 // Render the updated state
                 renderReactState(data);
