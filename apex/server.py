@@ -102,6 +102,7 @@ orchestrator = Orchestrator()
 # Initialize the REAL Telic engine (all 8 primitives)
 _telic_engine: Optional[TelicEngine] = None
 _google_calendar: Optional['CalendarConnector'] = None
+_gmail_connector: Optional['GmailConnector'] = None
 
 # Cache approved plans so /execute runs the SAME plan the user saw (no re-planning)
 _pending_plans: Dict[str, Any] = {}  # message -> plan steps
@@ -136,6 +137,13 @@ def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
         print("[ENGINE] Google Calendar connected - using real API")
     else:
         print("[ENGINE] Google Calendar not connected - using local storage")
+    
+    # Check for Gmail connection
+    if _gmail_connector:
+        connectors["gmail"] = _gmail_connector
+        print("[ENGINE] Gmail connected - using real API")
+    else:
+        print("[ENGINE] Gmail not connected")
     
     _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
     print(f"[ENGINE] Initialized with {len(connectors)} connectors")
@@ -233,11 +241,11 @@ def get_devtools() -> UnifiedDevTools:
 
 @app.on_event("startup")
 async def startup_event():
-    """Try to reconnect Google Calendar if tokens exist from previous session."""
-    global _google_calendar
+    """Try to reconnect Google services if tokens exist from previous session."""
+    global _google_calendar, _gmail_connector
     
     if not HAS_GOOGLE_CALENDAR:
-        print("[STARTUP] Google Calendar libraries not available")
+        print("[STARTUP] Google API libraries not available")
         return
     
     try:
@@ -251,8 +259,10 @@ async def startup_event():
             from google.oauth2.credentials import Credentials
             from google.auth.transport.requests import Request
             
-            scopes = auth._resolve_scopes(['calendar'])
-            creds = Credentials.from_authorized_user_file(str(auth._token_file), scopes)
+            # Load credentials - don't restrict scopes, use whatever's in token
+            # Request all scopes we might need
+            all_scopes = auth._resolve_scopes(['calendar', 'gmail'])
+            creds = Credentials.from_authorized_user_file(str(auth._token_file), all_scopes)
             
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
@@ -261,14 +271,40 @@ async def startup_event():
             
             if creds and creds.valid:
                 auth._creds = creds
-                _google_calendar = CalendarConnector(auth)
-                await _google_calendar.connect()
-                print(f"[STARTUP] Google Calendar reconnected!")
                 
-                # Rebuild engine with the connector
-                get_telic_engine(force_rebuild=True)
+                # Check what scopes we have
+                token_scopes = set(creds.scopes or [])
+                has_calendar = any('calendar' in s for s in token_scopes)
+                has_gmail = any('gmail' in s for s in token_scopes)
+                
+                print(f"[STARTUP] Token scopes: calendar={has_calendar}, gmail={has_gmail}")
+                
+                # Connect Calendar
+                if has_calendar:
+                    _google_calendar = CalendarConnector(auth)
+                    await _google_calendar.connect()
+                    print(f"[STARTUP] Google Calendar reconnected!")
+                
+                # Connect Gmail
+                if has_gmail:
+                    try:
+                        from connectors.gmail import GmailConnector
+                        _gmail_connector = GmailConnector(auth)
+                        if await _gmail_connector.connect():
+                            print("[STARTUP] Gmail reconnected!")
+                        else:
+                            print("[STARTUP] Gmail connection failed")
+                            _gmail_connector = None
+                    except Exception as gmail_err:
+                        print(f"[STARTUP] Gmail reconnect failed: {gmail_err}")
+                        _gmail_connector = None
+                else:
+                    print("[STARTUP] Gmail scopes not in token - user needs to re-authenticate with Gmail access")
             else:
                 print("[STARTUP] Google tokens expired or invalid")
+                
+            # Rebuild engine with connectors
+            get_telic_engine(force_rebuild=True)
         else:
             print("[STARTUP] No Google tokens found - user needs to connect")
             
@@ -420,25 +456,27 @@ async def get_services():
     
     services = []
     
-    # Check connection status for each
-    # Check known connected services
-    global _google_calendar
+    # Check connection status for each - be accurate about what's actually connected
+    global _google_calendar, _gmail_connector
     
-    google_connected = _google_calendar is not None and _google_calendar.connected
+    calendar_connected = _google_calendar is not None and _google_calendar.connected
+    gmail_connected = _gmail_connector is not None
     
     # Check env vars for other services
     github_connected = bool(os.environ.get("GITHUB_TOKEN"))
     jira_connected = bool(os.environ.get("JIRA_API_TOKEN") and os.environ.get("JIRA_URL"))
     slack_connected = bool(os.environ.get("SLACK_BOT_TOKEN"))
     
+    # Only mark services as connected if they're ACTUALLY connected
+    # Don't assume all Google services are connected just because one is
     status_map = {
-        "gmail": google_connected,
-        "google_calendar": google_connected,
-        "google_drive": google_connected,
-        "google_contacts": google_connected,
-        "google_photos": google_connected,
-        "google_sheets": google_connected,
-        "google_slides": google_connected,
+        "gmail": gmail_connected,
+        "google_calendar": calendar_connected,
+        "google_drive": False,  # Not implemented yet
+        "google_contacts": False,  # Not implemented yet
+        "google_photos": False,  # Not implemented yet
+        "google_sheets": False,  # Not implemented yet
+        "google_slides": False,  # Not implemented yet
         "github": github_connected,
         "jira": jira_connected,
         "slack": slack_connected,
@@ -650,7 +688,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
     The popup will redirect to /oauth/callback which handles the token exchange
     and closes the popup with a message to the parent window.
     """
-    from connectors.oauth_flow import get_oauth_flow, OAUTH_PROVIDERS
+    from connectors.oauth_flow import OAUTH_PROVIDERS
     
     if provider not in OAUTH_PROVIDERS:
         return JSONResponse(
@@ -659,20 +697,83 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
         )
     
     try:
-        flow = get_oauth_flow(provider)
+        # For Google, use GoogleAuth which handles credentials from file
+        if provider == "google":
+            auth = get_google_auth()
+            if not auth.has_credentials_file():
+                return JSONResponse({
+                    "error": "Google OAuth credentials not configured",
+                    "setup_instructions": auth.get_setup_instructions(),
+                }, status_code=400)
+            
+            # Determine scopes to request
+            scope_names = scopes.split(",") if scopes else ["calendar", "gmail"]
+            resolved_scopes = auth._resolve_scopes(scope_names)
+            
+            # Generate auth URL
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            import secrets
+            
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(auth._credentials_file),
+                scopes=resolved_scopes,
+                redirect_uri="http://localhost:8000/oauth/callback",
+            )
+            
+            state = secrets.token_urlsafe(32)
+            auth_url, _ = flow.authorization_url(
+                state=state,
+                access_type="offline",
+                prompt="consent",
+            )
+            
+            # Store state for callback
+            _oauth_pending_states[state] = {
+                "provider": "google", 
+                "flow": flow,
+                "scopes": resolved_scopes,
+            }
+            
+            return JSONResponse({
+                "auth_url": auth_url,
+                "state": state,
+                "provider": provider,
+            })
+        
+        # For other providers, use generic OAuth flow (requires client credentials setup)
+        from connectors.oauth_flow import get_oauth_flow
+        flow = get_oauth_flow()
+        
+        # Get client credentials
+        store = get_cred_store()
+        client_creds = store.get_client_credentials(provider)
+        if not client_creds:
+            return JSONResponse({
+                "error": f"No client credentials configured for {provider}. Set up in /setup page.",
+            }, status_code=400)
+        
         scope_list = scopes.split(",") if scopes else None
-        auth_url, state = flow.get_auth_url(scopes=scope_list)
+        auth_url = flow.get_auth_url(
+            provider=provider,
+            client_id=client_creds["client_id"],
+            client_secret=client_creds.get("client_secret"),
+            services=scope_list,
+        )
         
         return JSONResponse({
             "auth_url": auth_url,
-            "state": state,
             "provider": provider,
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             {"error": str(e)},
             status_code=500,
         )
+
+# Store pending OAuth states for callback
+_oauth_pending_states: Dict[str, Any] = {}
 
 
 @app.get("/oauth/callback")
@@ -725,27 +826,102 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
         """)
     
     try:
+        # Check for pending Google flow first
+        if state in _oauth_pending_states:
+            pending = _oauth_pending_states.pop(state)
+            provider_used = pending["provider"]
+            
+            if provider_used == "google":
+                # Exchange code using Google's flow
+                flow = pending["flow"]
+                flow.fetch_token(code=code)
+                creds = flow.credentials
+                
+                # Store tokens using GoogleAuth
+                auth = get_google_auth()
+                auth._creds = creds
+                auth._save_token()
+                
+                # Connect services with the new credentials
+                global _google_calendar, _gmail_connector
+                
+                # Determine what scopes we got
+                token_scopes = set(creds.scopes or [])
+                has_calendar = any('calendar' in s for s in token_scopes)
+                has_gmail = any('gmail' in s for s in token_scopes)
+                
+                if has_calendar:
+                    _google_calendar = CalendarConnector(auth)
+                    await _google_calendar.connect()
+                    print("[OAUTH] Google Calendar connected!")
+                
+                if has_gmail:
+                    from connectors.gmail import GmailConnector
+                    _gmail_connector = GmailConnector(auth)
+                    if await _gmail_connector.connect():
+                        print("[OAUTH] Gmail connected!")
+                
+                # Rebuild engine
+                get_telic_engine(force_rebuild=True)
+                
+                return HTMLResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Authorization Successful</title>
+                    <style>
+                        body {{
+                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                            background: #0a0a0f;
+                            color: #f4f4f5;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                        }}
+                        .card {{
+                            text-align: center;
+                            padding: 40px;
+                        }}
+                        .checkmark {{
+                            font-size: 48px;
+                            margin-bottom: 16px;
+                        }}
+                        h2 {{ margin-bottom: 8px; }}
+                        p {{ color: #a1a1aa; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="checkmark">✓</div>
+                        <h2>Connected!</h2>
+                        <p>Calendar: {'✓' if has_calendar else '✗'} | Gmail: {'✓' if has_gmail else '✗'}</p>
+                        <p>You can close this window.</p>
+                    </div>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{
+                                type: 'oauth_success',
+                                provider: 'google'
+                            }}, '*');
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    </script>
+                </body>
+                </html>
+                """)
+        
+        # Fallback to generic OAuth flow for other providers
         from connectors.oauth_flow import get_oauth_flow
         
-        # Determine provider from state (stored in pending auth)
-        # For now, try Google first
-        providers_to_try = ["google", "microsoft", "slack", "github"]
-        
-        tokens = None
-        provider_used = None
-        
-        for provider in providers_to_try:
-            try:
-                flow = get_oauth_flow(provider)
-                tokens = await flow.exchange_code(code, state)
-                if tokens:
-                    provider_used = provider
-                    break
-            except Exception:
-                continue
+        flow = get_oauth_flow()
+        tokens = await flow.handle_callback(code, state)
         
         if not tokens:
             raise Exception("Failed to exchange authorization code")
+        
+        provider_used = tokens.get("provider", "unknown")
         
         # Store tokens
         store = get_cred_store()
@@ -2204,8 +2380,8 @@ async def google_status():
 
 @app.post("/google/connect")
 async def google_connect():
-    """Connect to Google Calendar via OAuth."""
-    global _google_calendar, _telic_engine
+    """Connect to Google Calendar and Gmail via OAuth."""
+    global _google_calendar, _gmail_connector, _telic_engine
     
     if not HAS_GOOGLE_CALENDAR:
         return JSONResponse({
@@ -2223,9 +2399,9 @@ async def google_connect():
         })
     
     try:
-        # This opens a browser for OAuth
+        # This opens a browser for OAuth - request both calendar and gmail scopes
         print("[GOOGLE] Starting OAuth flow...")
-        creds = await auth.get_credentials(['calendar'])
+        creds = await auth.get_credentials(['calendar', 'gmail'])
         
         if not creds:
             return JSONResponse({
@@ -2237,7 +2413,20 @@ async def google_connect():
         _google_calendar = CalendarConnector(auth)
         await _google_calendar.connect()
         
-        # Rebuild the engine with the new connector
+        # Also connect Gmail
+        try:
+            from connectors.gmail import GmailConnector
+            _gmail_connector = GmailConnector(auth)
+            if await _gmail_connector.connect():
+                print("[GOOGLE] Gmail connected!")
+            else:
+                print("[GOOGLE] Gmail connection failed")
+                _gmail_connector = None
+        except Exception as gmail_err:
+            print(f"[GOOGLE] Gmail init failed: {gmail_err}")
+            _gmail_connector = None
+        
+        # Rebuild the engine with the new connectors
         _telic_engine = None
         get_telic_engine(force_rebuild=True)
         
@@ -2249,7 +2438,9 @@ async def google_connect():
         return JSONResponse({
             "success": True,
             "calendars": calendars,
-            "message": f"Connected to Google Calendar. Found {len(calendars)} calendars.",
+            "gmail_connected": _gmail_connector is not None,
+            "message": f"Connected to Google Calendar. Found {len(calendars)} calendars." + 
+                      (" Gmail also connected." if _gmail_connector else " Gmail not connected."),
         })
         
     except Exception as e:
