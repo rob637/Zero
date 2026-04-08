@@ -745,15 +745,39 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                     "setup_instructions": auth.get_setup_instructions(),
                 }, status_code=400)
             
-            # Always request all common Google scopes to avoid losing access
-            # When user connects any Google service, we ask for all commonly needed ones
-            scope_names = ["calendar", "gmail"]  # Always include both core services
+            # Start with the requested scopes
+            scope_names = ["calendar", "gmail"]  # Always include core services
             if scopes:
-                # Add any additionally requested scopes
                 for s in scopes.split(","):
                     if s not in scope_names:
                         scope_names.append(s)
             
+            # CRITICAL: Preserve existing scopes from current token
+            # Otherwise connecting a new service loses access to previously connected ones
+            if auth._token_file.exists():
+                try:
+                    from google.oauth2.credentials import Credentials
+                    existing_creds = Credentials.from_authorized_user_file(str(auth._token_file))
+                    if existing_creds and existing_creds.scopes:
+                        # Map existing OAuth scopes back to scope names
+                        scope_url_to_name = {
+                            'calendar': 'calendar',
+                            'gmail': 'gmail',
+                            'drive': 'drive',
+                            'contacts': 'contacts',
+                            'photoslibrary': 'photos',
+                            'spreadsheets': 'sheets',
+                            'presentations': 'slides',
+                        }
+                        for scope_url in existing_creds.scopes:
+                            for key, name in scope_url_to_name.items():
+                                if key in scope_url.lower() and name not in scope_names:
+                                    scope_names.append(name)
+                                    print(f"[OAUTH] Preserving existing scope: {name}")
+                except Exception as e:
+                    print(f"[OAUTH] Could not read existing scopes: {e}")
+            
+            print(f"[OAUTH] Requesting scopes: {scope_names}")
             resolved_scopes = auth._resolve_scopes(scope_names)
             
             # Generate auth URL
