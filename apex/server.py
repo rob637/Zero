@@ -829,8 +829,8 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 import secrets
                 state = secrets.token_urlsafe(32)
                 
-                # Discord OAuth scopes
-                discord_scopes = ["identify", "guilds", "bot"]
+                # Discord OAuth scopes - user-only (no bot, no server required)
+                discord_scopes = ["identify", "email", "guilds"]
                 scope_str = "%20".join(discord_scopes)
                 
                 redirect_uri = "http://localhost:8000/oauth/callback"
