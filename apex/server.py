@@ -1172,13 +1172,30 @@ class ReactApproveRequest(BaseModel):
     approved: bool
 
 
+def serialize_result(result: Any) -> Any:
+    """Convert any result to JSON-serializable form."""
+    if result is None:
+        return None
+    if isinstance(result, (str, int, float, bool)):
+        return result
+    if isinstance(result, (list, tuple)):
+        return [serialize_result(item) for item in result]
+    if isinstance(result, dict):
+        return {k: serialize_result(v) for k, v in result.items()}
+    # Handle dataclasses and objects with __dict__
+    if hasattr(result, '__dict__'):
+        return serialize_result(vars(result))
+    # Fallback to string representation
+    return str(result)
+
+
 def step_to_dict(step: Step) -> Dict[str, Any]:
     """Convert a Step to a JSON-serializable dict."""
     return {
         "tool": step.tool_call.name,
         "params": step.tool_call.params,
         "status": step.status.value,
-        "result": step.result if step.result is not None else None,
+        "result": serialize_result(step.result),
         "error": step.error,
         "requires_approval": step.requires_approval,
     }
