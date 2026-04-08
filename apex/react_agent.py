@@ -150,40 +150,37 @@ When you have completed the task, respond with a summary of what was done."""
         step = self.state.pending_approval
         self.state.pending_approval = None
         
+        # Find and update the placeholder in the last user message
+        tool_use_id = step.tool_call.id
+        
         if approved:
             # Execute the approved tool
             result = await self._execute_tool(step.tool_call)
-            step.result = serialize(result)  # Convert to plain data
+            step.result = serialize(result)
             step.status = StepStatus.COMPLETED
             
-            # Add result to messages (truncated for Anthropic context limits)
+            # Prepare truncated result
             result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
             MAX_RESULT_LEN = 8000
             if len(result_str) > MAX_RESULT_LEN:
                 result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
             
-            self.state.messages.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": step.tool_call.id,
-                    "content": result_str
-                }]
-            })
+            new_content = result_str
         else:
             step.status = StepStatus.CANCELLED
             step.error = "Cancelled by user"
-            
-            # Tell AI it was cancelled
-            self.state.messages.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": step.tool_call.id,
-                    "content": "Action cancelled by user. Ask if they want to do something else.",
-                    "is_error": True
-                }]
-            })
+            new_content = "Action cancelled by user. Ask if they want to do something else."
+        
+        # Replace placeholder in last user message (same tool_use_id)
+        for msg in reversed(self.state.messages):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                for item in msg["content"]:
+                    if item.get("type") == "tool_result" and item.get("tool_use_id") == tool_use_id:
+                        item["content"] = new_content
+                        if not approved:
+                            item["is_error"] = True
+                        break
+                break
         
         if self.on_step:
             await self.on_step(step)
@@ -207,6 +204,12 @@ When you have completed the task, respond with a summary of what was done."""
             if response.stop_reason == "end_turn":
                 self.state.is_complete = True
                 self.state.final_response = self._extract_text(response)
+                # Add assistant's text response to messages for context continuity
+                if self.state.final_response:
+                    self.state.messages.append({
+                        "role": "assistant",
+                        "content": self.state.final_response
+                    })
                 return self.state
             
             # Process tool calls
@@ -216,6 +219,11 @@ When you have completed the task, respond with a summary of what was done."""
                 # No tool calls and not end_turn - extract any text and finish
                 self.state.is_complete = True
                 self.state.final_response = self._extract_text(response)
+                if self.state.final_response:
+                    self.state.messages.append({
+                        "role": "assistant",
+                        "content": self.state.final_response
+                    })
                 return self.state
             
             # IMPORTANT: Add assistant's response (with tool_use) to messages FIRST
@@ -225,7 +233,10 @@ When you have completed the task, respond with a summary of what was done."""
                 "content": [{"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.params} for tc in tool_calls]
             })
             
-            # Execute tool calls (one at a time for side-effect awareness)
+            # Collect all tool results to add as ONE user message
+            tool_results = []
+            
+            # Execute tool calls
             for tc in tool_calls:
                 step = Step(tool_call=tc)
                 self.state.steps.append(step)
@@ -234,26 +245,32 @@ When you have completed the task, respond with a summary of what was done."""
                 if not tool:
                     step.status = StepStatus.FAILED
                     step.error = f"Unknown tool: {tc.name}"
-                    self.state.messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": f"Error: Unknown tool '{tc.name}'",
-                            "is_error": True
-                        }]
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"Error: Unknown tool '{tc.name}'",
+                        "is_error": True
                     })
                     if self.on_step:
                         await self.on_step(step)
                     continue
                 
-                # Check if approval needed
+                # Check if approval needed - for now, add placeholder and pause
                 if tool.side_effect:
                     step.status = StepStatus.PENDING_APPROVAL
                     step.requires_approval = True
                     self.state.pending_approval = step
+                    # Add results collected so far, mark remaining as pending
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": "[Awaiting user approval]"
+                    })
+                    # Store remaining tools to handle after approval
                     if self.on_step:
                         await self.on_step(step)
+                    # Add all collected results as ONE message
+                    self.state.messages.append({"role": "user", "content": tool_results})
                     return self.state  # Pause for approval
                 
                 # Execute non-side-effect tool immediately
@@ -265,36 +282,33 @@ When you have completed the task, respond with a summary of what was done."""
                     step.result = serialize(result)  # Convert to plain data
                     step.status = StepStatus.COMPLETED
                     
-                    # Add result to messages (truncated for Anthropic context limits)
+                    # Truncate long results
                     result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
-                    # Truncate long results to avoid context overflow
                     MAX_RESULT_LEN = 8000
                     if len(result_str) > MAX_RESULT_LEN:
                         result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
                     
-                    self.state.messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": result_str
-                        }]
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result_str
                     })
                 except Exception as e:
                     step.status = StepStatus.FAILED
                     step.error = str(e)
-                    self.state.messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": f"Error: {str(e)}",
-                            "is_error": True
-                        }]
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"Error: {str(e)}",
+                        "is_error": True
                     })
                 
                 if self.on_step:
                     await self.on_step(step)
+            
+            # Add ALL tool results as ONE user message
+            if tool_results:
+                self.state.messages.append({"role": "user", "content": tool_results})
         
         # Hit iteration limit
         self.state.is_complete = True
