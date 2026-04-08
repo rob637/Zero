@@ -193,6 +193,13 @@ When you have completed the task, respond with a summary of what was done."""
                 self.state.final_response = self._extract_text(response)
                 return self.state
             
+            # IMPORTANT: Add assistant's response (with tool_use) to messages FIRST
+            # Anthropic requires tool_result to follow the tool_use in messages
+            self.state.messages.append({
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.params} for tc in tool_calls]
+            })
+            
             # Execute tool calls (one at a time for side-effect awareness)
             for tc in tool_calls:
                 step = Step(tool_call=tc)
