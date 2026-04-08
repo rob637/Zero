@@ -85,6 +85,7 @@ class CalendarConnector:
         self._auth = auth or get_google_auth()
         self._service = None
         self._primary_calendar: Optional[str] = None
+        self._calendars: List[Dict] = []
     
     async def connect(self) -> bool:
         """Connect to Google Calendar API."""
@@ -111,8 +112,40 @@ class CalendarConnector:
         except Exception:
             self._primary_calendar = 'primary'
         
+        # Cache all calendars
+        self._calendars = await self._fetch_calendars()
+        
         return True
     
+    async def _fetch_calendars(self) -> List[Dict]:
+        """Fetch all calendars the user has access to."""
+        try:
+            request = self._service.calendarList().list()
+            result = await asyncio.to_thread(request.execute)
+            return result.get('items', [])
+        except Exception:
+            return []
+    
+    async def list_calendars(self) -> List[Dict]:
+        """
+        List all calendars the user has access to.
+        
+        Returns list of dicts with: id, summary (name), primary, accessRole
+        """
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        return [
+            {
+                'id': cal.get('id'),
+                'name': cal.get('summary'),
+                'primary': cal.get('primary', False),
+                'accessRole': cal.get('accessRole'),
+                'backgroundColor': cal.get('backgroundColor'),
+            }
+            for cal in self._calendars
+        ]
+
     @property
     def connected(self) -> bool:
         return self._service is not None
@@ -167,23 +200,25 @@ class CalendarConnector:
     
     async def list_events(
         self,
-        calendar_id: str = 'primary',
+        calendar_id: str = None,
         time_min: datetime = None,
         time_max: datetime = None,
         max_results: int = 50,
         single_events: bool = True,
         query: str = None,
+        all_calendars: bool = True,
     ) -> List[CalendarEvent]:
         """
         List calendar events.
         
         Args:
-            calendar_id: Calendar ID (default: primary)
+            calendar_id: Calendar ID (default: None = query all calendars)
             time_min: Start of time range (default: now)
             time_max: End of time range (default: 30 days from now)
-            max_results: Maximum events to return
+            max_results: Maximum events to return per calendar
             single_events: Expand recurring events
             query: Free text search query
+            all_calendars: If True and no calendar_id specified, query all calendars
         
         Returns:
             List of CalendarEvent objects
@@ -196,22 +231,41 @@ class CalendarConnector:
         if time_max is None:
             time_max = time_min + timedelta(days=30)
         
-        try:
-            request = self._service.events().list(
-                calendarId=calendar_id,
-                timeMin=time_min.isoformat() + 'Z',
-                timeMax=time_max.isoformat() + 'Z',
-                maxResults=max_results,
-                singleEvents=single_events,
-                orderBy='startTime',
-                q=query,
-            )
-            result = await asyncio.to_thread(request.execute)
-            
-            return [self._parse_event(e) for e in result.get('items', [])]
-            
-        except HttpError as e:
-            raise RuntimeError(f"Calendar API error: {e}")
+        # Determine which calendars to query
+        if calendar_id:
+            calendar_ids = [calendar_id]
+        elif all_calendars and self._calendars:
+            # Query all calendars the user owns or can write to (reader calendars often have irrelevant stuff)
+            calendar_ids = [
+                cal['id'] for cal in self._calendars
+                if cal.get('accessRole') in ('owner', 'writer', 'reader')
+            ]
+        else:
+            calendar_ids = ['primary']
+        
+        all_events = []
+        
+        for cal_id in calendar_ids:
+            try:
+                request = self._service.events().list(
+                    calendarId=cal_id,
+                    timeMin=time_min.isoformat() + 'Z',
+                    timeMax=time_max.isoformat() + 'Z',
+                    maxResults=max_results,
+                    singleEvents=single_events,
+                    orderBy='startTime',
+                    q=query,
+                )
+                result = await asyncio.to_thread(request.execute)
+                all_events.extend([self._parse_event(e) for e in result.get('items', [])])
+            except HttpError as e:
+                # Skip calendars that fail (e.g. no access)
+                print(f"[CALENDAR] Skipping calendar {cal_id}: {e}")
+                continue
+        
+        # Sort all events by start time
+        all_events.sort(key=lambda e: e.start)
+        return all_events
     
     async def get_event(self, event_id: str, calendar_id: str = 'primary') -> CalendarEvent:
         """Get a single event by ID."""
