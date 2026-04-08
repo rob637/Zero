@@ -1651,7 +1651,12 @@
             const chat = document.getElementById('chat');
             const msg = document.createElement('div');
             msg.className = `message ${type}`;
-            msg.innerHTML = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>') + extra;
+            // Handle both actual newlines and escaped \n sequences
+            const processed = text
+                .replace(/\\n/g, '\n')  // Convert escaped \n to real newlines
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+            msg.innerHTML = processed + extra;
             chat.appendChild(msg);
             chat.scrollTop = chat.scrollHeight;
             return msg;
@@ -1844,6 +1849,30 @@
                         if (params.calendar_id) lines.push(`📂 Calendar: ${params.calendar_id}`);
                         if (params.description) lines.push(`📝 ${params.description}`);
                         paramDisplay = `<div style="font-size: 0.8rem; color: var(--text-primary); margin-top: 6px; padding: 8px 10px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid var(--accent-primary); border-radius: 4px;">${lines.join('<br>')}</div>`;
+                    } else if (step.primitive === 'EMAIL') {
+                        // Full email preview
+                        const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                        paramDisplay = `<div style="font-size: 0.8rem; color: var(--text-primary); margin-top: 6px; padding: 10px; background: rgba(59, 130, 246, 0.08); border-left: 3px solid var(--accent-primary); border-radius: 4px;">
+                            <div style="margin-bottom: 6px;"><b>To:</b> ${esc(params.to)}</div>
+                            <div style="margin-bottom: 6px;"><b>Subject:</b> ${esc(params.subject)}</div>
+                            ${params.attachments ? `<div style="margin-bottom: 6px;"><b>Attachments:</b> ${esc(Array.isArray(params.attachments) ? params.attachments.join(', ') : params.attachments)}</div>` : ''}
+                            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; margin-top: 8px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">Email Body:</div>
+                                <div style="white-space: pre-wrap; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; max-height: 200px; overflow-y: auto;">${esc(params.body || params.content || '(no body)')}</div>
+                            </div>
+                        </div>`;
+                    } else if (step.primitive === 'DOCUMENT' && (step.operation === 'create' || params.data)) {
+                        // Full document preview
+                        const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                        const dataPreview = typeof params.data === 'object' ? JSON.stringify(params.data, null, 2) : String(params.data || '');
+                        paramDisplay = `<div style="font-size: 0.8rem; color: var(--text-primary); margin-top: 6px; padding: 10px; background: rgba(74, 222, 128, 0.08); border-left: 3px solid #4ade80; border-radius: 4px;">
+                            ${params.path ? `<div style="margin-bottom: 6px;"><b>File:</b> ${esc(params.path)}</div>` : ''}
+                            ${params.format ? `<div style="margin-bottom: 6px;"><b>Format:</b> ${esc(params.format)}</div>` : ''}
+                            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; margin-top: 8px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">Content Preview:</div>
+                                <pre style="white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; max-height: 250px; overflow-y: auto; margin: 0; font-size: 0.75rem;">${esc(dataPreview) || '(content will be generated from previous steps)'}</pre>
+                            </div>
+                        </div>`;
                     } else {
                         // Generic param display
                         paramDisplay = `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 4px;">
