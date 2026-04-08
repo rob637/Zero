@@ -65,6 +65,25 @@ SCOPES = {
     'contacts_readonly': [
         'https://www.googleapis.com/auth/contacts.readonly',
     ],
+    'photos': [
+        'https://www.googleapis.com/auth/photoslibrary.readonly',
+        'https://www.googleapis.com/auth/photoslibrary',
+    ],
+    'photos_readonly': [
+        'https://www.googleapis.com/auth/photoslibrary.readonly',
+    ],
+    'sheets': [
+        'https://www.googleapis.com/auth/spreadsheets',
+    ],
+    'sheets_readonly': [
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+    ],
+    'slides': [
+        'https://www.googleapis.com/auth/presentations',
+    ],
+    'slides_readonly': [
+        'https://www.googleapis.com/auth/presentations.readonly',
+    ],
 }
 
 

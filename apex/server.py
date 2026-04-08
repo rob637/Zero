@@ -104,6 +104,9 @@ _telic_engine: Optional[TelicEngine] = None
 _google_calendar: Optional['CalendarConnector'] = None
 _gmail_connector: Optional['GmailConnector'] = None
 
+# Track which Google services have authorized scopes (populated during OAuth callback)
+_google_connected_services: set = set()  # e.g. {"gmail", "calendar", "drive", "contacts", "photos"}
+
 # Cache approved plans so /execute runs the SAME plan the user saw (no re-planning)
 _pending_plans: Dict[str, Any] = {}  # message -> plan steps
 
@@ -259,7 +262,7 @@ def get_devtools() -> UnifiedDevTools:
 @app.on_event("startup")
 async def startup_event():
     """Try to reconnect Google services if tokens exist from previous session."""
-    global _google_calendar, _gmail_connector
+    global _google_calendar, _gmail_connector, _google_connected_services
     
     if not HAS_GOOGLE_CALENDAR:
         print("[STARTUP] Google API libraries not available")
@@ -289,12 +292,32 @@ async def startup_event():
             if creds and creds.valid:
                 auth._creds = creds
                 
-                # Check what scopes we have
+                # Check what scopes we have - populate _google_connected_services
                 token_scopes = set(creds.scopes or [])
-                has_calendar = any('calendar' in s for s in token_scopes)
-                has_gmail = any('gmail' in s for s in token_scopes)
                 
-                print(f"[STARTUP] Token scopes: calendar={has_calendar}, gmail={has_gmail}")
+                # Map OAuth scopes to service names
+                scope_to_service = {
+                    'calendar': 'calendar',
+                    'gmail': 'gmail', 
+                    'mail.google': 'gmail',
+                    'drive': 'drive',
+                    'contacts': 'contacts',
+                    'photoslibrary': 'photos',
+                    'spreadsheets': 'sheets',
+                    'presentations': 'slides',
+                }
+                
+                # Populate connected services based on token scopes
+                _google_connected_services.clear()
+                for scope in token_scopes:
+                    for key, service in scope_to_service.items():
+                        if key in scope.lower():
+                            _google_connected_services.add(service)
+                
+                has_calendar = 'calendar' in _google_connected_services
+                has_gmail = 'gmail' in _google_connected_services
+                
+                print(f"[STARTUP] Token scopes: {_google_connected_services}")
                 
                 # Connect Calendar
                 if has_calendar:
@@ -474,7 +497,7 @@ async def get_services():
     services = []
     
     # Check connection status for each - be accurate about what's actually connected
-    global _google_calendar, _gmail_connector
+    global _google_calendar, _gmail_connector, _google_connected_services
     
     calendar_connected = _google_calendar is not None and _google_calendar.connected
     gmail_connected = _gmail_connector is not None
@@ -484,16 +507,15 @@ async def get_services():
     jira_connected = bool(os.environ.get("JIRA_API_TOKEN") and os.environ.get("JIRA_URL"))
     slack_connected = bool(os.environ.get("SLACK_BOT_TOKEN"))
     
-    # Only mark services as connected if they're ACTUALLY connected
-    # Don't assume all Google services are connected just because one is
+    # Use _google_connected_services to track which Google services are authorized
     status_map = {
-        "gmail": gmail_connected,
-        "google_calendar": calendar_connected,
-        "google_drive": False,  # Not implemented yet
-        "google_contacts": False,  # Not implemented yet
-        "google_photos": False,  # Not implemented yet
-        "google_sheets": False,  # Not implemented yet
-        "google_slides": False,  # Not implemented yet
+        "gmail": gmail_connected or 'gmail' in _google_connected_services,
+        "google_calendar": calendar_connected or 'calendar' in _google_connected_services,
+        "google_drive": 'drive' in _google_connected_services,
+        "google_contacts": 'contacts' in _google_connected_services,
+        "google_photos": 'photos' in _google_connected_services,
+        "google_sheets": 'sheets' in _google_connected_services,
+        "google_slides": 'slides' in _google_connected_services,
         "github": github_connected,
         "jira": jira_connected,
         "slack": slack_connected,
@@ -867,12 +889,34 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                 auth._save_token()
                 
                 # Connect services with the new credentials
-                global _google_calendar, _gmail_connector
+                global _google_calendar, _gmail_connector, _google_connected_services
                 
                 # Determine what scopes we got
                 token_scopes = set(creds.scopes or [])
-                has_calendar = any('calendar' in s for s in token_scopes)
-                has_gmail = any('gmail' in s for s in token_scopes)
+                
+                # Map OAuth scopes to service names
+                scope_to_service = {
+                    'calendar': 'calendar',
+                    'gmail': 'gmail', 
+                    'mail.google': 'gmail',
+                    'drive': 'drive',
+                    'contacts': 'contacts',
+                    'photoslibrary': 'photos',
+                    'spreadsheets': 'sheets',
+                    'presentations': 'slides',
+                }
+                
+                # Clear and repopulate connected services
+                _google_connected_services.clear()
+                for scope in token_scopes:
+                    for key, service in scope_to_service.items():
+                        if key in scope.lower():
+                            _google_connected_services.add(service)
+                
+                print(f"[OAUTH] Authorized Google services: {_google_connected_services}")
+                
+                has_calendar = 'calendar' in _google_connected_services
+                has_gmail = 'gmail' in _google_connected_services
                 
                 if has_calendar:
                     _google_calendar = CalendarConnector(auth)
@@ -887,6 +931,13 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                 
                 # Rebuild engine
                 get_telic_engine(force_rebuild=True)
+                
+                # Build a display of connected services
+                services_display = []
+                for svc in ['calendar', 'gmail', 'drive', 'contacts', 'photos', 'sheets', 'slides']:
+                    if svc in _google_connected_services:
+                        services_display.append(f"{svc.title()}: ✓")
+                connected_text = " | ".join(services_display) if services_display else "No services"
                 
                 return HTMLResponse(f"""
                 <!DOCTYPE html>
@@ -920,7 +971,7 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                     <div class="card">
                         <div class="checkmark">✓</div>
                         <h2>Connected!</h2>
-                        <p>Calendar: {'✓' if has_calendar else '✗'} | Gmail: {'✓' if has_gmail else '✗'}</p>
+                        <p>{connected_text}</p>
                         <p>You can close this window.</p>
                     </div>
                     <script>
