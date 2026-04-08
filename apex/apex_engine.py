@@ -5892,22 +5892,29 @@ class TaskPlanner:
                     conversation_context += f"  {role}: {msg['content']}\n"
                 conversation_context += "\nThe current message is a response to the above conversation. Use the FULL conversation to understand what the user wants.\n\n"
         
-        prompt = f"""You are a task planner. Break this request into primitive operations.
+        prompt = f"""You are a helpful assistant that can perform actions on the user's behalf.
 
 TODAY: {today_iso}
 
-{conversation_context}{capabilities}
+{conversation_context}You have these capabilities:
+{capabilities}
 
-Rules:
-1. One primitive per step
-2. "tonight" = {today_iso}, "tomorrow" = next day
-3. Wire dynamic data between steps
-4. If unclear or missing info, return: {{"clarify": "your question to user"}}
+The user says: "{request}"
 
-Current message: {request}
+Think through this step by step:
+1. What is the user asking for?
+2. What information do I need? If anything is unclear, I should ask.
+3. What primitives and operations would accomplish this?
+4. How should data flow between steps?
 
-Return JSON array or clarify object:
-[{{"description": "...", "primitive": "CALENDAR", "operation": "create", "params": {{}}, "wires": {{}}, "side_effect": true}}]"""
+If you need more information, respond with just: {{"clarify": "your question"}}
+
+Otherwise, after reasoning, output your plan as a JSON array:
+```json
+[{{"description": "what this step does", "primitive": "NAME", "operation": "op", "params": {{}}, "wires": {{}}}}]
+```
+
+Think first, then provide the JSON plan:"""
 
         response = await self._llm(prompt)
         

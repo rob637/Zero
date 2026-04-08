@@ -51,7 +51,7 @@ def make_llm_mock(responses: dict):
 def create_test_engine(plan_response: str) -> Apex:
     """Create an Apex engine with a mock LLM that returns the given plan."""
     engine = Apex(api_key="test-key", enable_safety=False)
-    mock = make_llm_mock({"task planner": plan_response})
+    mock = make_llm_mock({"helpful assistant": plan_response})
     # Patch both the engine and the planner (planner gets llm at init time)
     engine._llm_complete = mock
     engine._planner._llm = mock
