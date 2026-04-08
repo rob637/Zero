@@ -51,7 +51,7 @@ DEFAULT_BROKER_URL = "https://auth.ziggy.ai"
 DEV_BROKER_URL = "http://localhost:8080"
 
 # Callback URL for local Ziggy
-LOCAL_CALLBACK = "http://localhost:8000/oauth/callback"
+LOCAL_CALLBACK = "http://127.0.0.1:8000/oauth/callback"
 
 
 @dataclass

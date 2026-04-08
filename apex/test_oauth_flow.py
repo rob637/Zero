@@ -158,7 +158,7 @@ class TestAuthUrlGeneration(unittest.TestCase):
         self.store = CredentialStore(backend=MemoryBackend())
         self.flow = OAuthFlow(
             credential_store=self.store,
-            redirect_uri="http://localhost:8000/oauth/callback",
+            redirect_uri="http://127.0.0.1:8000/oauth/callback",
         )
     
     def tearDown(self):

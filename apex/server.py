@@ -795,7 +795,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(auth._credentials_file),
                 scopes=resolved_scopes,
-                redirect_uri="http://localhost:8000/oauth/callback",
+                redirect_uri="http://127.0.0.1:8000/oauth/callback",
             )
             
             state = secrets.token_urlsafe(32)
@@ -833,7 +833,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 discord_scopes = ["identify", "email", "guilds"]
                 scope_str = "%20".join(discord_scopes)
                 
-                redirect_uri = "http://localhost:8000/oauth/callback"
+                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
                 auth_url = (
                     f"https://discord.com/api/oauth2/authorize"
                     f"?client_id={client_id}"
@@ -886,7 +886,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 ]
                 scope_str = "%20".join(microsoft_scopes)
                 
-                redirect_uri = "http://localhost:8000/oauth/callback"
+                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
                 auth_url = (
                     f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
                     f"?client_id={client_id}"
@@ -938,7 +938,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 ]
                 scope_str = ",".join(slack_scopes)  # Slack uses comma-separated
                 
-                redirect_uri = "http://localhost:8000/oauth/callback"
+                redirect_uri = "https://127.0.0.1:8000/oauth/callback"  # Slack requires https
                 auth_url = (
                     f"https://slack.com/oauth/v2/authorize"
                     f"?client_id={client_id}"
@@ -980,7 +980,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 github_scopes = ["user", "repo", "read:org"]
                 scope_str = "%20".join(github_scopes)
                 
-                redirect_uri = "http://localhost:8000/oauth/callback"
+                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
                 auth_url = (
                     f"https://github.com/login/oauth/authorize"
                     f"?client_id={client_id}"
@@ -1028,7 +1028,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 ]
                 scope_str = "%20".join(spotify_scopes)
                 
-                redirect_uri = "http://localhost:8000/oauth/callback"
+                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
                 auth_url = (
                     f"https://accounts.spotify.com/authorize"
                     f"?client_id={client_id}"

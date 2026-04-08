@@ -358,7 +358,7 @@ class OAuthFlow:
     def __init__(
         self,
         credential_store: Optional[CredentialStore] = None,
-        redirect_uri: str = "http://localhost:8000/oauth/callback",
+        redirect_uri: str = "http://127.0.0.1:8000/oauth/callback",
     ):
         self._credential_store = credential_store or get_credential_store()
         self._redirect_uri = redirect_uri
