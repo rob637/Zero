@@ -5892,7 +5892,7 @@ class TaskPlanner:
                     conversation_context += f"  {role}: {msg['content']}\n"
                 conversation_context += "\nThe current message is a response to the above conversation. Use the FULL conversation to understand what the user wants.\n\n"
         
-        prompt = f"""You are a helpful assistant that can perform actions on the user's behalf.
+        prompt = f"""You are a helpful assistant that performs actions on the user's behalf.
 
 TODAY: {today_iso}
 
@@ -5901,20 +5901,31 @@ TODAY: {today_iso}
 
 The user says: "{request}"
 
-Think through this step by step:
-1. What is the user asking for?
-2. What information do I need? If anything is unclear, I should ask.
-3. What primitives and operations would accomplish this?
-4. How should data flow between steps?
+HOW THIS WORKS:
+1. Info-gathering steps (search, read, extract, compute) run automatically and user sees results
+2. Action steps (send email, create file, delete) wait for user approval AFTER they see the results
+3. If a search might find multiple items (documents, emails, etc.), plan to show choices to the user
 
-If you need more information, respond with just: {{"clarify": "your question"}}
+IMPORTANT BEHAVIORS:
+- If you find multiple matching items, ASK which one before proceeding
+- If any required info is unclear or missing, ASK first with: {{"clarify": "your question"}}
+- The user will see computed results (like an amortization schedule) BEFORE approving send/create actions
+- Mark steps that change things with "side_effect": true
 
-Otherwise, after reasoning, output your plan as a JSON array:
+Think through this:
+1. What does the user want?
+2. What info do I need to gather first?
+3. Might there be multiple matches that need user choice?
+4. What actions need approval after user sees results?
+
+If you need clarification: {{"clarify": "your question"}}
+
+Otherwise provide your plan:
 ```json
-[{{"description": "what this step does", "primitive": "NAME", "operation": "op", "params": {{}}, "wires": {{}}}}]
+[{{"description": "...", "primitive": "NAME", "operation": "op", "params": {{}}, "wires": {{}}, "side_effect": false}}]
 ```
 
-Think first, then provide the JSON plan:"""
+Think first, then output the plan:"""
 
         response = await self._llm(prompt)
         
