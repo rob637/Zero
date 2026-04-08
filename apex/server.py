@@ -190,10 +190,19 @@ def get_react_agent() -> Optional[ReActAgent]:
         import openai
         llm_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    # Build date context with upcoming days for accurate scheduling
+    date_context = f"""TODAY: {now.strftime("%A, %B %d, %Y")} ({now.strftime("%Y-%m-%d")})
+This week:
+"""
+    for i in range(7):
+        d = now + timedelta(days=i)
+        date_context += f"  {d.strftime('%A %b %d')}: {d.strftime('%Y-%m-%d')}\n"
+    
     system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
 
-TODAY: {datetime.now().strftime("%Y-%m-%d")}
+{date_context}
 
 Use the available tools to accomplish what the user asks. Call tools ONE AT A TIME, observe the result, then decide what to do next.
 
@@ -1449,10 +1458,19 @@ def get_session_agent(force_new: bool = False) -> Optional[ReActAgent]:
         import openai
         llm_client = openai.OpenAI()
     
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    # Build date context with upcoming days for accurate scheduling
+    date_context = f"""TODAY: {now.strftime("%A, %B %d, %Y")} ({now.strftime("%Y-%m-%d")})
+This week:
+"""
+    for i in range(7):
+        d = now + timedelta(days=i)
+        date_context += f"  {d.strftime('%A %b %d')}: {d.strftime('%Y-%m-%d')}\n"
+    
     system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
 
-TODAY: {datetime.now().strftime("%Y-%m-%d")}
+{date_context}
 
 You have access to the user's email, calendar, files, tasks, and other services.
 Use tools to accomplish what the user asks. Call tools ONE AT A TIME, observe results, then decide next steps.
