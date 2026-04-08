@@ -19,21 +19,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.core import Orchestrator, workflow_engine, proactive_scanner
 from src.core.llm import create_client_from_env
-from src.skills import (
-    FileOrganizerSkill, 
-    DuplicateFinderSkill, 
-    TempCleanerSkill, 
-    GmailSkill, 
-    DocumentSkill,
-    PhotoOrganizerSkill,
-    DiskAnalyzerSkill,
-)
 
 # Telic Engine - the REAL engine with all primitives
 from apex_engine import Apex as TelicEngine
@@ -56,6 +47,29 @@ from intelligence.proactive_monitor import ProactiveMonitor
 from intelligence.cross_service import CrossServiceIntelligence
 from intelligence.semantic_memory import SemanticMemory
 from connectors.devtools import UnifiedDevTools
+
+# Connector Registry Infrastructure
+from connectors.registry import (
+    ConnectorRegistry, 
+    get_registry, 
+    ConnectionStatus,
+    ConnectorMetadata,
+)
+from connectors.credentials import (
+    CredentialStore,
+    get_credential_store,
+)
+from connectors.oauth_flow import (
+    OAuthFlow,
+    get_oauth_flow,
+    OAUTH_PROVIDERS,
+)
+from connectors.resolver import (
+    PrimitiveResolver,
+    ExecutionMode,
+    AggregationStrategy,
+    get_resolver,
+)
 
 # Google Calendar connector (real API)
 try:
@@ -267,6 +281,485 @@ Examples:
 - "What can you do?" -> action: false
 - "Thanks!" -> action: false
 """
+
+
+# =============================================================================
+# SETUP & CAPABILITIES - User-friendly configuration
+# =============================================================================
+
+@app.get("/capabilities")
+async def get_capabilities():
+    """
+    Get all capabilities and which services support them.
+    
+    User sees: "What do you want Telic to handle?" with service options.
+    """
+    registry = ConnectorRegistry()
+    connectors = registry.list_connectors()
+    
+    # Build capability -> services mapping
+    capabilities = {}
+    capability_meta = {
+        "EMAIL": {"icon": "📧", "name": "Email", "description": "Send, read, and search emails"},
+        "CALENDAR": {"icon": "📅", "name": "Calendar", "description": "Create events, check availability, reminders"},
+        "CHAT": {"icon": "💬", "name": "Chat", "description": "Send messages to Slack, Teams, Discord"},
+        "CLOUD_STORAGE": {"icon": "📁", "name": "Files", "description": "Access Google Drive, OneDrive, Dropbox"},
+        "TASK": {"icon": "✅", "name": "Tasks", "description": "Manage to-dos and tasks"},
+        "CONTACTS": {"icon": "👥", "name": "Contacts", "description": "Find and manage contacts"},
+        "DEVTOOLS": {"icon": "💻", "name": "Dev Tools", "description": "GitHub issues, Jira tickets, PRs"},
+        "DOCUMENT": {"icon": "📄", "name": "Documents", "description": "Parse, summarize, create documents"},
+        "SPREADSHEET": {"icon": "📊", "name": "Spreadsheets", "description": "Google Sheets, Excel"},
+        "PRESENTATION": {"icon": "📽️", "name": "Presentations", "description": "Google Slides, PowerPoint"},
+        "NOTES": {"icon": "📝", "name": "Notes", "description": "OneNote, Apple Notes"},
+        "MEDIA": {"icon": "🎵", "name": "Media", "description": "Play music, control Spotify"},
+        "MEETING": {"icon": "🎥", "name": "Meetings", "description": "Schedule Zoom, Teams, Meet calls"},
+        "SMS": {"icon": "📱", "name": "SMS", "description": "Send text messages via Twilio"},
+        "PHOTO": {"icon": "📷", "name": "Photos", "description": "Google Photos library"},
+        "HOME_AUTOMATION": {"icon": "🏠", "name": "Smart Home", "description": "Control smart devices"},
+        "SOCIAL": {"icon": "🐦", "name": "Social", "description": "Twitter/X posting"},
+    }
+    
+    for c in connectors:
+        for prim in c.primitives:
+            if prim not in capabilities:
+                meta = capability_meta.get(prim, {"icon": "⚡", "name": prim.title(), "description": ""})
+                capabilities[prim] = {
+                    "id": prim,
+                    "name": meta["name"],
+                    "icon": meta["icon"],
+                    "description": meta["description"],
+                    "services": [],
+                }
+            capabilities[prim]["services"].append({
+                "id": c.name,
+                "name": c.display_name,
+                "provider": c.provider,
+                "icon": c.icon or c.provider,
+                "connected": False,  # Will be updated by /services endpoint
+            })
+    
+    return JSONResponse({
+        "capabilities": list(capabilities.values()),
+    })
+
+
+@app.get("/services")
+async def get_services():
+    """
+    Get all available services with connection status.
+    
+    User sees a grid of services they can connect.
+    Checks both environment variables AND stored credentials.
+    """
+    registry = ConnectorRegistry()
+    connectors = registry.list_connectors()
+    
+    services = []
+    
+    # Check connection status for each
+    # Check known connected services
+    global _google_calendar
+    
+    google_connected = _google_calendar is not None and _google_calendar.connected
+    
+    # Check env vars for other services
+    github_connected = bool(os.environ.get("GITHUB_TOKEN"))
+    jira_connected = bool(os.environ.get("JIRA_API_TOKEN") and os.environ.get("JIRA_URL"))
+    slack_connected = bool(os.environ.get("SLACK_BOT_TOKEN"))
+    
+    status_map = {
+        "gmail": google_connected,
+        "google_calendar": google_connected,
+        "google_drive": google_connected,
+        "google_contacts": google_connected,
+        "google_photos": google_connected,
+        "google_sheets": google_connected,
+        "google_slides": google_connected,
+        "github": github_connected,
+        "jira": jira_connected,
+        "slack": slack_connected,
+    }
+    
+    # Also check credential store for stored tokens
+    try:
+        store = get_cred_store()
+        for provider in store.list_providers():
+            if store.has_valid(provider):
+                status_map[provider] = True
+    except Exception:
+        pass
+    
+    for c in connectors:
+        connected = status_map.get(c.name, False)
+        services.append({
+            "id": c.name,
+            "name": c.display_name,
+            "provider": c.provider,
+            "icon": c.icon or c.provider,
+            "description": c.description,
+            "capabilities": c.primitives,
+            "connected": connected,
+            "setup_type": "oauth" if c.provider in ("google", "microsoft") else "token",
+        })
+    
+    return JSONResponse({
+        "services": sorted(services, key=lambda x: (not x["connected"], x["provider"], x["name"])),
+    })
+
+
+@app.get("/setup")
+async def setup_page():
+    """Serve the setup/connections page."""
+    return FileResponse(
+        Path(__file__).parent / "ui" / "setup.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+# =============================================================================
+# CREDENTIALS API - Secure token/API key management
+# =============================================================================
+
+_credential_store = None
+
+def get_cred_store():
+    """Get singleton credential store."""
+    global _credential_store
+    if _credential_store is None:
+        _credential_store = get_credential_store()
+    return _credential_store
+
+
+class SaveCredentialRequest(BaseModel):
+    """Request to save a credential."""
+    provider: str
+    credential_type: str = "api_key"  # api_key, oauth_token, client_credentials
+    api_key: Optional[str] = None
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    extra: Optional[Dict[str, Any]] = None
+
+
+@app.get("/credentials")
+async def list_credentials():
+    """
+    List all stored credentials (without exposing secrets).
+    
+    Returns provider names, types, and status - NOT the actual credentials.
+    """
+    store = get_cred_store()
+    providers = store.list_providers()
+    
+    credentials = []
+    for provider in providers:
+        cred = store.get(provider)
+        if cred:
+            credentials.append({
+                "provider": provider,
+                "type": cred.credential_type.value,
+                "created_at": cred.created_at.isoformat() if cred.created_at else None,
+                "expires_at": cred.expires_at.isoformat() if cred.expires_at else None,
+                "is_expired": cred.is_expired(),
+                "has_refresh_token": bool(cred.data.get("refresh_token")),
+                "scopes": cred.scopes,
+            })
+    
+    return JSONResponse({"credentials": credentials})
+
+
+@app.post("/credentials")
+async def save_credential(req: SaveCredentialRequest):
+    """
+    Save a credential (API key or token).
+    
+    Credentials are stored encrypted on disk.
+    """
+    store = get_cred_store()
+    
+    try:
+        if req.credential_type == "api_key" and req.api_key:
+            success = store.save_api_key(
+                provider=req.provider,
+                api_key=req.api_key,
+                extra_data=req.extra,
+            )
+        elif req.credential_type == "client_credentials" and req.client_id:
+            success = store.save_client_credentials(
+                provider=req.provider,
+                client_id=req.client_id,
+                client_secret=req.client_secret,
+                extra_data=req.extra,
+            )
+        elif req.credential_type == "oauth_token" and req.access_token:
+            success = store.save_token(
+                provider=req.provider,
+                access_token=req.access_token,
+                refresh_token=req.refresh_token,
+                extra_data=req.extra,
+            )
+        else:
+            return JSONResponse(
+                {"success": False, "error": "Invalid credential type or missing required fields"},
+                status_code=400,
+            )
+        
+        if success:
+            # Also set as environment variable for current session
+            env_var_map = {
+                "github": "GITHUB_TOKEN",
+                "slack": "SLACK_BOT_TOKEN",
+                "discord": "DISCORD_BOT_TOKEN",
+                "jira": "JIRA_API_TOKEN",
+                "todoist": "TODOIST_API_TOKEN",
+                "twilio": "TWILIO_AUTH_TOKEN",
+                "spotify": "SPOTIFY_CLIENT_ID",
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+            }
+            if req.provider in env_var_map and req.api_key:
+                os.environ[env_var_map[req.provider]] = req.api_key
+            
+            return JSONResponse({
+                "success": True,
+                "message": f"Credential saved for {req.provider}",
+            })
+        else:
+            return JSONResponse(
+                {"success": False, "error": "Failed to save credential"},
+                status_code=500,
+            )
+    except Exception as e:
+        return JSONResponse(
+            {"success": False, "error": str(e)},
+            status_code=500,
+        )
+
+
+@app.delete("/credentials/{provider}")
+async def delete_credential(provider: str):
+    """Delete a stored credential."""
+    store = get_cred_store()
+    
+    if store.delete(provider):
+        return JSONResponse({"success": True, "message": f"Deleted credential for {provider}"})
+    else:
+        return JSONResponse(
+            {"success": False, "error": f"No credential found for {provider}"},
+            status_code=404,
+        )
+
+
+@app.get("/credentials/{provider}/status")
+async def credential_status(provider: str):
+    """Check credential status for a provider."""
+    store = get_cred_store()
+    cred = store.get(provider)
+    
+    if not cred:
+        return JSONResponse({
+            "exists": False,
+            "valid": False,
+            "provider": provider,
+        })
+    
+    return JSONResponse({
+        "exists": True,
+        "valid": not cred.is_expired(),
+        "type": cred.credential_type.value,
+        "expires_at": cred.expires_at.isoformat() if cred.expires_at else None,
+        "needs_refresh": store.needs_refresh(provider),
+        "provider": provider,
+    })
+
+
+# =============================================================================
+# OAUTH POPUP FLOW - Browser popup for OAuth instead of redirect
+# =============================================================================
+
+@app.get("/oauth/start/{provider}")
+async def oauth_start(provider: str, scopes: Optional[str] = None):
+    """
+    Start OAuth flow - returns URL to open in popup.
+    
+    The popup will redirect to /oauth/callback which handles the token exchange
+    and closes the popup with a message to the parent window.
+    """
+    from connectors.oauth_flow import get_oauth_flow, OAUTH_PROVIDERS
+    
+    if provider not in OAUTH_PROVIDERS:
+        return JSONResponse(
+            {"error": f"Unknown OAuth provider: {provider}"},
+            status_code=400,
+        )
+    
+    try:
+        flow = get_oauth_flow(provider)
+        scope_list = scopes.split(",") if scopes else None
+        auth_url, state = flow.get_auth_url(scopes=scope_list)
+        
+        return JSONResponse({
+            "auth_url": auth_url,
+            "state": state,
+            "provider": provider,
+        })
+    except Exception as e:
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500,
+        )
+
+
+@app.get("/oauth/callback")
+async def oauth_callback(code: str = None, state: str = None, error: str = None):
+    """
+    OAuth callback handler.
+    
+    This page is loaded in the popup window after user authorizes.
+    It exchanges the code for tokens, stores them, and closes the popup.
+    """
+    if error:
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authorization Failed</title></head>
+        <body>
+            <h2>Authorization Failed</h2>
+            <p>{error}</p>
+            <script>
+                if (window.opener) {{
+                    window.opener.postMessage({{
+                        type: 'oauth_error',
+                        error: '{error}'
+                    }}, '*');
+                }}
+                setTimeout(() => window.close(), 2000);
+            </script>
+        </body>
+        </html>
+        """)
+    
+    if not code or not state:
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Missing Parameters</title></head>
+        <body>
+            <h2>Missing authorization code or state</h2>
+            <script>
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'oauth_error',
+                        error: 'Missing authorization code'
+                    }, '*');
+                }
+                setTimeout(() => window.close(), 2000);
+            </script>
+        </body>
+        </html>
+        """)
+    
+    try:
+        from connectors.oauth_flow import get_oauth_flow
+        
+        # Determine provider from state (stored in pending auth)
+        # For now, try Google first
+        providers_to_try = ["google", "microsoft", "slack", "github"]
+        
+        tokens = None
+        provider_used = None
+        
+        for provider in providers_to_try:
+            try:
+                flow = get_oauth_flow(provider)
+                tokens = await flow.exchange_code(code, state)
+                if tokens:
+                    provider_used = provider
+                    break
+            except Exception:
+                continue
+        
+        if not tokens:
+            raise Exception("Failed to exchange authorization code")
+        
+        # Store tokens
+        store = get_cred_store()
+        store.save_token(
+            provider=provider_used,
+            access_token=tokens.get("access_token"),
+            refresh_token=tokens.get("refresh_token"),
+            expires_in=tokens.get("expires_in"),
+            scopes=tokens.get("scope", "").split() if tokens.get("scope") else [],
+        )
+        
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Authorization Successful</title>
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                    background: #0a0a0f;
+                    color: #f4f4f5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                }}
+                .card {{
+                    text-align: center;
+                    padding: 40px;
+                }}
+                .checkmark {{
+                    font-size: 48px;
+                    margin-bottom: 16px;
+                }}
+                h2 {{ margin-bottom: 8px; }}
+                p {{ color: #a1a1aa; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="checkmark">✓</div>
+                <h2>Connected!</h2>
+                <p>You can close this window.</p>
+            </div>
+            <script>
+                if (window.opener) {{
+                    window.opener.postMessage({{
+                        type: 'oauth_success',
+                        provider: '{provider_used}'
+                    }}, '*');
+                }}
+                setTimeout(() => window.close(), 1500);
+            </script>
+        </body>
+        </html>
+        """)
+        
+    except Exception as e:
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authorization Failed</title></head>
+        <body style="font-family: sans-serif; padding: 40px;">
+            <h2>Authorization Failed</h2>
+            <p>{str(e)}</p>
+            <script>
+                if (window.opener) {{
+                    window.opener.postMessage({{
+                        type: 'oauth_error',
+                        error: '{str(e)}'
+                    }}, '*');
+                }}
+                setTimeout(() => window.close(), 3000);
+            </script>
+        </body>
+        </html>
+        """)
 
 
 # Routes
@@ -567,22 +1060,28 @@ async def execute_plan(req: ExecuteRequest):
                 op = ws["operation"]
                 params = ws["params"]  # Already resolved with actual data
                 
+                # Skip CLARIFY - it's a signal, not a real primitive
+                if prim_name == "CLARIFY":
+                    continue
+                
                 print(f"[EXECUTE]   Running {prim_name}.{op} with params: {params}")
                 
                 primitive = engine._primitives.get(prim_name)
                 if primitive:
                     try:
                         result = await primitive.execute(op, params)
+                        # Extract .data from StepResult for proper serialization
+                        result_data = result.data if hasattr(result, 'data') else result
                         step_results.append({
                             "id": ws["id"],
                             "description": ws["description"],
                             "primitive": prim_name,
                             "operation": op,
                             "success": True,
-                            "data": result if isinstance(result, (dict, list, str, int, float, bool, type(None))) else str(result),
+                            "data": result_data if isinstance(result_data, (dict, list, str, int, float, bool, type(None))) else str(result_data),
                             "error": None,
                         })
-                        print(f"[EXECUTE]   Success: {str(result)[:200]}")
+                        print(f"[EXECUTE]   Success: {str(result_data)[:200]}")
                     except Exception as e:
                         step_results.append({
                             "id": ws["id"],
@@ -621,6 +1120,18 @@ async def execute_plan(req: ExecuteRequest):
         else:
             print(f"[EXECUTE] No cached plan, re-planning...")
             exec_result = await engine.do(req.message, require_approval=False)
+            
+            # Check if plan contains CLARIFY - this isn't an error, just needs more info
+            if exec_result.plan and len(exec_result.plan) > 0 and exec_result.plan[0].primitive == "CLARIFY":
+                question = exec_result.plan[0].params.get("question", exec_result.plan[0].description)
+                return JSONResponse({
+                    "error": None,
+                    "success": True,
+                    "results": [],
+                    "final_result": None,
+                    "clarify": question,
+                    "summary": "Need more information",
+                })
         
         print(f"[EXECUTE] Engine completed. Success: {exec_result.success}")
         
@@ -732,12 +1243,18 @@ async def execute_plan_stream(req: ExecuteRequest):
                     # Signal start
                     await step_callback(ws["id"], ws["description"], prim_name, op, None, None, None)
                     
+                    # Skip CLARIFY - it's a signal, not a real primitive
+                    if prim_name == "CLARIFY":
+                        continue
+                    
                     primitive = engine._primitives.get(prim_name)
                     if primitive:
                         try:
                             result = await primitive.execute(op, params)
-                            await step_callback(ws["id"], ws["description"], prim_name, op, True, result, None)
-                            step_results.append({"success": True, "data": result})
+                            # Extract .data from StepResult for JSON serialization
+                            result_data = result.data if hasattr(result, 'data') else result
+                            await step_callback(ws["id"], ws["description"], prim_name, op, True, result_data, None)
+                            step_results.append({"success": True, "data": result_data})
                         except Exception as e:
                             await step_callback(ws["id"], ws["description"], prim_name, op, False, None, str(e))
                             step_results.append({"success": False, "error": str(e)})
@@ -754,11 +1271,22 @@ async def execute_plan_stream(req: ExecuteRequest):
                 })
             else:
                 # No cached data, run full plan
+                # First check if this is a clarification request
                 exec_result = await engine.do(
                     req.message, 
                     require_approval=False,
                     on_step_complete=step_callback,
                 )
+                
+                # Check if plan contains CLARIFY - this isn't an error, it's asking for input
+                if exec_result.plan and len(exec_result.plan) > 0 and exec_result.plan[0].primitive == "CLARIFY":
+                    question = exec_result.plan[0].params.get("question", exec_result.plan[0].description)
+                    await queue.put({
+                        "type": "clarify",
+                        "question": question,
+                        "success": True,
+                    })
+                    return
                 
                 # Send final summary
                 final = None
@@ -2349,6 +2877,513 @@ async def health():
         "brain": brain_status,
         "services": service_status,
     }
+
+
+# ============================================================================
+# CONNECTOR REGISTRY ENDPOINTS
+# ============================================================================
+
+@app.get("/connectors")
+async def list_connectors():
+    """List all registered connectors and their status."""
+    registry = get_registry()
+    credential_store = get_credential_store()
+    
+    connectors = []
+    for metadata in registry.list_connectors():
+        # Check connection status from credential store
+        has_credentials = credential_store.has(metadata.provider)
+        is_connected = credential_store.has_valid(metadata.provider)
+        
+        connectors.append({
+            "name": metadata.name,
+            "display_name": metadata.display_name,
+            "provider": metadata.provider,
+            "primitives": metadata.primitives,
+            "description": metadata.description,
+            "icon": metadata.icon,
+            "setup_url": metadata.setup_url,
+            "has_credentials": has_credentials,
+            "is_connected": is_connected,
+            "requires_client_creds": metadata.requires_client_creds,
+        })
+    
+    return JSONResponse({
+        "connectors": connectors,
+        "total": len(connectors),
+        "connected": len([c for c in connectors if c["is_connected"]]),
+    })
+
+
+@app.get("/connectors/providers")
+async def list_providers():
+    """List all providers and their connectors."""
+    registry = get_registry()
+    credential_store = get_credential_store()
+    
+    providers = {}
+    for provider in registry.get_providers():
+        connectors = registry.get_connectors_for_provider(provider)
+        has_credentials = credential_store.has(provider)
+        is_connected = credential_store.has_valid(provider)
+        
+        providers[provider] = {
+            "connectors": connectors,
+            "has_credentials": has_credentials,
+            "is_connected": is_connected,
+            "setup_instructions": registry.get_setup_instructions(provider),
+        }
+    
+    return JSONResponse({
+        "providers": providers,
+        "connected": registry.get_connected_providers(),
+    })
+
+
+@app.get("/connectors/primitives")
+async def list_primitives_with_connectors():
+    """List all primitives and their available connectors."""
+    registry = get_registry()
+    
+    primitives = registry.get_available_primitives()
+    
+    return JSONResponse({
+        "primitives": {
+            name: {
+                "connectors": connectors,
+                "preferred": registry.get_preferred_connector(name),
+            }
+            for name, connectors in primitives.items()
+        }
+    })
+
+
+@app.get("/connectors/{connector_name}/status")
+async def get_connector_status(connector_name: str):
+    """Get detailed status for a specific connector."""
+    registry = get_registry()
+    credential_store = get_credential_store()
+    
+    metadata = registry.get_metadata(connector_name)
+    if not metadata:
+        raise HTTPException(status_code=404, detail=f"Connector not found: {connector_name}")
+    
+    status = registry.get_status(connector_name)
+    credentials = credential_store.get(metadata.provider)
+    
+    return JSONResponse({
+        "name": metadata.name,
+        "display_name": metadata.display_name,
+        "provider": metadata.provider,
+        "primitives": metadata.primitives,
+        "status": status.status.value if status else "disconnected",
+        "last_check": status.last_check.isoformat() if status and status.last_check else None,
+        "error": status.error_message if status else None,
+        "has_credentials": credentials is not None,
+        "credentials_expired": credentials.is_expired() if credentials else None,
+        "scopes": credentials.scopes if credentials else [],
+    })
+
+
+class SetPreferenceRequest(BaseModel):
+    primitive: str
+    connector: str
+
+
+@app.post("/connectors/preference")
+async def set_connector_preference(req: SetPreferenceRequest):
+    """Set the preferred connector for a primitive."""
+    registry = get_registry()
+    
+    success = registry.set_preferred_connector(req.primitive, req.connector)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot set {req.connector} as preferred for {req.primitive}"
+        )
+    
+    return JSONResponse({
+        "success": True,
+        "primitive": req.primitive,
+        "preferred_connector": req.connector,
+    })
+
+
+@app.get("/connectors/setup-status")
+async def get_setup_status():
+    """Get which connectors are ready and which need setup."""
+    registry = get_registry()
+    return JSONResponse(registry.get_setup_status())
+
+
+@app.get("/connectors/{provider}/instructions")
+async def get_setup_instructions(provider: str):
+    """Get setup instructions for a provider."""
+    registry = get_registry()
+    return JSONResponse({
+        "provider": provider,
+        "instructions": registry.get_setup_instructions(provider),
+    })
+
+
+# ============================================================================
+# OAUTH FLOW ENDPOINTS (Phase 2)
+# ============================================================================
+
+class OAuthInitRequest(BaseModel):
+    """Request to start OAuth flow."""
+    client_id: str
+    client_secret: str | None = None
+    services: list[str] | None = None  # e.g., ["gmail", "calendar"] for Google
+    scopes: list[str] | None = None    # Custom scopes
+    redirect_uri: str | None = None
+
+
+@app.get("/oauth/providers")
+async def list_oauth_providers():
+    """List all supported OAuth providers."""
+    oauth = get_oauth_flow()
+    
+    providers = {}
+    for name in oauth.get_supported_providers():
+        info = oauth.get_provider_info(name)
+        providers[name] = info
+    
+    return JSONResponse({
+        "providers": providers,
+        "count": len(providers),
+    })
+
+
+@app.get("/oauth/status")
+async def get_oauth_status():
+    """Get connection status for all OAuth providers."""
+    oauth = get_oauth_flow()
+    status = oauth.get_connection_status()
+    
+    connected = [p for p, s in status.items() if s["connected"]]
+    
+    return JSONResponse({
+        "status": status,
+        "connected": connected,
+        "total_connected": len(connected),
+    })
+
+
+@app.post("/oauth/{provider}/init")
+async def init_provider_oauth(provider: str, req: OAuthInitRequest):
+    """
+    Start OAuth flow for a provider.
+    
+    Returns an authorization URL to redirect the user to.
+    The user will grant permissions, then be redirected back to /oauth/callback.
+    
+    Example:
+        POST /oauth/google/init
+        {
+            "client_id": "your-client-id.apps.googleusercontent.com",
+            "client_secret": "your-client-secret",
+            "services": ["gmail", "calendar", "drive"]
+        }
+    
+    Response:
+        {
+            "auth_url": "https://accounts.google.com/o/oauth2/....",
+            "provider": "google",
+            "services": ["gmail", "calendar", "drive"]
+        }
+    """
+    oauth = get_oauth_flow()
+    
+    # Validate provider
+    if provider not in oauth.get_supported_providers():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider: {provider}. Supported: {oauth.get_supported_providers()}"
+        )
+    
+    try:
+        auth_url = oauth.get_auth_url(
+            provider=provider,
+            client_id=req.client_id,
+            client_secret=req.client_secret,
+            services=req.services,
+            scopes=req.scopes,
+            redirect_uri=req.redirect_uri,
+        )
+        
+        return JSONResponse({
+            "auth_url": auth_url,
+            "provider": provider,
+            "services": req.services or [],
+            "message": f"Redirect user to auth_url to authorize {provider}",
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/oauth/callback")
+async def oauth_callback_get(code: str, state: str):
+    """
+    OAuth callback endpoint (GET).
+    
+    This is where OAuth providers redirect after user authorization.
+    Returns a success HTML page.
+    """
+    oauth = get_oauth_flow()
+    
+    try:
+        result = await oauth.handle_callback(code, state)
+        
+        # Return success page
+        html_path = Path(__file__).parent / "ui" / "oauth_success.html"
+        if html_path.exists():
+            return FileResponse(html_path)
+        
+        # Fallback HTML if file doesn't exist
+        return JSONResponse({
+            "success": True,
+            "provider": result["provider"],
+            "services": result["services"],
+            "message": "Successfully connected! You can close this window.",
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        raise HTTPException(status_code=500, detail=f"OAuth error: {str(e)}")
+
+
+@app.post("/oauth/callback")
+async def oauth_callback_post(code: str, state: str):
+    """
+    OAuth callback endpoint (POST).
+    
+    Alternative for programmatic OAuth completion.
+    """
+    oauth = get_oauth_flow()
+    
+    try:
+        result = await oauth.handle_callback(code, state)
+        
+        return JSONResponse({
+            "success": True,
+            "provider": result["provider"],
+            "services": result["services"],
+            "scopes": result["scopes"],
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/oauth/{provider}/status")
+async def get_provider_oauth_status(provider: str):
+    """Get OAuth connection status for a specific provider."""
+    oauth = get_oauth_flow()
+    
+    if provider not in oauth.get_supported_providers():
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    
+    status = oauth.get_connection_status()
+    provider_status = status.get(provider, {"connected": False})
+    
+    return JSONResponse({
+        "provider": provider,
+        **provider_status,
+    })
+
+
+@app.post("/oauth/{provider}/refresh")
+async def refresh_provider_token(provider: str):
+    """Refresh OAuth token for a provider."""
+    oauth = get_oauth_flow()
+    
+    if provider not in oauth.get_supported_providers():
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    
+    try:
+        success = await oauth.refresh_token(provider)
+        
+        return JSONResponse({
+            "success": success,
+            "provider": provider,
+            "message": "Token refreshed" if success else "Token refresh failed",
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/oauth/{provider}")
+async def disconnect_provider(provider: str):
+    """Disconnect and remove credentials for a provider."""
+    oauth = get_oauth_flow()
+    
+    if provider not in oauth.get_supported_providers():
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    
+    success = oauth.disconnect(provider)
+    
+    return JSONResponse({
+        "success": success,
+        "provider": provider,
+        "message": f"Disconnected {provider}" if success else f"{provider} was not connected",
+    })
+
+
+# ============================================================================
+# PRIMITIVE RESOLVER ENDPOINTS (Phase 3 - Multi-Provider Support)
+# ============================================================================
+
+@app.get("/primitives")
+async def list_primitives():
+    """List all primitives and their available providers."""
+    resolver = get_resolver()
+    registry = get_registry()
+    
+    primitives = {}
+    for primitive, connectors in registry.get_available_primitives().items():
+        connected = resolver.get_available_providers(primitive, connected_only=True)
+        preferred = resolver.get_preferred_provider(primitive)
+        
+        primitives[primitive] = {
+            "connectors": connectors,
+            "connected": connected,
+            "preferred": preferred,
+            "needs_selection": len(connected) > 1 and not preferred,
+        }
+    
+    return JSONResponse({
+        "primitives": primitives,
+        "total": len(primitives),
+    })
+
+
+@app.get("/primitives/{primitive}/providers")
+async def get_primitive_providers(primitive: str):
+    """Get available providers for a specific primitive."""
+    resolver = get_resolver()
+    
+    primitive = primitive.upper()
+    needs_selection, providers = resolver.needs_provider_selection(primitive)
+    connected = resolver.get_available_providers(primitive, connected_only=True)
+    preferred = resolver.get_preferred_provider(primitive)
+    
+    return JSONResponse({
+        "primitive": primitive,
+        "providers": providers,
+        "connected": connected,
+        "preferred": preferred,
+        "needs_selection": needs_selection,
+    })
+
+
+class PrimitiveExecuteRequest(BaseModel):
+    """Request to execute a primitive operation."""
+    operation: str
+    params: dict = {}
+    mode: str | None = None  # single, all, fallback, fastest
+    connector: str | None = None  # Specific connector to use
+
+
+@app.post("/primitives/{primitive}/execute")
+async def execute_primitive(primitive: str, req: PrimitiveExecuteRequest):
+    """
+    Execute a primitive operation.
+    
+    This is the core execution endpoint that routes operations
+    to the appropriate connector(s).
+    
+    Example:
+        POST /primitives/EMAIL/execute
+        {
+            "operation": "search",
+            "params": {"query": "invoice", "limit": 10},
+            "mode": "all"  // Search all connected email providers
+        }
+    """
+    resolver = get_resolver()
+    
+    primitive = primitive.upper()
+    
+    # Parse execution mode
+    mode = None
+    if req.mode:
+        try:
+            mode = ExecutionMode(req.mode)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid mode: {req.mode}. Use: single, all, fallback, fastest"
+            )
+    
+    # Execute
+    connectors = [req.connector] if req.connector else None
+    
+    result = await resolver.execute(
+        primitive=primitive,
+        operation=req.operation,
+        params=req.params,
+        mode=mode,
+        connectors=connectors,
+    )
+    
+    return JSONResponse(result.to_dict())
+
+
+@app.get("/primitives/{primitive}/preview")
+async def preview_primitive_execution(
+    primitive: str, 
+    operation: str,
+    mode: str | None = None,
+):
+    """
+    Preview how an operation would be executed.
+    
+    Shows which providers will be used before actually executing.
+    """
+    resolver = get_resolver()
+    
+    primitive = primitive.upper()
+    exec_mode = None
+    if mode:
+        try:
+            exec_mode = ExecutionMode(mode)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}")
+    
+    preview = resolver.get_execution_preview(primitive, operation, exec_mode)
+    
+    return JSONResponse(preview)
+
+
+class SetPreferredProviderRequest(BaseModel):
+    """Request to set preferred provider for a primitive."""
+    connector: str
+
+
+@app.post("/primitives/{primitive}/preferred")
+async def set_preferred_provider(primitive: str, req: SetPreferredProviderRequest):
+    """Set the preferred provider for a primitive."""
+    registry = get_registry()
+    
+    primitive = primitive.upper()
+    success = registry.set_preferred_connector(primitive, req.connector)
+    
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot set {req.connector} as preferred for {primitive}"
+        )
+    
+    return JSONResponse({
+        "success": True,
+        "primitive": primitive,
+        "preferred": req.connector,
+    })
 
 
 # Run with uvicorn

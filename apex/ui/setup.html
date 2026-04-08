@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telic - Setup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --bg-hover: #22222e;
+            --border-subtle: rgba(255,255,255,0.06);
+            --border-light: rgba(255,255,255,0.1);
+            --text-primary: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #6366f1;
+            --accent-glow: rgba(139, 92, 246, 0.2);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            min-height: 100vh;
+            color: var(--text-primary);
+        }
+
+        .header {
+            padding: 24px 40px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .logo-orb {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+            box-shadow: 0 0 24px var(--accent-glow);
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-title {
+            font-size: 1rem;
+            color: var(--text-muted);
+            padding-left: 16px;
+            border-left: 1px solid var(--border-subtle);
+        }
+
+        .back-link {
+            margin-left: auto;
+            color: var(--accent-primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .back-link:hover { text-decoration: underline; }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+
+        .page-title {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .page-description {
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+
+        .section {
+            margin-bottom: 48px;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-subtitle {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            font-weight: 400;
+        }
+
+        /* Capability Cards */
+        .capabilities-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .capability-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 20px;
+            transition: border-color 0.2s;
+        }
+        .capability-card:hover {
+            border-color: var(--border-light);
+        }
+
+        .capability-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .capability-icon {
+            font-size: 1.5rem;
+        }
+
+        .capability-name {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .capability-status {
+            margin-left: auto;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 12px;
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+        }
+        .capability-status.connected {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+        }
+
+        .capability-description {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .capability-services {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .service-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-light);
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .service-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--accent-primary);
+        }
+        .service-btn.connected {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: var(--success);
+            color: var(--success);
+        }
+        .service-btn.connected::after {
+            content: "✓";
+            margin-left: 4px;
+        }
+
+        /* All Services Grid */
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .service-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .service-card:hover {
+            border-color: var(--accent-primary);
+            background: var(--bg-tertiary);
+        }
+        .service-card.connected {
+            border-color: var(--success);
+        }
+
+        .service-icon {
+            font-size: 1.5rem;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+
+        .service-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .service-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            margin-bottom: 2px;
+        }
+
+        .service-provider {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: capitalize;
+        }
+
+        .service-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+        .service-status-dot.connected {
+            background: var(--success);
+        }
+
+        /* Info Box */
+        .info-box {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .info-icon {
+            font-size: 1.25rem;
+        }
+
+        .info-content h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .info-content p {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            line-height: 1.5;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .modal-description {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+        }
+        .btn-primary:hover {
+            background: var(--accent-secondary);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-light);
+        }
+        .btn-secondary:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-light);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+            z-index: 1001;
+        }
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .toast.success { border-color: var(--success); }
+        .toast.error { border-color: var(--error); }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <a href="/" class="logo">
+            <div class="logo-orb"></div>
+            <span class="logo-text">Telic</span>
+        </a>
+        <span class="header-title">Setup & Connections</span>
+        <a href="/" class="back-link">← Back to Chat</a>
+    </header>
+
+    <div class="container">
+        <h1 class="page-title">Connect Your Services</h1>
+        <p class="page-description">
+            Telic works with your existing accounts. Connect the services you use and Telic will help you manage them all from one place.
+        </p>
+
+        <div class="info-box">
+            <span class="info-icon">💡</span>
+            <div class="info-content">
+                <h4>How it works</h4>
+                <p>Each capability (Email, Calendar, etc.) can be powered by different services. Connect Gmail for email, or Outlook — your choice. Telic adapts to however you work.</p>
+            </div>
+        </div>
+
+        <section class="section">
+            <h2 class="section-title">
+                Capabilities
+                <span class="section-subtitle">— What do you want Telic to handle?</span>
+            </h2>
+            <div class="capabilities-grid" id="capabilitiesGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">
+                All Services
+                <span class="section-subtitle">— Quick connect</span>
+            </h2>
+            <div class="services-grid" id="servicesGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+    </div>
+
+    <!-- Connection Modal -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <h3 class="modal-title" id="modalTitle">Connect Service</h3>
+            <div class="modal-description" id="modalDescription">
+                <!-- Populated by JS -->
+            </div>
+            
+            <!-- Token Input Form (hidden by default) -->
+            <div id="tokenForm" style="display: none; margin-top: 16px;">
+                <label style="display: block; margin-bottom: 8px; font-size: 0.8rem; color: var(--text-secondary);">
+                    <span id="tokenLabel">API Token</span>
+                </label>
+                <input type="password" id="tokenInput" placeholder="Paste your token here"
+                    style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-light); 
+                           background: var(--bg-tertiary); color: var(--text-primary); font-size: 0.9rem;
+                           margin-bottom: 8px;">
+                <div id="tokenHelp" style="font-size: 0.75rem; color: var(--text-muted);"></div>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="modalConnect" onclick="doConnect()">Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API = '';
+        let currentService = null;
+        let oauthPopup = null;
+
+        // Provider icons
+        const providerIcons = {
+            google: '🔵',
+            microsoft: '🟦',
+            github: '🐙',
+            atlassian: '🔷',
+            slack: '💬',
+            discord: '🎮',
+            dropbox: '📦',
+            spotify: '🎵',
+            twilio: '📱',
+            twitter: '🐦',
+            todoist: '✅',
+            smartthings: '🏠',
+        };
+        
+        // Token configuration per provider
+        const tokenConfig = {
+            github: {
+                label: 'Personal Access Token',
+                help: 'Get one from <a href="https://github.com/settings/tokens" target="_blank" style="color: var(--accent-primary);">GitHub Settings → Developer settings → Personal access tokens</a>',
+                placeholder: 'ghp_...',
+            },
+            slack: {
+                label: 'Bot Token',
+                help: 'Get one from <a href="https://api.slack.com/apps" target="_blank" style="color: var(--accent-primary);">Slack API → Your Apps → OAuth & Permissions</a>',
+                placeholder: 'xoxb-...',
+            },
+            discord: {
+                label: 'Bot Token',
+                help: 'Get one from <a href="https://discord.com/developers/applications" target="_blank" style="color: var(--accent-primary);">Discord Developer Portal → Bot</a>',
+                placeholder: 'Your bot token',
+            },
+            jira: {
+                label: 'API Token',
+                help: 'Get one from <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color: var(--accent-primary);">Atlassian Account → Security → API tokens</a>',
+                placeholder: 'Your Jira API token',
+            },
+            todoist: {
+                label: 'API Token',
+                help: 'Get one from <a href="https://todoist.com/app/settings/integrations/developer" target="_blank" style="color: var(--accent-primary);">Todoist Settings → Integrations → Developer</a>',
+                placeholder: 'Your Todoist API token',
+            },
+            twilio: {
+                label: 'Auth Token',
+                help: 'Get one from <a href="https://console.twilio.com/" target="_blank" style="color: var(--accent-primary);">Twilio Console</a>',
+                placeholder: 'Your Twilio Auth Token',
+            },
+            openai: {
+                label: 'API Key',
+                help: 'Get one from <a href="https://platform.openai.com/api-keys" target="_blank" style="color: var(--accent-primary);">OpenAI API Keys</a>',
+                placeholder: 'sk-...',
+            },
+            anthropic: {
+                label: 'API Key', 
+                help: 'Get one from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: var(--accent-primary);">Anthropic Console</a>',
+                placeholder: 'sk-ant-...',
+            },
+        };
+        
+        // Listen for OAuth popup callback
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'oauth_success') {
+                showToast(`✓ Connected to ${event.data.provider}!`, 'success');
+                closeModal();
+                loadCapabilities();
+            } else if (event.data.type === 'oauth_error') {
+                showToast(`OAuth failed: ${event.data.error}`, 'error');
+            }
+        });
+
+        async function loadCapabilities() {
+            try {
+                const [capRes, svcRes, credRes] = await Promise.all([
+                    fetch(`${API}/capabilities`),
+                    fetch(`${API}/services`),
+                    fetch(`${API}/credentials`)
+                ]);
+                
+                const { capabilities } = await capRes.json();
+                const { services } = await svcRes.json();
+                const { credentials } = await credRes.json();
+                
+                // Build service connection map - combine env-based and credential-based
+                const connected = {};
+                services.forEach(s => connected[s.id] = s.connected);
+                credentials.forEach(c => {
+                    if (!c.is_expired) connected[c.provider] = true;
+                });
+                
+                // Render capabilities
+                const grid = document.getElementById('capabilitiesGrid');
+                grid.innerHTML = capabilities.map(cap => {
+                    const anyConnected = cap.services.some(s => connected[s.id]);
+                    return `
+                        <div class="capability-card">
+                            <div class="capability-header">
+                                <span class="capability-icon">${cap.icon}</span>
+                                <span class="capability-name">${cap.name}</span>
+                                <span class="capability-status ${anyConnected ? 'connected' : ''}">
+                                    ${anyConnected ? '✓ Ready' : 'Not connected'}
+                                </span>
+                            </div>
+                            <p class="capability-description">${cap.description}</p>
+                            <div class="capability-services">
+                                ${cap.services.map(s => `
+                                    <button class="service-btn ${connected[s.id] ? 'connected' : ''}" 
+                                            onclick="connectService('${s.id}', '${s.name}', '${s.provider}')">
+                                        ${providerIcons[s.provider] || '⚡'} ${s.name}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Render all services
+                const svcGrid = document.getElementById('servicesGrid');
+                svcGrid.innerHTML = services.map(s => `
+                    <div class="service-card ${connected[s.id] ? 'connected' : ''}" 
+                         onclick="connectService('${s.id}', '${s.name}', '${s.provider}')">
+                        <div class="service-icon">${providerIcons[s.provider] || '⚡'}</div>
+                        <div class="service-info">
+                            <div class="service-name">${s.name}</div>
+                            <div class="service-provider">${s.provider}</div>
+                        </div>
+                        <div class="service-status-dot ${connected[s.id] ? 'connected' : ''}"></div>
+                    </div>
+                `).join('');
+                
+            } catch (e) {
+                console.error('Failed to load capabilities:', e);
+            }
+        }
+
+        function connectService(id, name, provider) {
+            currentService = { id, name, provider };
+            
+            const modal = document.getElementById('modalOverlay');
+            const title = document.getElementById('modalTitle');
+            const desc = document.getElementById('modalDescription');
+            const tokenForm = document.getElementById('tokenForm');
+            const tokenInput = document.getElementById('tokenInput');
+            const tokenLabel = document.getElementById('tokenLabel');
+            const tokenHelp = document.getElementById('tokenHelp');
+            const connectBtn = document.getElementById('modalConnect');
+            
+            title.textContent = `Connect ${name}`;
+            tokenInput.value = '';
+            tokenForm.style.display = 'none';
+            connectBtn.textContent = 'Connect';
+            
+            if (provider === 'google' || provider === 'microsoft') {
+                // OAuth providers - will open popup
+                desc.innerHTML = `
+                    <p>Connect your ${provider === 'google' ? 'Google' : 'Microsoft'} account to use ${name} with Telic.</p>
+                    <p style="margin-top: 12px; color: var(--text-muted); font-size: 0.8rem;">
+                        A popup window will open for you to sign in and authorize access. Telic will only access the data you approve.
+                    </p>
+                `;
+                connectBtn.textContent = 'Sign in with ' + (provider === 'google' ? 'Google' : 'Microsoft');
+            } else if (tokenConfig[provider] || tokenConfig[id]) {
+                // Token-based providers - show input form
+                const config = tokenConfig[provider] || tokenConfig[id] || { label: 'API Token', help: '', placeholder: 'Your token' };
+                desc.innerHTML = `<p>Enter your ${name} credentials below.</p>`;
+                tokenForm.style.display = 'block';
+                tokenLabel.textContent = config.label;
+                tokenHelp.innerHTML = config.help;
+                tokenInput.placeholder = config.placeholder;
+                connectBtn.textContent = 'Save & Connect';
+            } else {
+                // Unknown provider
+                desc.innerHTML = `
+                    <p>To connect ${name}, you'll need an API token or credentials.</p>
+                    <p style="margin-top: 12px; color: var(--text-muted); font-size: 0.8rem;">
+                        Contact support if you need help setting this up.
+                    </p>
+                `;
+                tokenForm.style.display = 'block';
+                tokenLabel.textContent = 'API Token';
+                tokenHelp.innerHTML = '';
+                tokenInput.placeholder = 'Your API token';
+            }
+            
+            modal.classList.add('active');
+        }
+
+        function closeModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('modalOverlay').classList.remove('active');
+            document.getElementById('tokenForm').style.display = 'none';
+            currentService = null;
+        }
+
+        async function doConnect() {
+            if (!currentService) return;
+            
+            const btn = document.getElementById('modalConnect');
+            const tokenInput = document.getElementById('tokenInput');
+            btn.innerHTML = '<span class="loading"></span> Connecting...';
+            btn.disabled = true;
+            
+            try {
+                const { id, name, provider } = currentService;
+                
+                if (provider === 'google' || provider === 'microsoft') {
+                    // OAuth flow - open popup
+                    const res = await fetch(`${API}/oauth/start/${provider}`);
+                    const data = await res.json();
+                    
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    // Open popup for OAuth
+                    const width = 500;
+                    const height = 600;
+                    const left = (screen.width - width) / 2;
+                    const top = (screen.height - height) / 2;
+                    
+                    oauthPopup = window.open(
+                        data.auth_url,
+                        'oauth_popup',
+                        `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
+                    );
+                    
+                    // Reset button (popup handles the rest)
+                    btn.innerHTML = 'Waiting for authorization...';
+                    
+                    // Poll for popup close (if user closes without completing)
+                    const pollInterval = setInterval(() => {
+                        if (oauthPopup && oauthPopup.closed) {
+                            clearInterval(pollInterval);
+                            btn.innerHTML = 'Connect';
+                            btn.disabled = false;
+                        }
+                    }, 500);
+                    
+                    return; // Don't close modal yet - wait for postMessage
+                    
+                } else if (tokenInput.value.trim()) {
+                    // Token-based auth - save credential
+                    const res = await fetch(`${API}/credentials`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            provider: id,
+                            credential_type: 'api_key',
+                            api_key: tokenInput.value.trim(),
+                        })
+                    });
+                    
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        showToast(`✓ Connected to ${name}!`, 'success');
+                        closeModal();
+                        loadCapabilities();
+                    } else {
+                        showToast(`Failed: ${data.error || 'Unknown error'}`, 'error');
+                    }
+                } else {
+                    showToast('Please enter a token', 'error');
+                }
+                
+            } catch (e) {
+                showToast(`Error: ${e.message}`, 'error');
+            }
+            
+            btn.innerHTML = 'Connect';
+            btn.disabled = false;
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast show ${type}`;
+            setTimeout(() => toast.classList.remove('show'), 4000);
+        }
+
+        // Init
+        loadCapabilities();
+    </script>
+</body>
+</html>

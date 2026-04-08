@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.core import SkillRegistry, Orchestrator, MemoryEngine
 from src.core.llm import create_client_from_env
-from src.skills import FileOrganizerSkill
 
 
 def print_plan(plan):

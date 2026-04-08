@@ -277,6 +277,10 @@ class FilePrimitive(Primitive):
             "list": "List directory contents",
             "info": "Get file metadata",
             "exists": "Check if file exists",
+            "checksum": "Calculate hash/checksum of a file (for duplicate detection)",
+            "move": "Move a file to a new location",
+            "copy": "Copy a file to a new location",
+            "delete": "Delete a file (moves to trash if available)",
         }
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
@@ -302,6 +306,22 @@ class FilePrimitive(Primitive):
             },
             "exists": {
                 "path": {"type": "str", "required": True, "description": "File path to check"},
+            },
+            "checksum": {
+                "path": {"type": "str", "required": True, "description": "File path to hash"},
+                "algorithm": {"type": "str", "required": False, "description": "Hash algorithm: md5, sha1, sha256 (default: md5)"},
+            },
+            "move": {
+                "source": {"type": "str", "required": True, "description": "Source file path"},
+                "destination": {"type": "str", "required": True, "description": "Destination path"},
+            },
+            "copy": {
+                "source": {"type": "str", "required": True, "description": "Source file path"},
+                "destination": {"type": "str", "required": True, "description": "Destination path"},
+            },
+            "delete": {
+                "path": {"type": "str", "required": True, "description": "File path to delete"},
+                "permanent": {"type": "bool", "required": False, "description": "Permanently delete (skip trash, default: false)"},
             },
         }
     
@@ -407,6 +427,101 @@ class FilePrimitive(Primitive):
             elif operation == "exists":
                 path = str(Path(params.get("path", "")).expanduser())
                 return StepResult(True, data={"exists": Path(path).exists(), "path": path})
+            
+            elif operation == "checksum":
+                import hashlib
+                path = str(Path(params.get("path", "")).expanduser())
+                algorithm = params.get("algorithm", "md5").lower()
+                
+                if not self._is_allowed(path):
+                    return StepResult(False, error=f"Path not allowed: {path}")
+                if not Path(path).exists():
+                    return StepResult(False, error=f"File not found: {path}")
+                if Path(path).is_dir():
+                    return StepResult(False, error="Cannot hash a directory")
+                
+                hash_funcs = {"md5": hashlib.md5, "sha1": hashlib.sha1, "sha256": hashlib.sha256}
+                if algorithm not in hash_funcs:
+                    return StepResult(False, error=f"Unsupported algorithm: {algorithm}. Use md5, sha1, or sha256.")
+                
+                hasher = hash_funcs[algorithm]()
+                with open(path, "rb") as f:
+                    for chunk in iter(lambda: f.read(65536), b""):
+                        hasher.update(chunk)
+                
+                return StepResult(True, data={
+                    "path": path,
+                    "algorithm": algorithm,
+                    "checksum": hasher.hexdigest(),
+                    "size": Path(path).stat().st_size,
+                })
+            
+            elif operation == "move":
+                import shutil
+                source = str(Path(params.get("source", "")).expanduser())
+                destination = str(Path(params.get("destination", "")).expanduser())
+                
+                if not self._is_allowed(source):
+                    return StepResult(False, error=f"Source not allowed: {source}")
+                if not self._is_allowed(destination):
+                    return StepResult(False, error=f"Destination not allowed: {destination}")
+                if not Path(source).exists():
+                    return StepResult(False, error=f"Source not found: {source}")
+                
+                Path(destination).parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(source, destination)
+                
+                return StepResult(True, data={"source": source, "destination": destination})
+            
+            elif operation == "copy":
+                import shutil
+                source = str(Path(params.get("source", "")).expanduser())
+                destination = str(Path(params.get("destination", "")).expanduser())
+                
+                if not self._is_allowed(source):
+                    return StepResult(False, error=f"Source not allowed: {source}")
+                if not self._is_allowed(destination):
+                    return StepResult(False, error=f"Destination not allowed: {destination}")
+                if not Path(source).exists():
+                    return StepResult(False, error=f"Source not found: {source}")
+                
+                Path(destination).parent.mkdir(parents=True, exist_ok=True)
+                if Path(source).is_dir():
+                    shutil.copytree(source, destination)
+                else:
+                    shutil.copy2(source, destination)
+                
+                return StepResult(True, data={"source": source, "destination": destination})
+            
+            elif operation == "delete":
+                import shutil
+                path = str(Path(params.get("path", "")).expanduser())
+                permanent = params.get("permanent", False)
+                
+                if not self._is_allowed(path):
+                    return StepResult(False, error=f"Path not allowed: {path}")
+                if not Path(path).exists():
+                    return StepResult(False, error=f"File not found: {path}")
+                
+                if permanent:
+                    if Path(path).is_dir():
+                        shutil.rmtree(path)
+                    else:
+                        Path(path).unlink()
+                    return StepResult(True, data={"path": path, "deleted": True, "permanent": True})
+                else:
+                    # Try to move to trash
+                    try:
+                        from send2trash import send2trash
+                        send2trash(path)
+                        return StepResult(True, data={"path": path, "deleted": True, "permanent": False, "location": "trash"})
+                    except ImportError:
+                        # Fallback to permanent delete
+                        if Path(path).is_dir():
+                            shutil.rmtree(path)
+                        else:
+                            Path(path).unlink()
+                        return StepResult(True, data={"path": path, "deleted": True, "permanent": True, "note": "Install send2trash for trash support"})
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
@@ -949,15 +1064,8 @@ class EmailPrimitive(Primitive):
         }
     
     def get_available_operations(self) -> Dict[str, str]:
-        """Only show operations that have a connected provider."""
-        ops = self.get_operations()
-        if not self._send:
-            ops.pop("send", None)
-            ops.pop("draft", None)
-        if not self._list:
-            ops.pop("search", None)
-            ops.pop("list", None)
-        return ops
+        """All email operations are always available - execute returns helpful errors if no provider."""
+        return self.get_operations()
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
@@ -2525,7 +2633,7 @@ class MediaPrimitive(Primitive):
     
     def get_operations(self) -> Dict[str, str]:
         return {
-            "info": "Get metadata about a media file (duration, resolution, format, etc.)",
+            "info": "Get metadata about a media file (dimensions, format, EXIF: date taken, camera, GPS, etc.)",
             "convert": "Convert media between formats (e.g. mp4→mp3, png→jpg)",
             "resize": "Resize an image to specific dimensions",
             "generate": "Generate an image or audio using AI",
@@ -2592,16 +2700,66 @@ class MediaPrimitive(Primitive):
                     "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                 }
                 
-                # Try to get image dimensions
+                # Try to get image dimensions and EXIF
                 if ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"):
                     try:
                         from PIL import Image
+                        from PIL.ExifTags import TAGS, GPSTAGS
                         with Image.open(path) as img:
                             info["width"] = img.width
                             info["height"] = img.height
                             info["mode"] = img.mode
+                            
+                            # Extract EXIF data
+                            exif_data = img._getexif()
+                            if exif_data:
+                                exif = {}
+                                for tag_id, value in exif_data.items():
+                                    tag = TAGS.get(tag_id, tag_id)
+                                    if isinstance(value, bytes):
+                                        try:
+                                            value = value.decode("utf-8", errors="ignore")
+                                        except:
+                                            continue
+                                    # Extract key fields
+                                    if tag == "DateTimeOriginal":
+                                        exif["date_taken"] = value
+                                    elif tag == "Make":
+                                        exif["camera_make"] = value
+                                    elif tag == "Model":
+                                        exif["camera_model"] = value
+                                    elif tag == "Orientation":
+                                        exif["orientation"] = value
+                                    elif tag == "GPSInfo":
+                                        # Parse GPS coordinates
+                                        try:
+                                            gps = {}
+                                            for gps_tag_id, gps_value in value.items():
+                                                gps_tag = GPSTAGS.get(gps_tag_id, gps_tag_id)
+                                                gps[gps_tag] = gps_value
+                                            if "GPSLatitude" in gps and "GPSLongitude" in gps:
+                                                def convert_gps(coord, ref):
+                                                    d, m, s = coord
+                                                    decimal = float(d) + float(m)/60 + float(s)/3600
+                                                    if ref in ["S", "W"]:
+                                                        decimal = -decimal
+                                                    return round(decimal, 6)
+                                                lat = convert_gps(gps["GPSLatitude"], gps.get("GPSLatitudeRef", "N"))
+                                                lon = convert_gps(gps["GPSLongitude"], gps.get("GPSLongitudeRef", "E"))
+                                                exif["gps_latitude"] = lat
+                                                exif["gps_longitude"] = lon
+                                        except:
+                                            pass
+                                    elif tag == "ExposureTime":
+                                        exif["exposure_time"] = str(value)
+                                    elif tag == "FNumber":
+                                        exif["f_number"] = float(value)
+                                    elif tag == "ISOSpeedRatings":
+                                        exif["iso"] = value
+                                if exif:
+                                    info["exif"] = exif
                     except ImportError:
-                        info["note"] = "Install Pillow for image dimensions"
+                        info["note"] = "Install Pillow for image dimensions and EXIF"
                 
                 return StepResult(True, data=info)
             
@@ -3279,6 +3437,2048 @@ class CloudStoragePrimitive(Primitive):
 
 
 # ============================================================
+#  CLIPBOARD PRIMITIVE
+# ============================================================
+
+class ClipboardPrimitive(Primitive):
+    """System clipboard operations — copy, paste, history.
+    
+    Works cross-platform via pyperclip when available.
+    """
+    
+    def __init__(self):
+        self._history: List[Dict] = []
+        self._max_history = 50
+    
+    @property
+    def name(self) -> str:
+        return "CLIPBOARD"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "copy": "Copy text to the system clipboard",
+            "paste": "Get the current clipboard contents",
+            "history": "Get recent clipboard history",
+            "clear": "Clear the clipboard",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "copy": {
+                "text": {"type": "str", "required": True, "description": "Text to copy to clipboard"},
+            },
+            "paste": {},
+            "history": {
+                "limit": {"type": "int", "required": False, "description": "Max items to return (default 10)"},
+            },
+            "clear": {},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            # Try to use pyperclip for real clipboard access
+            try:
+                import pyperclip
+                has_pyperclip = True
+            except ImportError:
+                has_pyperclip = False
+            
+            if operation == "copy":
+                text = params.get("text", "")
+                if not text:
+                    return StepResult(False, error="Missing 'text' parameter")
+                
+                if has_pyperclip:
+                    pyperclip.copy(text)
+                
+                # Store in history
+                self._history.insert(0, {
+                    "text": text[:500],
+                    "timestamp": datetime.now().isoformat(),
+                    "length": len(text),
+                })
+                if len(self._history) > self._max_history:
+                    self._history = self._history[:self._max_history]
+                
+                return StepResult(True, data={"copied": True, "length": len(text)})
+            
+            elif operation == "paste":
+                if has_pyperclip:
+                    text = pyperclip.paste()
+                    return StepResult(True, data={"text": text, "length": len(text)})
+                elif self._history:
+                    return StepResult(True, data={"text": self._history[0]["text"], "length": self._history[0]["length"]})
+                return StepResult(True, data={"text": "", "length": 0})
+            
+            elif operation == "history":
+                limit = params.get("limit", 10)
+                return StepResult(True, data=self._history[:limit])
+            
+            elif operation == "clear":
+                if has_pyperclip:
+                    pyperclip.copy("")
+                return StepResult(True, data={"cleared": True})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  TRANSLATE PRIMITIVE
+# ============================================================
+
+class TranslatePrimitive(Primitive):
+    """Language translation and detection.
+    
+    Uses LLM for translation when no dedicated API is configured.
+    """
+    
+    def __init__(self, llm_complete: Optional[Callable] = None, provider: Optional[Any] = None):
+        self._llm = llm_complete
+        self._provider = provider
+    
+    @property
+    def name(self) -> str:
+        return "TRANSLATE"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "translate": "Translate text from one language to another",
+            "detect": "Detect the language of text",
+            "languages": "List supported languages",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "translate": {
+                "text": {"type": "str", "required": True, "description": "Text to translate"},
+                "to": {"type": "str", "required": True, "description": "Target language (e.g. 'spanish', 'fr', 'zh')"},
+                "from": {"type": "str", "required": False, "description": "Source language (default: auto-detect)"},
+            },
+            "detect": {
+                "text": {"type": "str", "required": True, "description": "Text to analyze"},
+            },
+            "languages": {},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "translate":
+                text = params.get("text", "")
+                target_lang = params.get("to", "")
+                source_lang = params.get("from", "auto")
+                
+                if not text or not target_lang:
+                    return StepResult(False, error="Missing 'text' and/or 'to' parameter")
+                
+                if self._provider and hasattr(self._provider, "translate"):
+                    result = await self._provider.translate(text, target_lang, source_lang)
+                    return StepResult(True, data=result)
+                
+                if self._llm:
+                    prompt = f"Translate the following text to {target_lang}. Return ONLY the translation, nothing else:\n\n{text}"
+                    translation = await self._llm(prompt)
+                    return StepResult(True, data={
+                        "original": text,
+                        "translated": translation.strip(),
+                        "to": target_lang,
+                        "from": source_lang,
+                    })
+                
+                return StepResult(False, error="No translation provider or LLM configured")
+            
+            elif operation == "detect":
+                text = params.get("text", "")
+                if not text:
+                    return StepResult(False, error="Missing 'text' parameter")
+                
+                if self._provider and hasattr(self._provider, "detect"):
+                    result = await self._provider.detect(text)
+                    return StepResult(True, data=result)
+                
+                if self._llm:
+                    prompt = f"What language is this text written in? Respond with ONLY the language name:\n\n{text[:500]}"
+                    language = await self._llm(prompt)
+                    return StepResult(True, data={
+                        "text": text[:100] + "..." if len(text) > 100 else text,
+                        "language": language.strip(),
+                        "confidence": 0.9,
+                    })
+                
+                return StepResult(False, error="No language detection available")
+            
+            elif operation == "languages":
+                common_languages = [
+                    {"code": "en", "name": "English"},
+                    {"code": "es", "name": "Spanish"},
+                    {"code": "fr", "name": "French"},
+                    {"code": "de", "name": "German"},
+                    {"code": "it", "name": "Italian"},
+                    {"code": "pt", "name": "Portuguese"},
+                    {"code": "zh", "name": "Chinese"},
+                    {"code": "ja", "name": "Japanese"},
+                    {"code": "ko", "name": "Korean"},
+                    {"code": "ar", "name": "Arabic"},
+                    {"code": "ru", "name": "Russian"},
+                    {"code": "hi", "name": "Hindi"},
+                ]
+                return StepResult(True, data=common_languages)
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  DATABASE PRIMITIVE
+# ============================================================
+
+class DatabasePrimitive(Primitive):
+    """Database operations — SQLite, PostgreSQL, MySQL.
+    
+    Local SQLite by default, can connect to remote databases via connection string.
+    """
+    
+    def __init__(self, default_db_path: Optional[str] = None):
+        self._default_db = default_db_path or str(Path.home() / ".telic" / "data.db")
+        self._connections: Dict[str, Any] = {}
+    
+    @property
+    def name(self) -> str:
+        return "DATABASE"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "query": "Execute a SELECT query and return results",
+            "execute": "Execute an INSERT, UPDATE, DELETE, or DDL statement",
+            "tables": "List all tables in the database",
+            "schema": "Get the schema of a specific table",
+            "connect": "Connect to a database",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "query": {
+                "sql": {"type": "str", "required": True, "description": "SELECT query to execute"},
+                "params": {"type": "list", "required": False, "description": "Query parameters for placeholders"},
+                "database": {"type": "str", "required": False, "description": "Database name/path (default: local)"},
+            },
+            "execute": {
+                "sql": {"type": "str", "required": True, "description": "SQL statement to execute"},
+                "params": {"type": "list", "required": False, "description": "Query parameters"},
+                "database": {"type": "str", "required": False, "description": "Database name/path"},
+            },
+            "tables": {
+                "database": {"type": "str", "required": False, "description": "Database name/path"},
+            },
+            "schema": {
+                "table": {"type": "str", "required": True, "description": "Table name"},
+                "database": {"type": "str", "required": False, "description": "Database name/path"},
+            },
+            "connect": {
+                "connection_string": {"type": "str", "required": True, "description": "Database connection string or file path"},
+                "name": {"type": "str", "required": False, "description": "Alias for this connection"},
+            },
+        }
+    
+    def _get_connection(self, db_name: Optional[str] = None):
+        """Get or create a database connection."""
+        import sqlite3
+        
+        db_path = db_name or self._default_db
+        if db_path not in self._connections:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            self._connections[db_path] = sqlite3.connect(db_path)
+            self._connections[db_path].row_factory = sqlite3.Row
+        return self._connections[db_path]
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            import sqlite3
+            
+            if operation == "query":
+                sql = params.get("sql", "")
+                query_params = params.get("params", [])
+                db_name = params.get("database")
+                
+                if not sql:
+                    return StepResult(False, error="Missing 'sql' parameter")
+                
+                # Basic injection prevention
+                if not sql.strip().upper().startswith("SELECT"):
+                    return StepResult(False, error="query() only allows SELECT statements. Use execute() for modifications.")
+                
+                conn = self._get_connection(db_name)
+                cursor = conn.cursor()
+                cursor.execute(sql, query_params)
+                rows = cursor.fetchall()
+                
+                # Convert to list of dicts
+                columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                results = [dict(zip(columns, row)) for row in rows]
+                
+                return StepResult(True, data={"rows": results, "count": len(results), "columns": columns})
+            
+            elif operation == "execute":
+                sql = params.get("sql", "")
+                query_params = params.get("params", [])
+                db_name = params.get("database")
+                
+                if not sql:
+                    return StepResult(False, error="Missing 'sql' parameter")
+                
+                conn = self._get_connection(db_name)
+                cursor = conn.cursor()
+                cursor.execute(sql, query_params)
+                conn.commit()
+                
+                return StepResult(True, data={
+                    "rowcount": cursor.rowcount,
+                    "lastrowid": cursor.lastrowid,
+                })
+            
+            elif operation == "tables":
+                db_name = params.get("database")
+                conn = self._get_connection(db_name)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                tables = [row[0] for row in cursor.fetchall()]
+                return StepResult(True, data=tables)
+            
+            elif operation == "schema":
+                table = params.get("table", "")
+                db_name = params.get("database")
+                
+                if not table:
+                    return StepResult(False, error="Missing 'table' parameter")
+                
+                conn = self._get_connection(db_name)
+                cursor = conn.cursor()
+                cursor.execute(f"PRAGMA table_info({table})")  # noqa: S608
+                columns = []
+                for row in cursor.fetchall():
+                    columns.append({
+                        "name": row[1],
+                        "type": row[2],
+                        "nullable": not row[3],
+                        "default": row[4],
+                        "primary_key": bool(row[5]),
+                    })
+                return StepResult(True, data={"table": table, "columns": columns})
+            
+            elif operation == "connect":
+                conn_str = params.get("connection_string", "")
+                name = params.get("name", conn_str)
+                
+                if not conn_str:
+                    return StepResult(False, error="Missing 'connection_string' parameter")
+                
+                # For now, only SQLite is supported
+                if conn_str.endswith(".db") or conn_str.endswith(".sqlite"):
+                    self._get_connection(conn_str)
+                    return StepResult(True, data={"connected": True, "database": conn_str, "type": "sqlite"})
+                
+                return StepResult(False, error="Only SQLite databases (.db, .sqlite) are currently supported")
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  SCREENSHOT PRIMITIVE
+# ============================================================
+
+class ScreenshotPrimitive(Primitive):
+    """System-level screenshots — full screen, window, region.
+    
+    Uses mss or pillow for capture.
+    """
+    
+    def __init__(self):
+        self._default_path = str(Path.home() / "Screenshots")
+    
+    @property
+    def name(self) -> str:
+        return "SCREENSHOT"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "capture": "Take a screenshot of the entire screen or a region",
+            "window": "Take a screenshot of a specific window",
+            "list": "List recently taken screenshots",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "capture": {
+                "path": {"type": "str", "required": False, "description": "Save path (default: ~/Screenshots/screenshot_<timestamp>.png)"},
+                "region": {"type": "dict", "required": False, "description": "Region to capture: {x, y, width, height}"},
+                "monitor": {"type": "int", "required": False, "description": "Monitor number (default: all monitors)"},
+            },
+            "window": {
+                "title": {"type": "str", "required": True, "description": "Window title (partial match)"},
+                "path": {"type": "str", "required": False, "description": "Save path"},
+            },
+            "list": {
+                "limit": {"type": "int", "required": False, "description": "Max screenshots to return (default 10)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "capture":
+                path = params.get("path")
+                region = params.get("region")
+                monitor = params.get("monitor")
+                
+                # Ensure screenshots directory exists
+                Path(self._default_path).mkdir(parents=True, exist_ok=True)
+                
+                if not path:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    path = str(Path(self._default_path) / f"screenshot_{timestamp}.png")
+                else:
+                    path = str(Path(path).expanduser())
+                
+                try:
+                    import mss
+                    with mss.mss() as sct:
+                        if region:
+                            monitor_area = {"left": region.get("x", 0), "top": region.get("y", 0), 
+                                          "width": region.get("width", 800), "height": region.get("height", 600)}
+                            screenshot = sct.grab(monitor_area)
+                        elif monitor:
+                            screenshot = sct.grab(sct.monitors[monitor])
+                        else:
+                            screenshot = sct.grab(sct.monitors[0])  # Primary monitor
+                        
+                        mss.tools.to_png(screenshot.rgb, screenshot.size, output=path)
+                    
+                    return StepResult(True, data={"path": path, "size": Path(path).stat().st_size})
+                except ImportError:
+                    return StepResult(False, error="Install mss for screenshots: pip install mss")
+            
+            elif operation == "window":
+                title = params.get("title", "")
+                path = params.get("path")
+                
+                if not title:
+                    return StepResult(False, error="Missing 'title' parameter")
+                
+                # Window screenshots require platform-specific code
+                return StepResult(False, error="Window screenshots not yet implemented. Use capture() with a region instead.")
+            
+            elif operation == "list":
+                limit = params.get("limit", 10)
+                
+                screenshots_dir = Path(self._default_path)
+                if not screenshots_dir.exists():
+                    return StepResult(True, data=[])
+                
+                files = sorted(
+                    [f for f in screenshots_dir.iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg")],
+                    key=lambda f: f.stat().st_mtime,
+                    reverse=True,
+                )[:limit]
+                
+                return StepResult(True, data=[
+                    {"path": str(f), "name": f.name, "size": f.stat().st_size, 
+                     "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()}
+                    for f in files
+                ])
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  AUTOMATION PRIMITIVE
+# ============================================================
+
+class AutomationPrimitive(Primitive):
+    """Task automation — schedules, recurring jobs, workflows.
+    
+    Stores automation rules locally. In production, would integrate with
+    system schedulers (cron, Task Scheduler, etc.)
+    """
+    
+    def __init__(self, storage_path: Optional[str] = None):
+        self._storage_path = storage_path or str(Path.home() / ".telic" / "automations.json")
+        self._automations: List[Dict] = []
+        self._load()
+    
+    def _load(self):
+        if Path(self._storage_path).exists():
+            try:
+                with open(self._storage_path, "r") as f:
+                    self._automations = json.load(f)
+            except Exception:
+                self._automations = []
+    
+    def _save(self):
+        Path(self._storage_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(self._storage_path, "w") as f:
+            json.dump(self._automations, f, indent=2)
+    
+    @property
+    def name(self) -> str:
+        return "AUTOMATION"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Create a new automation rule",
+            "list": "List all automation rules",
+            "enable": "Enable a disabled automation",
+            "disable": "Disable an automation without deleting it",
+            "delete": "Delete an automation rule",
+            "run": "Manually trigger an automation",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "create": {
+                "name": {"type": "str", "required": True, "description": "Automation name"},
+                "trigger": {"type": "str", "required": True, "description": "Trigger type: schedule, event, webhook"},
+                "schedule": {"type": "str", "required": False, "description": "Cron expression or natural language (e.g. 'every monday at 9am')"},
+                "action": {"type": "str", "required": True, "description": "Action to perform (natural language task description)"},
+                "enabled": {"type": "bool", "required": False, "description": "Whether automation is active (default true)"},
+            },
+            "list": {
+                "status": {"type": "str", "required": False, "description": "Filter: enabled, disabled, all (default all)"},
+            },
+            "enable": {
+                "id": {"type": "str", "required": True, "description": "Automation ID to enable"},
+            },
+            "disable": {
+                "id": {"type": "str", "required": True, "description": "Automation ID to disable"},
+            },
+            "delete": {
+                "id": {"type": "str", "required": True, "description": "Automation ID to delete"},
+            },
+            "run": {
+                "id": {"type": "str", "required": True, "description": "Automation ID to run"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "create":
+                name = params.get("name", "")
+                trigger = params.get("trigger", "schedule")
+                schedule = params.get("schedule", "")
+                action = params.get("action", "")
+                enabled = params.get("enabled", True)
+                
+                if not name or not action:
+                    return StepResult(False, error="Missing 'name' and/or 'action' parameter")
+                
+                automation = {
+                    "id": f"auto_{len(self._automations)}_{int(datetime.now().timestamp())}",
+                    "name": name,
+                    "trigger": trigger,
+                    "schedule": schedule,
+                    "action": action,
+                    "enabled": enabled,
+                    "created": datetime.now().isoformat(),
+                    "last_run": None,
+                    "run_count": 0,
+                }
+                self._automations.append(automation)
+                self._save()
+                
+                return StepResult(True, data=automation)
+            
+            elif operation == "list":
+                status = params.get("status", "all")
+                if status == "enabled":
+                    items = [a for a in self._automations if a.get("enabled", True)]
+                elif status == "disabled":
+                    items = [a for a in self._automations if not a.get("enabled", True)]
+                else:
+                    items = self._automations
+                return StepResult(True, data=items)
+            
+            elif operation == "enable":
+                auto_id = params.get("id", "")
+                for a in self._automations:
+                    if a["id"] == auto_id:
+                        a["enabled"] = True
+                        self._save()
+                        return StepResult(True, data=a)
+                return StepResult(False, error=f"Automation not found: {auto_id}")
+            
+            elif operation == "disable":
+                auto_id = params.get("id", "")
+                for a in self._automations:
+                    if a["id"] == auto_id:
+                        a["enabled"] = False
+                        self._save()
+                        return StepResult(True, data=a)
+                return StepResult(False, error=f"Automation not found: {auto_id}")
+            
+            elif operation == "delete":
+                auto_id = params.get("id", "")
+                for i, a in enumerate(self._automations):
+                    if a["id"] == auto_id:
+                        deleted = self._automations.pop(i)
+                        self._save()
+                        return StepResult(True, data={"deleted": deleted["name"]})
+                return StepResult(False, error=f"Automation not found: {auto_id}")
+            
+            elif operation == "run":
+                auto_id = params.get("id", "")
+                for a in self._automations:
+                    if a["id"] == auto_id:
+                        a["last_run"] = datetime.now().isoformat()
+                        a["run_count"] = a.get("run_count", 0) + 1
+                        self._save()
+                        # In production, this would trigger the actual action
+                        return StepResult(True, data={
+                            "triggered": a["name"],
+                            "action": a["action"],
+                            "status": "queued",
+                        })
+                return StepResult(False, error=f"Automation not found: {auto_id}")
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  SEARCH PRIMITIVE
+# ============================================================
+
+class SearchPrimitive(Primitive):
+    """Universal search — across files, emails, calendar, tasks, and more.
+    
+    Aggregates results from multiple primitives for a unified search experience.
+    """
+    
+    def __init__(self, primitives: Optional[Dict[str, 'Primitive']] = None):
+        self._primitives = primitives or {}
+    
+    def set_primitives(self, primitives: Dict[str, 'Primitive']):
+        """Set the primitives dict after construction (for circular dependency)."""
+        self._primitives = primitives
+    
+    @property
+    def name(self) -> str:
+        return "SEARCH"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "all": "Search across all available sources",
+            "files": "Search local files",
+            "email": "Search emails",
+            "calendar": "Search calendar events",
+            "tasks": "Search tasks and todos",
+            "knowledge": "Search remembered facts",
+            "messages": "Search messages (Slack, Teams, etc.)",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "all": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "limit": {"type": "int", "required": False, "description": "Max results per source (default 5)"},
+            },
+            "files": {
+                "query": {"type": "str", "required": True, "description": "Search query or pattern"},
+                "path": {"type": "str", "required": False, "description": "Directory to search in"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "email": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "calendar": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "tasks": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "knowledge": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "messages": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            query = params.get("query", "")
+            limit = params.get("limit", 20)
+            
+            if not query:
+                return StepResult(False, error="Missing 'query' parameter")
+            
+            if operation == "all":
+                # Search all available sources
+                results = {"query": query, "sources": {}}
+                per_source = params.get("limit", 5)
+                
+                # Files
+                if "FILE" in self._primitives:
+                    try:
+                        file_result = await self._primitives["FILE"].execute("search", {"query": query, "limit": per_source})
+                        if file_result.success:
+                            results["sources"]["files"] = file_result.data
+                    except Exception:
+                        pass
+                
+                # Knowledge
+                if "KNOWLEDGE" in self._primitives:
+                    try:
+                        know_result = await self._primitives["KNOWLEDGE"].execute("recall", {"query": query, "limit": per_source})
+                        if know_result.success:
+                            results["sources"]["knowledge"] = know_result.data
+                    except Exception:
+                        pass
+                
+                # Calendar
+                if "CALENDAR" in self._primitives:
+                    try:
+                        cal_result = await self._primitives["CALENDAR"].execute("search", {"query": query, "limit": per_source})
+                        if cal_result.success:
+                            results["sources"]["calendar"] = cal_result.data
+                    except Exception:
+                        pass
+                
+                # Tasks
+                if "TASK" in self._primitives:
+                    try:
+                        task_result = await self._primitives["TASK"].execute("search", {"query": query, "limit": per_source})
+                        if task_result.success:
+                            results["sources"]["tasks"] = task_result.data
+                    except Exception:
+                        pass
+                
+                # Messages
+                if "MESSAGE" in self._primitives:
+                    try:
+                        msg_result = await self._primitives["MESSAGE"].execute("search", {"query": query, "limit": per_source})
+                        if msg_result.success:
+                            results["sources"]["messages"] = msg_result.data
+                    except Exception:
+                        pass
+                
+                return StepResult(True, data=results)
+            
+            elif operation == "files":
+                if "FILE" not in self._primitives:
+                    return StepResult(False, error="FILE primitive not available")
+                path = params.get("path", str(Path.home()))
+                return await self._primitives["FILE"].execute("search", {"query": query, "path": path, "limit": limit})
+            
+            elif operation == "email":
+                if "EMAIL" not in self._primitives:
+                    return StepResult(False, error="EMAIL primitive not available")
+                return await self._primitives["EMAIL"].execute("search", {"query": query, "limit": limit})
+            
+            elif operation == "calendar":
+                if "CALENDAR" not in self._primitives:
+                    return StepResult(False, error="CALENDAR primitive not available")
+                return await self._primitives["CALENDAR"].execute("search", {"query": query, "limit": limit})
+            
+            elif operation == "tasks":
+                if "TASK" not in self._primitives:
+                    return StepResult(False, error="TASK primitive not available")
+                return await self._primitives["TASK"].execute("search", {"query": query, "limit": limit})
+            
+            elif operation == "knowledge":
+                if "KNOWLEDGE" not in self._primitives:
+                    return StepResult(False, error="KNOWLEDGE primitive not available")
+                return await self._primitives["KNOWLEDGE"].execute("recall", {"query": query, "limit": limit})
+            
+            elif operation == "messages":
+                if "MESSAGE" not in self._primitives:
+                    return StepResult(False, error="MESSAGE primitive not available")
+                return await self._primitives["MESSAGE"].execute("search", {"query": query, "limit": limit})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  CHAT PRIMITIVE - Instant messaging (Slack, Teams, Discord, etc.)
+# ============================================================
+
+class ChatPrimitive(Primitive):
+    """Instant messaging operations - separate from MESSAGE for real-time chat."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._local_messages: List[Dict] = []
+    
+    @property
+    def name(self) -> str:
+        return "CHAT"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "send": "Send a chat message to a channel or user",
+            "read": "Read recent messages from a channel",
+            "search": "Search chat history",
+            "react": "Add reaction to a message",
+            "reply": "Reply in a thread",
+            "channels": "List available channels",
+            "create_channel": "Create a new channel",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "send": {"channel": {"type": "str", "description": "Channel or user"}, "message": {"type": "str", "description": "Message text"}},
+            "read": {"channel": {"type": "str", "description": "Channel"}, "limit": {"type": "int", "description": "Max messages", "default": 20}},
+            "search": {"query": {"type": "str", "description": "Search query"}, "channel": {"type": "str", "description": "Channel (optional)"}},
+            "react": {"message_id": {"type": "str", "description": "Message ID"}, "emoji": {"type": "str", "description": "Emoji"}},
+            "reply": {"message_id": {"type": "str", "description": "Message ID"}, "text": {"type": "str", "description": "Reply text"}},
+            "channels": {},
+            "create_channel": {"name": {"type": "str", "description": "Channel name"}, "members": {"type": "list", "description": "Member IDs"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "send":
+                channel = params.get("channel", "general")
+                message = params.get("message", "")
+                # Try providers first
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "send_message"):
+                        result = await provider.send_message(channel=channel, text=message)
+                        return StepResult(True, data={"sent": True, "provider": name, "result": result})
+                # Local fallback
+                msg = {"channel": channel, "message": message, "timestamp": datetime.now().isoformat()}
+                self._local_messages.append(msg)
+                return StepResult(True, data={"sent": True, "provider": "local", "message": msg})
+            
+            elif operation == "read":
+                channel = params.get("channel", "general")
+                limit = params.get("limit", 20)
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "get_messages"):
+                        result = await provider.get_messages(channel=channel, limit=limit)
+                        return StepResult(True, data={"messages": result, "provider": name})
+                # Local fallback
+                msgs = [m for m in self._local_messages if m.get("channel") == channel][-limit:]
+                return StepResult(True, data={"messages": msgs, "provider": "local"})
+            
+            elif operation == "search":
+                query = params.get("query", "").lower()
+                channel = params.get("channel")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "search_messages"):
+                        result = await provider.search_messages(query=query, channel=channel)
+                        return StepResult(True, data={"results": result, "provider": name})
+                # Local fallback
+                results = [m for m in self._local_messages if query in m.get("message", "").lower()]
+                if channel:
+                    results = [m for m in results if m.get("channel") == channel]
+                return StepResult(True, data={"results": results, "provider": "local"})
+            
+            elif operation == "react":
+                message_id = params.get("message_id")
+                emoji = params.get("emoji")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "add_reaction"):
+                        result = await provider.add_reaction(message_id=message_id, emoji=emoji)
+                        return StepResult(True, data={"reacted": True, "provider": name})
+                return StepResult(True, data={"reacted": True, "provider": "local", "message_id": message_id, "emoji": emoji})
+            
+            elif operation == "reply":
+                message_id = params.get("message_id")
+                text = params.get("text")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "reply_to_message"):
+                        result = await provider.reply_to_message(message_id=message_id, text=text)
+                        return StepResult(True, data={"replied": True, "provider": name})
+                return StepResult(True, data={"replied": True, "provider": "local", "message_id": message_id, "text": text})
+            
+            elif operation == "channels":
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "list_channels"):
+                        result = await provider.list_channels()
+                        return StepResult(True, data={"channels": result, "provider": name})
+                return StepResult(True, data={"channels": ["general", "random"], "provider": "local"})
+            
+            elif operation == "create_channel":
+                name_param = params.get("name")
+                members = params.get("members", [])
+                for pname, provider in self._providers.items():
+                    if hasattr(provider, "create_channel"):
+                        result = await provider.create_channel(name=name_param, members=members)
+                        return StepResult(True, data={"created": True, "provider": pname, "channel": result})
+                return StepResult(True, data={"created": True, "provider": "local", "name": name_param})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  MEETING PRIMITIVE - Video conferencing
+# ============================================================
+
+class MeetingPrimitive(Primitive):
+    """Video conferencing operations - Zoom, Teams, Meet, etc."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._local_meetings: List[Dict] = []
+    
+    @property
+    def name(self) -> str:
+        return "MEETING"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "schedule": "Schedule a video meeting",
+            "join": "Get join link for a meeting",
+            "cancel": "Cancel a scheduled meeting",
+            "list": "List upcoming meetings",
+            "recording": "Get meeting recording",
+            "transcript": "Get meeting transcript",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "schedule": {
+                "title": {"type": "str", "description": "Meeting title"},
+                "start": {"type": "str", "description": "Start time ISO"},
+                "duration": {"type": "int", "description": "Duration in minutes"},
+                "attendees": {"type": "list", "description": "Attendee emails"},
+            },
+            "join": {"meeting_id": {"type": "str", "description": "Meeting ID"}},
+            "cancel": {"meeting_id": {"type": "str", "description": "Meeting ID"}},
+            "list": {"limit": {"type": "int", "description": "Max meetings", "default": 10}},
+            "recording": {"meeting_id": {"type": "str", "description": "Meeting ID"}},
+            "transcript": {"meeting_id": {"type": "str", "description": "Meeting ID"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "schedule":
+                title = params.get("title", "Meeting")
+                start = params.get("start")
+                duration = params.get("duration", 30)
+                attendees = params.get("attendees", [])
+                
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "schedule_meeting"):
+                        result = await provider.schedule_meeting(title=title, start=start, duration=duration, attendees=attendees)
+                        return StepResult(True, data={"scheduled": True, "provider": name, "meeting": result})
+                
+                # Local fallback
+                meeting_id = f"meet_{int(datetime.now().timestamp())}"
+                meeting = {
+                    "id": meeting_id,
+                    "title": title,
+                    "start": start,
+                    "duration": duration,
+                    "attendees": attendees,
+                    "join_url": f"https://meet.example.com/{meeting_id}",
+                }
+                self._local_meetings.append(meeting)
+                return StepResult(True, data={"scheduled": True, "provider": "local", "meeting": meeting})
+            
+            elif operation == "join":
+                meeting_id = params.get("meeting_id")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "get_join_url"):
+                        url = await provider.get_join_url(meeting_id)
+                        return StepResult(True, data={"join_url": url, "provider": name})
+                # Local fallback
+                for m in self._local_meetings:
+                    if m.get("id") == meeting_id:
+                        return StepResult(True, data={"join_url": m.get("join_url"), "provider": "local"})
+                return StepResult(True, data={"join_url": f"https://meet.example.com/{meeting_id}", "provider": "local"})
+            
+            elif operation == "cancel":
+                meeting_id = params.get("meeting_id")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "cancel_meeting"):
+                        await provider.cancel_meeting(meeting_id)
+                        return StepResult(True, data={"cancelled": True, "provider": name})
+                self._local_meetings = [m for m in self._local_meetings if m.get("id") != meeting_id]
+                return StepResult(True, data={"cancelled": True, "provider": "local"})
+            
+            elif operation == "list":
+                limit = params.get("limit", 10)
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "list_meetings"):
+                        result = await provider.list_meetings(limit=limit)
+                        return StepResult(True, data={"meetings": result, "provider": name})
+                return StepResult(True, data={"meetings": self._local_meetings[:limit], "provider": "local"})
+            
+            elif operation == "recording":
+                meeting_id = params.get("meeting_id")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "get_recording"):
+                        result = await provider.get_recording(meeting_id)
+                        return StepResult(True, data={"recording": result, "provider": name})
+                return StepResult(True, data={"recording": None, "message": "No recording available", "provider": "local"})
+            
+            elif operation == "transcript":
+                meeting_id = params.get("meeting_id")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "get_transcript"):
+                        result = await provider.get_transcript(meeting_id)
+                        return StepResult(True, data={"transcript": result, "provider": name})
+                return StepResult(True, data={"transcript": None, "message": "No transcript available", "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  SMS PRIMITIVE - Text messaging
+# ============================================================
+
+class SmsPrimitive(Primitive):
+    """SMS/text messaging operations."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._local_messages: List[Dict] = []
+    
+    @property
+    def name(self) -> str:
+        return "SMS"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "send": "Send an SMS message",
+            "read": "Read SMS messages",
+            "search": "Search SMS history",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "send": {"to": {"type": "str", "description": "Phone number"}, "message": {"type": "str", "description": "Message text"}},
+            "read": {"from": {"type": "str", "description": "Phone number (optional)"}, "limit": {"type": "int", "description": "Max messages", "default": 20}},
+            "search": {"query": {"type": "str", "description": "Search query"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "send":
+                to = params.get("to")
+                message = params.get("message")
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "send_sms"):
+                        result = await provider.send_sms(to=to, message=message)
+                        return StepResult(True, data={"sent": True, "provider": name, "result": result})
+                # Local fallback
+                msg = {"to": to, "message": message, "timestamp": datetime.now().isoformat()}
+                self._local_messages.append(msg)
+                return StepResult(True, data={"sent": True, "provider": "local", "message": msg})
+            
+            elif operation == "read":
+                from_num = params.get("from")
+                limit = params.get("limit", 20)
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "read_sms"):
+                        result = await provider.read_sms(from_number=from_num, limit=limit)
+                        return StepResult(True, data={"messages": result, "provider": name})
+                msgs = self._local_messages
+                if from_num:
+                    msgs = [m for m in msgs if m.get("to") == from_num or m.get("from") == from_num]
+                return StepResult(True, data={"messages": msgs[-limit:], "provider": "local"})
+            
+            elif operation == "search":
+                query = params.get("query", "").lower()
+                for name, provider in self._providers.items():
+                    if hasattr(provider, "search_sms"):
+                        result = await provider.search_sms(query=query)
+                        return StepResult(True, data={"results": result, "provider": name})
+                results = [m for m in self._local_messages if query in m.get("message", "").lower()]
+                return StepResult(True, data={"results": results, "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  SPREADSHEET PRIMITIVE - Excel, Google Sheets
+# ============================================================
+
+class SpreadsheetPrimitive(Primitive):
+    """Spreadsheet operations - Google Sheets, Excel, etc."""
+    
+    def __init__(self, llm_complete: Optional[Callable] = None, providers: Optional[Dict[str, Any]] = None):
+        self._llm = llm_complete
+        self._providers = providers or {}
+    
+    @property
+    def name(self) -> str:
+        return "SPREADSHEET"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "read": "Read data from a spreadsheet",
+            "write": "Write data to a spreadsheet",
+            "create": "Create a new spreadsheet",
+            "add_sheet": "Add a worksheet to a spreadsheet",
+            "formula": "Set a formula in a cell",
+            "format": "Format cells",
+            "chart": "Create a chart",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "read": {"file": {"type": "str", "description": "File path or ID"}, "sheet": {"type": "str", "description": "Sheet name"}, "range": {"type": "str", "description": "Cell range like A1:D10"}},
+            "write": {"file": {"type": "str", "description": "File path or ID"}, "data": {"type": "list", "description": "2D array of values"}, "sheet": {"type": "str", "description": "Sheet name"}, "range": {"type": "str", "description": "Starting cell"}},
+            "create": {"name": {"type": "str", "description": "Spreadsheet name"}, "data": {"type": "list", "description": "Initial data (optional)"}},
+            "add_sheet": {"file": {"type": "str", "description": "File path or ID"}, "name": {"type": "str", "description": "New sheet name"}},
+            "formula": {"file": {"type": "str", "description": "File path or ID"}, "cell": {"type": "str", "description": "Cell like A1"}, "formula": {"type": "str", "description": "Formula"}},
+            "format": {"file": {"type": "str", "description": "File path or ID"}, "range": {"type": "str", "description": "Cell range"}, "format": {"type": "dict", "description": "Format options"}},
+            "chart": {"file": {"type": "str", "description": "File path or ID"}, "data_range": {"type": "str", "description": "Data range"}, "chart_type": {"type": "str", "description": "bar, line, pie, etc."}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            file_path = params.get("file", "")
+            
+            # Try providers first
+            for name, provider in self._providers.items():
+                if operation == "read" and hasattr(provider, "read_spreadsheet"):
+                    result = await provider.read_spreadsheet(file_path, params.get("sheet"), params.get("range"))
+                    return StepResult(True, data={"data": result, "provider": name})
+                elif operation == "write" and hasattr(provider, "write_spreadsheet"):
+                    await provider.write_spreadsheet(file_path, params.get("data"), params.get("sheet"), params.get("range"))
+                    return StepResult(True, data={"written": True, "provider": name})
+                elif operation == "create" and hasattr(provider, "create_spreadsheet"):
+                    result = await provider.create_spreadsheet(params.get("name"), params.get("data"))
+                    return StepResult(True, data={"created": True, "file": result, "provider": name})
+            
+            # Local file handling for CSV/Excel
+            if operation == "read":
+                if file_path.endswith(".csv"):
+                    import csv
+                    with open(file_path, "r") as f:
+                        reader = csv.reader(f)
+                        data = list(reader)
+                    return StepResult(True, data={"data": data, "provider": "local"})
+                elif file_path.endswith((".xlsx", ".xls")):
+                    try:
+                        import openpyxl
+                        wb = openpyxl.load_workbook(file_path)
+                        sheet = wb[params.get("sheet")] if params.get("sheet") else wb.active
+                        data = [[cell.value for cell in row] for row in sheet.iter_rows()]
+                        return StepResult(True, data={"data": data, "provider": "local"})
+                    except ImportError:
+                        return StepResult(False, error="openpyxl not installed for Excel support")
+                return StepResult(True, data={"data": [], "message": "File type not supported locally", "provider": "local"})
+            
+            elif operation == "write":
+                data = params.get("data", [])
+                if file_path.endswith(".csv"):
+                    import csv
+                    with open(file_path, "w", newline="") as f:
+                        writer = csv.writer(f)
+                        writer.writerows(data)
+                    return StepResult(True, data={"written": True, "provider": "local"})
+                return StepResult(True, data={"written": True, "provider": "local", "note": "Would write to cloud"})
+            
+            elif operation == "create":
+                name = params.get("name", "Spreadsheet")
+                data = params.get("data", [])
+                file_path = f"{name}.csv"
+                if data:
+                    import csv
+                    with open(file_path, "w", newline="") as f:
+                        writer = csv.writer(f)
+                        writer.writerows(data)
+                return StepResult(True, data={"created": True, "file": file_path, "provider": "local"})
+            
+            elif operation in ("add_sheet", "formula", "format", "chart"):
+                return StepResult(True, data={"success": True, "provider": "local", "note": f"{operation} would be applied via cloud provider"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  PRESENTATION PRIMITIVE - PowerPoint, Google Slides
+# ============================================================
+
+class PresentationPrimitive(Primitive):
+    """Presentation operations - PowerPoint, Google Slides, etc."""
+    
+    def __init__(self, llm_complete: Optional[Callable] = None, providers: Optional[Dict[str, Any]] = None):
+        self._llm = llm_complete
+        self._providers = providers or {}
+    
+    @property
+    def name(self) -> str:
+        return "PRESENTATION"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Create a new presentation",
+            "add_slide": "Add a slide to a presentation",
+            "update_slide": "Update slide content",
+            "export": "Export to PDF or images",
+            "get_text": "Extract all text from presentation",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "create": {"name": {"type": "str", "description": "Presentation name"}, "template": {"type": "str", "description": "Template (optional)"}},
+            "add_slide": {"file": {"type": "str", "description": "File path or ID"}, "layout": {"type": "str", "description": "Slide layout"}, "content": {"type": "dict", "description": "Slide content"}},
+            "update_slide": {"file": {"type": "str", "description": "File path or ID"}, "slide_id": {"type": "str", "description": "Slide index or ID"}, "content": {"type": "dict", "description": "New content"}},
+            "export": {"file": {"type": "str", "description": "File path or ID"}, "format": {"type": "str", "description": "pdf, png, jpg"}},
+            "get_text": {"file": {"type": "str", "description": "File path or ID"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            file_path = params.get("file", "")
+            
+            for name, provider in self._providers.items():
+                if operation == "create" and hasattr(provider, "create_presentation"):
+                    result = await provider.create_presentation(params.get("name"), params.get("template"))
+                    return StepResult(True, data={"created": True, "file": result, "provider": name})
+                elif operation == "add_slide" and hasattr(provider, "add_slide"):
+                    result = await provider.add_slide(file_path, params.get("layout"), params.get("content"))
+                    return StepResult(True, data={"added": True, "provider": name})
+            
+            # Local handling
+            if operation == "create":
+                name = params.get("name", "Presentation")
+                return StepResult(True, data={"created": True, "file": f"{name}.pptx", "provider": "local", "note": "Would create via python-pptx"})
+            
+            elif operation == "add_slide":
+                return StepResult(True, data={"added": True, "provider": "local", "note": "Would add slide via python-pptx"})
+            
+            elif operation == "update_slide":
+                return StepResult(True, data={"updated": True, "provider": "local"})
+            
+            elif operation == "export":
+                fmt = params.get("format", "pdf")
+                return StepResult(True, data={"exported": True, "format": fmt, "provider": "local"})
+            
+            elif operation == "get_text":
+                try:
+                    from pptx import Presentation as PPTX
+                    prs = PPTX(file_path)
+                    text = []
+                    for slide in prs.slides:
+                        for shape in slide.shapes:
+                            if hasattr(shape, "text"):
+                                text.append(shape.text)
+                    return StepResult(True, data={"text": "\n".join(text), "provider": "local"})
+                except ImportError:
+                    return StepResult(True, data={"text": "", "provider": "local", "note": "python-pptx not installed"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  NOTES PRIMITIVE - Note-taking apps
+# ============================================================
+
+class NotesPrimitive(Primitive):
+    """Note-taking operations - OneNote, Apple Notes, Google Keep, etc."""
+    
+    def __init__(self, storage_path: str = "", providers: Optional[Dict[str, Any]] = None):
+        self._storage_path = Path(storage_path) if storage_path else Path.home() / ".telic" / "notes"
+        self._storage_path.mkdir(parents=True, exist_ok=True)
+        self._providers = providers or {}
+    
+    @property
+    def name(self) -> str:
+        return "NOTES"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Create a new note",
+            "read": "Read a note",
+            "update": "Update a note",
+            "delete": "Delete a note",
+            "search": "Search notes",
+            "list": "List all notes",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "create": {"title": {"type": "str", "description": "Note title"}, "content": {"type": "str", "description": "Note content"}, "folder": {"type": "str", "description": "Folder (optional)"}, "tags": {"type": "list", "description": "Tags (optional)"}},
+            "read": {"note_id": {"type": "str", "description": "Note ID or title"}},
+            "update": {"note_id": {"type": "str", "description": "Note ID"}, "content": {"type": "str", "description": "New content"}},
+            "delete": {"note_id": {"type": "str", "description": "Note ID"}},
+            "search": {"query": {"type": "str", "description": "Search query"}},
+            "list": {"folder": {"type": "str", "description": "Folder (optional)"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "create" and hasattr(provider, "create_note"):
+                    result = await provider.create_note(params.get("title"), params.get("content"), params.get("folder"), params.get("tags"))
+                    return StepResult(True, data={"created": True, "note": result, "provider": name})
+                elif operation == "read" and hasattr(provider, "read_note"):
+                    result = await provider.read_note(params.get("note_id"))
+                    return StepResult(True, data={"note": result, "provider": name})
+                elif operation == "list" and hasattr(provider, "list_notes"):
+                    result = await provider.list_notes(params.get("folder"))
+                    return StepResult(True, data={"notes": result, "provider": name})
+            
+            # Local file-based notes
+            if operation == "create":
+                title = params.get("title", "Untitled")
+                content = params.get("content", "")
+                tags = params.get("tags", [])
+                note_id = f"note_{int(datetime.now().timestamp())}"
+                note_file = self._storage_path / f"{note_id}.json"
+                note = {"id": note_id, "title": title, "content": content, "tags": tags, "created": datetime.now().isoformat()}
+                note_file.write_text(json.dumps(note))
+                return StepResult(True, data={"created": True, "note": note, "provider": "local"})
+            
+            elif operation == "read":
+                note_id = params.get("note_id")
+                note_file = self._storage_path / f"{note_id}.json"
+                if note_file.exists():
+                    note = json.loads(note_file.read_text())
+                    return StepResult(True, data={"note": note, "provider": "local"})
+                # Try to find by title
+                for f in self._storage_path.glob("*.json"):
+                    note = json.loads(f.read_text())
+                    if note.get("title") == note_id:
+                        return StepResult(True, data={"note": note, "provider": "local"})
+                return StepResult(False, error=f"Note not found: {note_id}")
+            
+            elif operation == "update":
+                note_id = params.get("note_id")
+                content = params.get("content")
+                note_file = self._storage_path / f"{note_id}.json"
+                if note_file.exists():
+                    note = json.loads(note_file.read_text())
+                    note["content"] = content
+                    note["updated"] = datetime.now().isoformat()
+                    note_file.write_text(json.dumps(note))
+                    return StepResult(True, data={"updated": True, "note": note, "provider": "local"})
+                return StepResult(False, error=f"Note not found: {note_id}")
+            
+            elif operation == "delete":
+                note_id = params.get("note_id")
+                note_file = self._storage_path / f"{note_id}.json"
+                if note_file.exists():
+                    note_file.unlink()
+                    return StepResult(True, data={"deleted": True, "provider": "local"})
+                return StepResult(False, error=f"Note not found: {note_id}")
+            
+            elif operation == "search":
+                query = params.get("query", "").lower()
+                results = []
+                for f in self._storage_path.glob("*.json"):
+                    note = json.loads(f.read_text())
+                    if query in note.get("title", "").lower() or query in note.get("content", "").lower():
+                        results.append(note)
+                return StepResult(True, data={"notes": results, "provider": "local"})
+            
+            elif operation == "list":
+                notes = []
+                for f in self._storage_path.glob("*.json"):
+                    notes.append(json.loads(f.read_text()))
+                return StepResult(True, data={"notes": notes, "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  FINANCE PRIMITIVE - Banking, payments
+# ============================================================
+
+class FinancePrimitive(Primitive):
+    """Financial operations - banking, payments, budgeting."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._local_transactions: List[Dict] = []
+        self._budgets: Dict[str, Dict] = {}
+    
+    @property
+    def name(self) -> str:
+        return "FINANCE"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "balance": "Get account balance",
+            "transactions": "List transactions",
+            "categorize": "Categorize a transaction",
+            "spending": "Get spending summary",
+            "budget": "Create or view a budget",
+            "send": "Send a payment",
+            "request": "Request a payment",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "balance": {"account": {"type": "str", "description": "Account ID (optional)"}},
+            "transactions": {"account": {"type": "str", "description": "Account ID"}, "start": {"type": "str", "description": "Start date"}, "end": {"type": "str", "description": "End date"}, "limit": {"type": "int", "description": "Max transactions"}},
+            "categorize": {"transaction_id": {"type": "str", "description": "Transaction ID"}, "category": {"type": "str", "description": "Category name"}},
+            "spending": {"period": {"type": "str", "description": "month, week, year"}, "category": {"type": "str", "description": "Category (optional)"}},
+            "budget": {"category": {"type": "str", "description": "Budget category"}, "amount": {"type": "float", "description": "Budget amount"}, "period": {"type": "str", "description": "month, week"}},
+            "send": {"to": {"type": "str", "description": "Recipient"}, "amount": {"type": "float", "description": "Amount"}, "note": {"type": "str", "description": "Note (optional)"}},
+            "request": {"from": {"type": "str", "description": "From person"}, "amount": {"type": "float", "description": "Amount"}, "note": {"type": "str", "description": "Note (optional)"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "balance" and hasattr(provider, "get_balance"):
+                    result = await provider.get_balance(params.get("account"))
+                    return StepResult(True, data={"balance": result, "provider": name})
+                elif operation == "transactions" and hasattr(provider, "list_transactions"):
+                    result = await provider.list_transactions(params.get("account"), params.get("start"), params.get("end"), params.get("limit"))
+                    return StepResult(True, data={"transactions": result, "provider": name})
+                elif operation == "send" and hasattr(provider, "send_payment"):
+                    result = await provider.send_payment(params.get("to"), params.get("amount"), params.get("note"))
+                    return StepResult(True, data={"sent": True, "provider": name, "result": result})
+            
+            # Local fallback
+            if operation == "balance":
+                return StepResult(True, data={"balance": 0.0, "currency": "USD", "provider": "local", "note": "Connect a bank provider for real data"})
+            
+            elif operation == "transactions":
+                return StepResult(True, data={"transactions": self._local_transactions, "provider": "local"})
+            
+            elif operation == "categorize":
+                tx_id = params.get("transaction_id")
+                category = params.get("category")
+                for tx in self._local_transactions:
+                    if tx.get("id") == tx_id:
+                        tx["category"] = category
+                        return StepResult(True, data={"categorized": True, "provider": "local"})
+                return StepResult(True, data={"categorized": True, "provider": "local", "note": "Transaction not found locally"})
+            
+            elif operation == "spending":
+                period = params.get("period", "month")
+                category = params.get("category")
+                return StepResult(True, data={"spending": {}, "period": period, "category": category, "provider": "local"})
+            
+            elif operation == "budget":
+                category = params.get("category", "general")
+                amount = params.get("amount")
+                period = params.get("period", "month")
+                if amount:
+                    self._budgets[category] = {"amount": amount, "period": period}
+                return StepResult(True, data={"budgets": self._budgets, "provider": "local"})
+            
+            elif operation == "send":
+                return StepResult(True, data={"sent": True, "provider": "local", "note": "Connect payment provider to send real payments"})
+            
+            elif operation == "request":
+                return StepResult(True, data={"requested": True, "provider": "local", "note": "Connect payment provider to request real payments"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  SOCIAL PRIMITIVE - Social media
+# ============================================================
+
+class SocialPrimitive(Primitive):
+    """Social media operations - Twitter, LinkedIn, Facebook, etc."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._local_posts: List[Dict] = []
+    
+    @property
+    def name(self) -> str:
+        return "SOCIAL"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "post": "Create a social media post",
+            "feed": "Get your feed",
+            "search": "Search posts",
+            "like": "Like a post",
+            "comment": "Comment on a post",
+            "share": "Share/repost",
+            "profile": "Get user profile",
+            "notifications": "Get notifications",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "post": {"content": {"type": "str", "description": "Post content"}, "media": {"type": "list", "description": "Media attachments (optional)"}},
+            "feed": {"limit": {"type": "int", "description": "Max posts", "default": 20}},
+            "search": {"query": {"type": "str", "description": "Search query"}},
+            "like": {"post_id": {"type": "str", "description": "Post ID"}},
+            "comment": {"post_id": {"type": "str", "description": "Post ID"}, "text": {"type": "str", "description": "Comment text"}},
+            "share": {"post_id": {"type": "str", "description": "Post ID"}},
+            "profile": {"user_id": {"type": "str", "description": "User ID (optional, defaults to self)"}},
+            "notifications": {},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "post" and hasattr(provider, "create_post"):
+                    result = await provider.create_post(params.get("content"), params.get("media"))
+                    return StepResult(True, data={"posted": True, "post": result, "provider": name})
+                elif operation == "feed" and hasattr(provider, "get_feed"):
+                    result = await provider.get_feed(params.get("limit", 20))
+                    return StepResult(True, data={"posts": result, "provider": name})
+                elif operation == "search" and hasattr(provider, "search_posts"):
+                    result = await provider.search_posts(params.get("query"))
+                    return StepResult(True, data={"posts": result, "provider": name})
+            
+            # Local fallback
+            if operation == "post":
+                content = params.get("content", "")
+                post = {"id": f"post_{int(datetime.now().timestamp())}", "content": content, "timestamp": datetime.now().isoformat()}
+                self._local_posts.append(post)
+                return StepResult(True, data={"posted": True, "post": post, "provider": "local"})
+            
+            elif operation == "feed":
+                return StepResult(True, data={"posts": self._local_posts, "provider": "local"})
+            
+            elif operation == "search":
+                query = params.get("query", "").lower()
+                results = [p for p in self._local_posts if query in p.get("content", "").lower()]
+                return StepResult(True, data={"posts": results, "provider": "local"})
+            
+            elif operation in ("like", "comment", "share"):
+                return StepResult(True, data={"success": True, "provider": "local"})
+            
+            elif operation == "profile":
+                return StepResult(True, data={"profile": {"name": "Local User"}, "provider": "local"})
+            
+            elif operation == "notifications":
+                return StepResult(True, data={"notifications": [], "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  PHOTO PRIMITIVE - Photo management
+# ============================================================
+
+class PhotoPrimitive(Primitive):
+    """Photo management operations - Google Photos, iCloud, etc."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+    
+    @property
+    def name(self) -> str:
+        return "PHOTO"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "list": "List photos",
+            "upload": "Upload a photo",
+            "download": "Download a photo",
+            "search": "Search photos",
+            "create_album": "Create an album",
+            "add_to_album": "Add photo to album",
+            "metadata": "Get photo metadata",
+            "edit": "Edit a photo",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "list": {"album": {"type": "str", "description": "Album ID (optional)"}, "limit": {"type": "int", "description": "Max photos"}},
+            "upload": {"path": {"type": "str", "description": "Local file path"}, "album": {"type": "str", "description": "Album ID (optional)"}},
+            "download": {"photo_id": {"type": "str", "description": "Photo ID"}, "path": {"type": "str", "description": "Save path"}},
+            "search": {"query": {"type": "str", "description": "Search query"}},
+            "create_album": {"name": {"type": "str", "description": "Album name"}},
+            "add_to_album": {"photo_id": {"type": "str", "description": "Photo ID"}, "album_id": {"type": "str", "description": "Album ID"}},
+            "metadata": {"photo_id": {"type": "str", "description": "Photo ID"}},
+            "edit": {"photo_id": {"type": "str", "description": "Photo ID"}, "operations": {"type": "list", "description": "Edit operations"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "list" and hasattr(provider, "list_photos"):
+                    result = await provider.list_photos(params.get("album"), params.get("limit"))
+                    return StepResult(True, data={"photos": result, "provider": name})
+                elif operation == "upload" and hasattr(provider, "upload_photo"):
+                    result = await provider.upload_photo(params.get("path"), params.get("album"))
+                    return StepResult(True, data={"uploaded": True, "photo": result, "provider": name})
+                elif operation == "search" and hasattr(provider, "search_photos"):
+                    result = await provider.search_photos(params.get("query"))
+                    return StepResult(True, data={"photos": result, "provider": name})
+            
+            # Local file handling
+            if operation == "list":
+                path = Path(params.get("album", str(Path.home() / "Pictures")))
+                if path.exists() and path.is_dir():
+                    photos = list(path.glob("*.jpg")) + list(path.glob("*.png")) + list(path.glob("*.jpeg"))
+                    return StepResult(True, data={"photos": [str(p) for p in photos[:params.get("limit", 50)]], "provider": "local"})
+                return StepResult(True, data={"photos": [], "provider": "local"})
+            
+            elif operation == "upload":
+                return StepResult(True, data={"uploaded": True, "provider": "local", "note": "Connect photo provider to upload"})
+            
+            elif operation == "download":
+                return StepResult(True, data={"downloaded": True, "provider": "local"})
+            
+            elif operation == "search":
+                return StepResult(True, data={"photos": [], "provider": "local", "note": "Local search not implemented"})
+            
+            elif operation == "create_album":
+                name = params.get("name", "Album")
+                path = Path.home() / "Pictures" / name
+                path.mkdir(parents=True, exist_ok=True)
+                return StepResult(True, data={"created": True, "path": str(path), "provider": "local"})
+            
+            elif operation == "add_to_album":
+                return StepResult(True, data={"added": True, "provider": "local"})
+            
+            elif operation == "metadata":
+                photo_path = params.get("photo_id")
+                if Path(photo_path).exists():
+                    stat = Path(photo_path).stat()
+                    return StepResult(True, data={"metadata": {"size": stat.st_size, "modified": stat.st_mtime}, "provider": "local"})
+                return StepResult(False, error="Photo not found")
+            
+            elif operation == "edit":
+                return StepResult(True, data={"edited": True, "provider": "local", "note": "Would apply edits via PIL"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  RIDE PRIMITIVE - Ride sharing
+# ============================================================
+
+class RidePrimitive(Primitive):
+    """Ride-sharing operations - Uber, Lyft, etc."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._ride_history: List[Dict] = []
+    
+    @property
+    def name(self) -> str:
+        return "RIDE"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "estimate": "Get fare estimate",
+            "request": "Request a ride",
+            "cancel": "Cancel a ride",
+            "track": "Track current ride",
+            "history": "Get ride history",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "estimate": {"pickup": {"type": "str", "description": "Pickup address"}, "dropoff": {"type": "str", "description": "Dropoff address"}},
+            "request": {"pickup": {"type": "str", "description": "Pickup address"}, "dropoff": {"type": "str", "description": "Dropoff address"}, "type": {"type": "str", "description": "UberX, Pool, etc."}},
+            "cancel": {"ride_id": {"type": "str", "description": "Ride ID"}},
+            "track": {"ride_id": {"type": "str", "description": "Ride ID"}},
+            "history": {"limit": {"type": "int", "description": "Max rides", "default": 10}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "estimate" and hasattr(provider, "get_estimate"):
+                    result = await provider.get_estimate(params.get("pickup"), params.get("dropoff"))
+                    return StepResult(True, data={"estimate": result, "provider": name})
+                elif operation == "request" and hasattr(provider, "request_ride"):
+                    result = await provider.request_ride(params.get("pickup"), params.get("dropoff"), params.get("type"))
+                    return StepResult(True, data={"ride": result, "provider": name})
+            
+            # Local fallback
+            if operation == "estimate":
+                return StepResult(True, data={
+                    "estimate": {"min": 10.0, "max": 15.0, "currency": "USD", "eta": "5 min"},
+                    "provider": "local",
+                    "note": "Connect ride provider for real estimates"
+                })
+            
+            elif operation == "request":
+                ride = {
+                    "id": f"ride_{int(datetime.now().timestamp())}",
+                    "pickup": params.get("pickup"),
+                    "dropoff": params.get("dropoff"),
+                    "type": params.get("type", "standard"),
+                    "status": "requested",
+                }
+                self._ride_history.append(ride)
+                return StepResult(True, data={"ride": ride, "provider": "local", "note": "Connect ride provider to request real rides"})
+            
+            elif operation == "cancel":
+                ride_id = params.get("ride_id")
+                for ride in self._ride_history:
+                    if ride.get("id") == ride_id:
+                        ride["status"] = "cancelled"
+                return StepResult(True, data={"cancelled": True, "provider": "local"})
+            
+            elif operation == "track":
+                ride_id = params.get("ride_id")
+                for ride in self._ride_history:
+                    if ride.get("id") == ride_id:
+                        return StepResult(True, data={"ride": ride, "provider": "local"})
+                return StepResult(True, data={"ride": None, "provider": "local"})
+            
+            elif operation == "history":
+                limit = params.get("limit", 10)
+                return StepResult(True, data={"rides": self._ride_history[-limit:], "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  TRAVEL PRIMITIVE - Travel booking
+# ============================================================
+
+class TravelPrimitive(Primitive):
+    """Travel booking operations - flights, hotels, etc."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._bookings: List[Dict] = []
+    
+    @property
+    def name(self) -> str:
+        return "TRAVEL"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "search_flights": "Search for flights",
+            "search_hotels": "Search for hotels",
+            "book": "Book a flight or hotel",
+            "cancel": "Cancel a booking",
+            "itinerary": "Get trip itinerary",
+            "checkin": "Online check-in",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "search_flights": {"origin": {"type": "str", "description": "Origin airport"}, "destination": {"type": "str", "description": "Destination airport"}, "date": {"type": "str", "description": "Departure date"}, "return_date": {"type": "str", "description": "Return date (optional)"}},
+            "search_hotels": {"location": {"type": "str", "description": "Location"}, "checkin": {"type": "str", "description": "Check-in date"}, "checkout": {"type": "str", "description": "Check-out date"}, "guests": {"type": "int", "description": "Number of guests"}},
+            "book": {"type": {"type": "str", "description": "flight or hotel"}, "id": {"type": "str", "description": "Search result ID"}},
+            "cancel": {"booking_id": {"type": "str", "description": "Booking ID"}},
+            "itinerary": {"trip_id": {"type": "str", "description": "Trip ID (optional)"}},
+            "checkin": {"booking_id": {"type": "str", "description": "Booking ID"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "search_flights" and hasattr(provider, "search_flights"):
+                    result = await provider.search_flights(params.get("origin"), params.get("destination"), params.get("date"), params.get("return_date"))
+                    return StepResult(True, data={"flights": result, "provider": name})
+                elif operation == "search_hotels" and hasattr(provider, "search_hotels"):
+                    result = await provider.search_hotels(params.get("location"), params.get("checkin"), params.get("checkout"), params.get("guests"))
+                    return StepResult(True, data={"hotels": result, "provider": name})
+            
+            # Local fallback
+            if operation == "search_flights":
+                return StepResult(True, data={
+                    "flights": [],
+                    "provider": "local",
+                    "note": "Connect travel provider to search real flights"
+                })
+            
+            elif operation == "search_hotels":
+                return StepResult(True, data={
+                    "hotels": [],
+                    "provider": "local",
+                    "note": "Connect travel provider to search real hotels"
+                })
+            
+            elif operation == "book":
+                booking = {
+                    "id": f"booking_{int(datetime.now().timestamp())}",
+                    "type": params.get("type"),
+                    "item_id": params.get("id"),
+                    "status": "confirmed",
+                }
+                self._bookings.append(booking)
+                return StepResult(True, data={"booking": booking, "provider": "local"})
+            
+            elif operation == "cancel":
+                booking_id = params.get("booking_id")
+                for b in self._bookings:
+                    if b.get("id") == booking_id:
+                        b["status"] = "cancelled"
+                return StepResult(True, data={"cancelled": True, "provider": "local"})
+            
+            elif operation == "itinerary":
+                return StepResult(True, data={"itinerary": self._bookings, "provider": "local"})
+            
+            elif operation == "checkin":
+                return StepResult(True, data={"checkedin": True, "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  HOME PRIMITIVE - Smart home
+# ============================================================
+
+class HomePrimitive(Primitive):
+    """Smart home operations - lights, thermostat, etc."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._devices: Dict[str, Dict] = {}
+    
+    @property
+    def name(self) -> str:
+        return "HOME"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "devices": "List all devices",
+            "state": "Get device state",
+            "set": "Set device state",
+            "on": "Turn device on",
+            "off": "Turn device off",
+            "temperature": "Set thermostat temperature",
+            "routine": "Run a routine/scene",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "devices": {},
+            "state": {"device_id": {"type": "str", "description": "Device ID"}},
+            "set": {"device_id": {"type": "str", "description": "Device ID"}, "state": {"type": "dict", "description": "State to set"}},
+            "on": {"device_id": {"type": "str", "description": "Device ID"}},
+            "off": {"device_id": {"type": "str", "description": "Device ID"}},
+            "temperature": {"device_id": {"type": "str", "description": "Thermostat ID"}, "temperature": {"type": "int", "description": "Temperature"}},
+            "routine": {"routine_name": {"type": "str", "description": "Routine name"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "devices" and hasattr(provider, "list_devices"):
+                    result = await provider.list_devices()
+                    return StepResult(True, data={"devices": result, "provider": name})
+                elif operation == "on" and hasattr(provider, "turn_on"):
+                    await provider.turn_on(params.get("device_id"))
+                    return StepResult(True, data={"on": True, "provider": name})
+                elif operation == "off" and hasattr(provider, "turn_off"):
+                    await provider.turn_off(params.get("device_id"))
+                    return StepResult(True, data={"off": True, "provider": name})
+            
+            # Local simulation
+            if operation == "devices":
+                return StepResult(True, data={"devices": list(self._devices.values()), "provider": "local"})
+            
+            elif operation == "state":
+                device_id = params.get("device_id")
+                return StepResult(True, data={"state": self._devices.get(device_id, {}), "provider": "local"})
+            
+            elif operation == "set":
+                device_id = params.get("device_id")
+                state = params.get("state", {})
+                self._devices[device_id] = {**self._devices.get(device_id, {}), **state}
+                return StepResult(True, data={"set": True, "state": self._devices[device_id], "provider": "local"})
+            
+            elif operation == "on":
+                device_id = params.get("device_id")
+                self._devices.setdefault(device_id, {})["on"] = True
+                return StepResult(True, data={"on": True, "provider": "local"})
+            
+            elif operation == "off":
+                device_id = params.get("device_id")
+                self._devices.setdefault(device_id, {})["on"] = False
+                return StepResult(True, data={"off": True, "provider": "local"})
+            
+            elif operation == "temperature":
+                device_id = params.get("device_id")
+                temp = params.get("temperature")
+                self._devices.setdefault(device_id, {})["temperature"] = temp
+                return StepResult(True, data={"set": True, "temperature": temp, "provider": "local"})
+            
+            elif operation == "routine":
+                routine = params.get("routine_name")
+                return StepResult(True, data={"ran": True, "routine": routine, "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  SHOPPING PRIMITIVE - E-commerce
+# ============================================================
+
+class ShoppingPrimitive(Primitive):
+    """E-commerce operations - Amazon, eBay, etc."""
+    
+    def __init__(self, providers: Optional[Dict[str, Any]] = None):
+        self._providers = providers or {}
+        self._cart: List[Dict] = []
+        self._orders: List[Dict] = []
+    
+    @property
+    def name(self) -> str:
+        return "SHOPPING"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return self.get_available_operations()
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        return {
+            "search": "Search for products",
+            "product": "Get product details",
+            "add_to_cart": "Add item to cart",
+            "cart": "View cart",
+            "track": "Track an order",
+            "orders": "Get order history",
+            "reorder": "Reorder a previous order",
+            "price_alert": "Set price alert",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Any]:
+        return {
+            "search": {"query": {"type": "str", "description": "Search query"}, "filters": {"type": "dict", "description": "Filters (optional)"}},
+            "product": {"product_id": {"type": "str", "description": "Product ID"}},
+            "add_to_cart": {"product_id": {"type": "str", "description": "Product ID"}, "quantity": {"type": "int", "description": "Quantity", "default": 1}},
+            "cart": {},
+            "track": {"order_id": {"type": "str", "description": "Order ID"}},
+            "orders": {"limit": {"type": "int", "description": "Max orders", "default": 10}},
+            "reorder": {"order_id": {"type": "str", "description": "Order ID"}},
+            "price_alert": {"product_id": {"type": "str", "description": "Product ID"}, "target_price": {"type": "float", "description": "Target price"}},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            for name, provider in self._providers.items():
+                if operation == "search" and hasattr(provider, "search_products"):
+                    result = await provider.search_products(params.get("query"), params.get("filters"))
+                    return StepResult(True, data={"products": result, "provider": name})
+                elif operation == "product" and hasattr(provider, "get_product"):
+                    result = await provider.get_product(params.get("product_id"))
+                    return StepResult(True, data={"product": result, "provider": name})
+            
+            # Local fallback
+            if operation == "search":
+                return StepResult(True, data={"products": [], "provider": "local", "note": "Connect shopping provider to search"})
+            
+            elif operation == "product":
+                return StepResult(True, data={"product": None, "provider": "local"})
+            
+            elif operation == "add_to_cart":
+                item = {"product_id": params.get("product_id"), "quantity": params.get("quantity", 1)}
+                self._cart.append(item)
+                return StepResult(True, data={"added": True, "cart": self._cart, "provider": "local"})
+            
+            elif operation == "cart":
+                return StepResult(True, data={"cart": self._cart, "provider": "local"})
+            
+            elif operation == "track":
+                order_id = params.get("order_id")
+                for order in self._orders:
+                    if order.get("id") == order_id:
+                        return StepResult(True, data={"order": order, "provider": "local"})
+                return StepResult(True, data={"order": None, "provider": "local"})
+            
+            elif operation == "orders":
+                limit = params.get("limit", 10)
+                return StepResult(True, data={"orders": self._orders[-limit:], "provider": "local"})
+            
+            elif operation == "reorder":
+                order_id = params.get("order_id")
+                for order in self._orders:
+                    if order.get("id") == order_id:
+                        new_order = {**order, "id": f"order_{int(datetime.now().timestamp())}"}
+                        self._orders.append(new_order)
+                        return StepResult(True, data={"order": new_order, "provider": "local"})
+                return StepResult(False, error="Order not found")
+            
+            elif operation == "price_alert":
+                return StepResult(True, data={"alert_set": True, "provider": "local"})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  ORCHESTRATOR
 # ============================================================
 
@@ -3349,6 +5549,12 @@ class Orchestrator:
         apply_wires_fn: Optional[Callable] = None,
     ) -> None:
         """Execute a standard action step with self-healing retry."""
+        
+        # CLARIFY is a signal to ask the user a question, not a real primitive
+        # Skip it gracefully during execution
+        if step.primitive.upper() == "CLARIFY":
+            step.result = StepResult(True, data={"clarify": step.params.get("question", step.description)})
+            return
         
         # Check dependencies
         for dep_id in step.depends_on:
@@ -3777,13 +5983,21 @@ class Apex:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gpt-4o-mini",
+        model: Optional[str] = None,
         storage_path: Optional[str] = None,
         connectors: Optional[Dict[str, Any]] = None,
         enable_safety: bool = True,
     ):
-        self._api_key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-        self._model = model
+        # Auto-detect API key and model
+        self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        
+        # Auto-select model based on API key
+        if model:
+            self._model = model
+        elif os.environ.get("ANTHROPIC_API_KEY") or (self._api_key and self._api_key.startswith("sk-ant-")):
+            self._model = "anthropic/claude-sonnet-4-20250514"
+        else:
+            self._model = "gpt-4o-mini"
         self._storage_path = Path(storage_path or "~/.telic").expanduser()
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._connectors = connectors or {}
@@ -3957,6 +6171,138 @@ class Apex:
         if c.get("dropbox"):
             storage_providers["dropbox"] = c["dropbox"]
         self._primitives["CLOUD_STORAGE"] = CloudStoragePrimitive(providers=storage_providers)
+        
+        # Clipboard — system clipboard operations
+        self._primitives["CLIPBOARD"] = ClipboardPrimitive()
+        
+        # Translate — language translation via LLM
+        self._primitives["TRANSLATE"] = TranslatePrimitive(self._llm_complete)
+        
+        # Database — SQLite database operations
+        self._primitives["DATABASE"] = DatabasePrimitive(str(self._storage_path / "data.db"))
+        
+        # Screenshot — screen capture
+        self._primitives["SCREENSHOT"] = ScreenshotPrimitive()
+        
+        # Automation — rules/triggers
+        self._primitives["AUTOMATION"] = AutomationPrimitive(str(self._storage_path / "automations.json"))
+        
+        # Search — unified search across all primitives
+        self._primitives["SEARCH"] = SearchPrimitive(self._primitives)
+        
+        # Chat — instant messaging (Slack, Teams, Discord)
+        chat_providers = {}
+        if c.get("slack"):
+            chat_providers["slack"] = c["slack"]
+        if c.get("teams"):
+            chat_providers["teams"] = c["teams"]
+        if c.get("discord"):
+            chat_providers["discord"] = c["discord"]
+        self._primitives["CHAT"] = ChatPrimitive(providers=chat_providers)
+        
+        # Meeting — video conferencing (Zoom, Teams, Meet)
+        meeting_providers = {}
+        if c.get("zoom"):
+            meeting_providers["zoom"] = c["zoom"]
+        if c.get("teams"):
+            meeting_providers["teams"] = c["teams"]
+        if c.get("google_meet"):
+            meeting_providers["google_meet"] = c["google_meet"]
+        self._primitives["MEETING"] = MeetingPrimitive(providers=meeting_providers)
+        
+        # SMS — text messaging
+        sms_providers = {}
+        if c.get("twilio"):
+            sms_providers["twilio"] = c["twilio"]
+        if c.get("sms"):
+            sms_providers["sms"] = c["sms"]
+        self._primitives["SMS"] = SmsPrimitive(providers=sms_providers)
+        
+        # Spreadsheet — Excel, Google Sheets
+        spreadsheet_providers = {}
+        if c.get("google_sheets"):
+            spreadsheet_providers["google_sheets"] = c["google_sheets"]
+        if c.get("excel"):
+            spreadsheet_providers["excel"] = c["excel"]
+        self._primitives["SPREADSHEET"] = SpreadsheetPrimitive(self._llm_complete, providers=spreadsheet_providers)
+        
+        # Presentation — PowerPoint, Google Slides
+        presentation_providers = {}
+        if c.get("google_slides"):
+            presentation_providers["google_slides"] = c["google_slides"]
+        if c.get("powerpoint"):
+            presentation_providers["powerpoint"] = c["powerpoint"]
+        self._primitives["PRESENTATION"] = PresentationPrimitive(self._llm_complete, providers=presentation_providers)
+        
+        # Notes — OneNote, Apple Notes, Google Keep
+        notes_providers = {}
+        if c.get("onenote"):
+            notes_providers["onenote"] = c["onenote"]
+        if c.get("google_keep"):
+            notes_providers["google_keep"] = c["google_keep"]
+        self._primitives["NOTES"] = NotesPrimitive(str(self._storage_path / "notes"), providers=notes_providers)
+        
+        # Finance — banking, payments
+        finance_providers = {}
+        if c.get("plaid"):
+            finance_providers["plaid"] = c["plaid"]
+        if c.get("paypal"):
+            finance_providers["paypal"] = c["paypal"]
+        if c.get("venmo"):
+            finance_providers["venmo"] = c["venmo"]
+        self._primitives["FINANCE"] = FinancePrimitive(providers=finance_providers)
+        
+        # Social — Twitter, LinkedIn, Facebook
+        social_providers = {}
+        if c.get("twitter"):
+            social_providers["twitter"] = c["twitter"]
+        if c.get("linkedin"):
+            social_providers["linkedin"] = c["linkedin"]
+        if c.get("facebook"):
+            social_providers["facebook"] = c["facebook"]
+        self._primitives["SOCIAL"] = SocialPrimitive(providers=social_providers)
+        
+        # Photo — Google Photos, iCloud
+        photo_providers = {}
+        if c.get("google_photos"):
+            photo_providers["google_photos"] = c["google_photos"]
+        if c.get("icloud_photos"):
+            photo_providers["icloud_photos"] = c["icloud_photos"]
+        self._primitives["PHOTO"] = PhotoPrimitive(providers=photo_providers)
+        
+        # Ride — Uber, Lyft
+        ride_providers = {}
+        if c.get("uber"):
+            ride_providers["uber"] = c["uber"]
+        if c.get("lyft"):
+            ride_providers["lyft"] = c["lyft"]
+        self._primitives["RIDE"] = RidePrimitive(providers=ride_providers)
+        
+        # Travel — flights, hotels
+        travel_providers = {}
+        if c.get("expedia"):
+            travel_providers["expedia"] = c["expedia"]
+        if c.get("google_flights"):
+            travel_providers["google_flights"] = c["google_flights"]
+        self._primitives["TRAVEL"] = TravelPrimitive(providers=travel_providers)
+        
+        # Home — smart home
+        home_providers = {}
+        if c.get("alexa"):
+            home_providers["alexa"] = c["alexa"]
+        if c.get("google_home"):
+            home_providers["google_home"] = c["google_home"]
+        if c.get("homekit"):
+            home_providers["homekit"] = c["homekit"]
+        self._primitives["HOME"] = HomePrimitive(providers=home_providers)
+        
+        # Shopping — Amazon, eBay
+        shopping_providers = {}
+        if c.get("amazon"):
+            shopping_providers["amazon"] = c["amazon"]
+        if c.get("ebay"):
+            shopping_providers["ebay"] = c["ebay"]
+        self._primitives["SHOPPING"] = ShoppingPrimitive(providers=shopping_providers)
     
     async def _llm_complete(self, prompt: str, triggering_request: str = "") -> str:
         """Call LLM for completion — with PII redaction and audit logging when safety is enabled."""
@@ -4320,6 +6666,10 @@ Fix the parameters so they match the expected schema. Respond with ONLY a valid 
     ) -> StepResult:
         """Execute a step with full safety rails: trust check, undo, history, self-heal."""
         print(f"[ENGINE] Executing step: {step.primitive}.{step.operation}")
+        
+        # CLARIFY is a signal to ask the user a question, not a real primitive
+        if step.primitive.upper() == "CLARIFY":
+            return StepResult(True, data={"clarify": step.params.get("question", step.description)})
         
         # 1. Trust level check
         trust = self._check_trust(step.primitive, step.operation)

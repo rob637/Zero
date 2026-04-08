@@ -98,6 +98,44 @@ from .youtube import YouTubeConnector, YouTubeVideo
 # Web search
 from .web_search import WebSearchConnector, SearchResult
 
+# Core infrastructure
+from .credentials import (
+    CredentialStore,
+    CredentialBackend,
+    EncryptedFileBackend,
+    MemoryBackend,
+    StoredCredential,
+    CredentialType,
+    get_credential_store,
+    reset_credential_store,
+)
+from .registry import (
+    ConnectorRegistry,
+    ConnectorMetadata,
+    ConnectionStatus,
+    ConnectorHealth,
+    BaseConnector,
+    get_registry,
+    reset_registry,
+)
+from .oauth_flow import (
+    OAuthFlow,
+    OAuthProviderConfig,
+    PendingAuth,
+    OAUTH_PROVIDERS,
+    get_oauth_flow,
+    reset_oauth_flow,
+)
+from .resolver import (
+    PrimitiveResolver,
+    ExecutionMode,
+    AggregationStrategy,
+    ProviderResult,
+    ResolverResult,
+    get_resolver,
+    reset_resolver,
+)
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -181,5 +219,20 @@ __all__ = [
     'SearchResult',
     # Desktop Notifications
     'DesktopNotifyConnector',
+    # OAuth Flow
+    'OAuthFlow',
+    'OAuthProviderConfig',
+    'PendingAuth',
+    'OAUTH_PROVIDERS',
+    'get_oauth_flow',
+    'reset_oauth_flow',
+    # Primitive Resolver
+    'PrimitiveResolver',
+    'ExecutionMode',
+    'AggregationStrategy',
+    'ProviderResult',
+    'ResolverResult',
+    'get_resolver',
+    'reset_resolver',
 ]
 

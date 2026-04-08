@@ -1,0 +1,2 @@
+Date,Vendor,Amount,Category,Items,File Path
+{{step_4.date}},{{step_4.vendor}},{{step_4.amount}},{{step_4.category}},{{step_4.items}},{{step_0.results[0].path}}

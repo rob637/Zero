@@ -6,7 +6,7 @@ Idea incubator. Rapid prototyping space for concepts.
 
 | Concept | Status | Notes |
 |---------|--------|-------|
-| [Apex](apex/) | 📋 Planning | Privacy-first Personal AI Operating Layer. Local-first agent that manages files, memories, and workflows. |
+| [Telic / Apex](apex/) | 🚀 Ready | AI Operating System that lives on your PC. Connects all your services, organizes your digital life - always with your approval. |
 
 ## Archive
 

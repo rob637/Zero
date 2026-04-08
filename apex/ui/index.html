@@ -1637,7 +1637,7 @@
         }
         
         function openSettings() {
-            addMessage(`**Settings**\n\nConfigure integrations via environment variables in .env:\n\n• **LLM**: ANTHROPIC_API_KEY or OPENAI_API_KEY\n• **GitHub**: GITHUB_TOKEN\n• **Jira**: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN\n• **Slack**: SLACK_BOT_TOKEN\n\nCalendar events are saved locally to ~/.telic/calendar.json\n\nFull settings panel coming in a future update!`, 'system');
+            window.location.href = '/setup';
         }
 
         // ============================================
