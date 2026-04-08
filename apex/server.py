@@ -855,6 +855,201 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                     "provider": provider,
                 })
         
+        # For Microsoft, check env vars
+        if provider == "microsoft":
+            client_id = os.environ.get("MICROSOFT_CLIENT_ID")
+            client_secret = os.environ.get("MICROSOFT_CLIENT_SECRET")
+            
+            print(f"[MICROSOFT] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
+            
+            if client_id and client_secret:
+                import secrets
+                state = secrets.token_urlsafe(32)
+                
+                # Microsoft OAuth scopes for Graph API
+                microsoft_scopes = [
+                    "openid",
+                    "email", 
+                    "profile",
+                    "offline_access",
+                    "User.Read",
+                    "Mail.Read",
+                    "Mail.Send",
+                    "Mail.ReadWrite",
+                    "Calendars.Read",
+                    "Calendars.ReadWrite",
+                    "Files.Read",
+                    "Files.ReadWrite", 
+                    "Tasks.Read",
+                    "Tasks.ReadWrite",
+                    "Contacts.Read",
+                ]
+                scope_str = "%20".join(microsoft_scopes)
+                
+                redirect_uri = "http://localhost:8000/oauth/callback"
+                auth_url = (
+                    f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+                    f"?client_id={client_id}"
+                    f"&redirect_uri={redirect_uri}"
+                    f"&response_type=code"
+                    f"&scope={scope_str}"
+                    f"&state={state}"
+                )
+                
+                _oauth_pending_states[state] = {
+                    "provider": "microsoft",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                }
+                
+                return JSONResponse({
+                    "auth_url": auth_url,
+                    "state": state,
+                    "provider": provider,
+                })
+            else:
+                print("⚠️ Microsoft credentials not found in .env")
+                return JSONResponse({
+                    "error": "Microsoft credentials not configured. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET to .env",
+                    "needs_setup": True,
+                }, status_code=400)
+        
+        # For Slack, check env vars
+        if provider == "slack":
+            client_id = os.environ.get("SLACK_CLIENT_ID")
+            client_secret = os.environ.get("SLACK_CLIENT_SECRET")
+            
+            print(f"[SLACK] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
+            
+            if client_id and client_secret:
+                import secrets
+                state = secrets.token_urlsafe(32)
+                
+                # Slack OAuth scopes
+                slack_scopes = [
+                    "channels:read",
+                    "channels:history",
+                    "chat:write",
+                    "users:read",
+                    "users:read.email",
+                    "team:read",
+                    "im:read",
+                    "im:history",
+                ]
+                scope_str = ",".join(slack_scopes)  # Slack uses comma-separated
+                
+                redirect_uri = "http://localhost:8000/oauth/callback"
+                auth_url = (
+                    f"https://slack.com/oauth/v2/authorize"
+                    f"?client_id={client_id}"
+                    f"&redirect_uri={redirect_uri}"
+                    f"&scope={scope_str}"
+                    f"&state={state}"
+                )
+                
+                _oauth_pending_states[state] = {
+                    "provider": "slack",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                }
+                
+                return JSONResponse({
+                    "auth_url": auth_url,
+                    "state": state,
+                    "provider": provider,
+                })
+            else:
+                print("⚠️ Slack credentials not found in .env")
+                return JSONResponse({
+                    "error": "Slack credentials not configured. Add SLACK_CLIENT_ID and SLACK_CLIENT_SECRET to .env",
+                    "needs_setup": True,
+                }, status_code=400)
+        
+        # For GitHub, check env vars
+        if provider == "github":
+            client_id = os.environ.get("GITHUB_CLIENT_ID")
+            client_secret = os.environ.get("GITHUB_CLIENT_SECRET")
+            
+            print(f"[GITHUB] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
+            
+            if client_id and client_secret:
+                import secrets
+                state = secrets.token_urlsafe(32)
+                
+                # GitHub OAuth scopes
+                github_scopes = ["user", "repo", "read:org"]
+                scope_str = "%20".join(github_scopes)
+                
+                redirect_uri = "http://localhost:8000/oauth/callback"
+                auth_url = (
+                    f"https://github.com/login/oauth/authorize"
+                    f"?client_id={client_id}"
+                    f"&redirect_uri={redirect_uri}"
+                    f"&scope={scope_str}"
+                    f"&state={state}"
+                )
+                
+                _oauth_pending_states[state] = {
+                    "provider": "github",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                }
+                
+                return JSONResponse({
+                    "auth_url": auth_url,
+                    "state": state,
+                    "provider": provider,
+                })
+            else:
+                print("⚠️ GitHub credentials not found in .env")
+                return JSONResponse({
+                    "error": "GitHub credentials not configured. Add GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to .env",
+                    "needs_setup": True,
+                }, status_code=400)
+        
+        # For Spotify, check env vars  
+        if provider == "spotify":
+            client_id = os.environ.get("SPOTIFY_CLIENT_ID")
+            client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
+            
+            if client_id and client_secret:
+                import secrets
+                state = secrets.token_urlsafe(32)
+                
+                spotify_scopes = [
+                    "user-read-private",
+                    "user-read-email",
+                    "user-read-playback-state",
+                    "user-modify-playback-state",
+                    "user-read-currently-playing",
+                    "playlist-read-private",
+                    "playlist-modify-public",
+                    "playlist-modify-private",
+                ]
+                scope_str = "%20".join(spotify_scopes)
+                
+                redirect_uri = "http://localhost:8000/oauth/callback"
+                auth_url = (
+                    f"https://accounts.spotify.com/authorize"
+                    f"?client_id={client_id}"
+                    f"&redirect_uri={redirect_uri}"
+                    f"&response_type=code"
+                    f"&scope={scope_str}"
+                    f"&state={state}"
+                )
+                
+                _oauth_pending_states[state] = {
+                    "provider": "spotify",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                }
+                
+                return JSONResponse({
+                    "auth_url": auth_url,
+                    "state": state,
+                    "provider": provider,
+                })
+        
         # For other providers, use generic OAuth flow (requires client credentials setup)
         from connectors.oauth_flow import get_oauth_flow
         flow = get_oauth_flow()
@@ -1126,6 +1321,332 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                             window.opener.postMessage({{
                                 type: 'oauth_success',
                                 provider: 'discord'
+                            }}, '*');
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    </script>
+                </body>
+                </html>
+                """)
+            
+            elif provider_used == "microsoft":
+                # Exchange code for Microsoft token
+                import httpx
+                
+                client_id = pending["client_id"]
+                client_secret = pending["client_secret"]
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                        data={
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "grant_type": "authorization_code",
+                            "code": code,
+                            "redirect_uri": "http://localhost:8000/oauth/callback",
+                        },
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"Microsoft token exchange failed: {response.text}")
+                    
+                    tokens = response.json()
+                
+                # Store tokens
+                store = get_cred_store()
+                store.save_token(
+                    provider="microsoft",
+                    access_token=tokens.get("access_token"),
+                    refresh_token=tokens.get("refresh_token"),
+                    expires_in=tokens.get("expires_in"),
+                    scopes=tokens.get("scope", "").split(),
+                )
+                
+                print(f"[OAUTH] Microsoft connected!")
+                
+                return HTMLResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Microsoft Connected</title>
+                    <style>
+                        body {{
+                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                            background: #0a0a0f;
+                            color: #f4f4f5;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                        }}
+                        .card {{ text-align: center; padding: 40px; }}
+                        .checkmark {{ font-size: 48px; margin-bottom: 16px; color: #00a4ef; }}
+                        h2 {{ margin-bottom: 8px; }}
+                        p {{ color: #a1a1aa; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="checkmark">✓</div>
+                        <h2>Microsoft Connected!</h2>
+                        <p>Outlook, OneDrive, Calendar, Tasks</p>
+                        <p>You can close this window.</p>
+                    </div>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{
+                                type: 'oauth_success',
+                                provider: 'microsoft'
+                            }}, '*');
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    </script>
+                </body>
+                </html>
+                """)
+            
+            elif provider_used == "slack":
+                # Exchange code for Slack token
+                import httpx
+                
+                client_id = pending["client_id"]
+                client_secret = pending["client_secret"]
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://slack.com/api/oauth.v2.access",
+                        data={
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "code": code,
+                            "redirect_uri": "http://localhost:8000/oauth/callback",
+                        },
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"Slack token exchange failed: {response.text}")
+                    
+                    data = response.json()
+                    if not data.get("ok"):
+                        raise Exception(f"Slack error: {data.get('error')}")
+                    
+                    tokens = data
+                
+                # Store tokens - Slack has different structure
+                store = get_cred_store()
+                store.save_token(
+                    provider="slack",
+                    access_token=tokens.get("access_token"),
+                    refresh_token=tokens.get("refresh_token"),
+                    expires_in=None,  # Slack tokens don't expire
+                    scopes=tokens.get("scope", "").split(","),
+                )
+                
+                team_name = tokens.get("team", {}).get("name", "Workspace")
+                print(f"[OAUTH] Slack connected to {team_name}!")
+                
+                return HTMLResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Slack Connected</title>
+                    <style>
+                        body {{
+                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                            background: #0a0a0f;
+                            color: #f4f4f5;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                        }}
+                        .card {{ text-align: center; padding: 40px; }}
+                        .checkmark {{ font-size: 48px; margin-bottom: 16px; color: #4a154b; }}
+                        h2 {{ margin-bottom: 8px; }}
+                        p {{ color: #a1a1aa; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="checkmark">✓</div>
+                        <h2>Slack Connected!</h2>
+                        <p>Workspace: {team_name}</p>
+                        <p>You can close this window.</p>
+                    </div>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{
+                                type: 'oauth_success',
+                                provider: 'slack'
+                            }}, '*');
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    </script>
+                </body>
+                </html>
+                """)
+            
+            elif provider_used == "github":
+                # Exchange code for GitHub token
+                import httpx
+                
+                client_id = pending["client_id"]
+                client_secret = pending["client_secret"]
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://github.com/login/oauth/access_token",
+                        data={
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "code": code,
+                        },
+                        headers={
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            "Accept": "application/json",
+                        },
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"GitHub token exchange failed: {response.text}")
+                    
+                    tokens = response.json()
+                    if "error" in tokens:
+                        raise Exception(f"GitHub error: {tokens.get('error_description', tokens.get('error'))}")
+                
+                # Store tokens
+                store = get_cred_store()
+                store.save_token(
+                    provider="github",
+                    access_token=tokens.get("access_token"),
+                    refresh_token=tokens.get("refresh_token"),
+                    expires_in=tokens.get("expires_in"),
+                    scopes=tokens.get("scope", "").split(","),
+                )
+                
+                print(f"[OAUTH] GitHub connected!")
+                
+                return HTMLResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>GitHub Connected</title>
+                    <style>
+                        body {{
+                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                            background: #0a0a0f;
+                            color: #f4f4f5;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                        }}
+                        .card {{ text-align: center; padding: 40px; }}
+                        .checkmark {{ font-size: 48px; margin-bottom: 16px; }}
+                        h2 {{ margin-bottom: 8px; }}
+                        p {{ color: #a1a1aa; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="checkmark">✓</div>
+                        <h2>GitHub Connected!</h2>
+                        <p>Repos, Issues, PRs</p>
+                        <p>You can close this window.</p>
+                    </div>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{
+                                type: 'oauth_success',
+                                provider: 'github'
+                            }}, '*');
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    </script>
+                </body>
+                </html>
+                """)
+            
+            elif provider_used == "spotify":
+                # Exchange code for Spotify token
+                import httpx
+                import base64
+                
+                client_id = pending["client_id"]
+                client_secret = pending["client_secret"]
+                auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://accounts.spotify.com/api/token",
+                        data={
+                            "grant_type": "authorization_code",
+                            "code": code,
+                            "redirect_uri": "http://localhost:8000/oauth/callback",
+                        },
+                        headers={
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            "Authorization": f"Basic {auth_header}",
+                        },
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"Spotify token exchange failed: {response.text}")
+                    
+                    tokens = response.json()
+                
+                # Store tokens
+                store = get_cred_store()
+                store.save_token(
+                    provider="spotify",
+                    access_token=tokens.get("access_token"),
+                    refresh_token=tokens.get("refresh_token"),
+                    expires_in=tokens.get("expires_in"),
+                    scopes=tokens.get("scope", "").split(),
+                )
+                
+                print(f"[OAUTH] Spotify connected!")
+                
+                return HTMLResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Spotify Connected</title>
+                    <style>
+                        body {{
+                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                            background: #0a0a0f;
+                            color: #f4f4f5;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                        }}
+                        .card {{ text-align: center; padding: 40px; }}
+                        .checkmark {{ font-size: 48px; margin-bottom: 16px; color: #1db954; }}
+                        h2 {{ margin-bottom: 8px; }}
+                        p {{ color: #a1a1aa; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="checkmark">✓</div>
+                        <h2>Spotify Connected!</h2>
+                        <p>Music playback enabled</p>
+                        <p>You can close this window.</p>
+                    </div>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{
+                                type: 'oauth_success',
+                                provider: 'spotify'
                             }}, '*');
                         }}
                         setTimeout(() => window.close(), 1500);
@@ -4267,11 +4788,28 @@ if __name__ == "__main__":
     else:
         print("✅ LLM API key configured")
     
-    # Check for Discord credentials
-    if os.environ.get("DISCORD_CLIENT_ID"):
-        print("✅ Discord OAuth configured")
-    else:
-        print("⚠️  Discord credentials not found in .env")
+    # Check for OAuth credentials
+    providers_configured = []
+    providers_missing = []
+    
+    oauth_providers = [
+        ("DISCORD", "DISCORD_CLIENT_ID"),
+        ("MICROSOFT", "MICROSOFT_CLIENT_ID"),
+        ("SLACK", "SLACK_CLIENT_ID"),
+        ("GITHUB", "GITHUB_CLIENT_ID"),
+        ("SPOTIFY", "SPOTIFY_CLIENT_ID"),
+    ]
+    
+    for name, env_var in oauth_providers:
+        if os.environ.get(env_var):
+            providers_configured.append(name.lower())
+        else:
+            providers_missing.append(name.lower())
+    
+    if providers_configured:
+        print(f"✅ OAuth configured: {', '.join(providers_configured)}")
+    if providers_missing:
+        print(f"⚠️  OAuth not configured: {', '.join(providers_missing)} (add to .env)")
     
     print("\n🌐 Opening http://localhost:8000 ...\n")
     

@@ -628,6 +628,9 @@
             twitter: '🐦',
             todoist: '✅',
             smartthings: '🏠',
+            notion: '📝',
+            linear: '🔲',
+            zoom: '📹',
         };
         
         // Token configuration per provider
@@ -687,14 +690,14 @@
 
         // Categorize services by setup difficulty
         const setupDifficulty = {
-            // One-Click: OAuth with pre-configured credentials
-            oneClick: ['google', 'discord'],
+            // One-Click: OAuth with pre-configured credentials (or env vars)
+            oneClick: ['google', 'discord', 'microsoft', 'slack', 'github', 'spotify'],
             
             // API Key: Just paste a token
-            apiKey: ['github', 'todoist', 'dropbox', 'twilio', 'smartthings', 'spotify'],
+            apiKey: ['todoist', 'dropbox', 'twilio', 'smartthings', 'notion', 'linear'],
             
-            // Developer Setup: Requires registering an OAuth app
-            devSetup: ['microsoft', 'slack', 'twitter', 'jira']
+            // Developer Setup: Requires registering an OAuth app (not configured yet)
+            devSetup: ['twitter', 'jira', 'zoom']
         };
 
         function getServiceDifficulty(provider) {
@@ -840,12 +843,15 @@
             tokenForm.style.display = 'none';
             connectBtn.textContent = 'Connect';
             
-            if (provider === 'google' || provider === 'microsoft' || provider === 'discord') {
+            if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify') {
                 // OAuth providers - will open popup
                 const providerNames = {
                     'google': 'Google',
                     'microsoft': 'Microsoft',
-                    'discord': 'Discord'
+                    'discord': 'Discord',
+                    'slack': 'Slack',
+                    'github': 'GitHub',
+                    'spotify': 'Spotify'
                 };
                 desc.innerHTML = `
                     <p>Connect your ${providerNames[provider]} account to use ${name} with Ziggy.</p>
@@ -898,7 +904,7 @@
             try {
                 const { id, name, provider } = currentService;
                 
-                if (provider === 'google' || provider === 'microsoft' || provider === 'discord') {
+                if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify') {
                     // OAuth flow - open popup
                     // Map service ID to scope name
                     const scopeMap = {
@@ -911,9 +917,12 @@
                         'google_photos': 'photos',
                         'outlook': 'mail',
                         'outlook_calendar': 'calendar',
-                        'onedrive': 'onedrive',
+                        'onedrive': 'files',
                         'microsoft_todo': 'tasks',
-                        'discord': 'bot',
+                        'discord': 'identify',
+                        'slack': 'channels',
+                        'github': 'repo',
+                        'spotify': 'playback',
                     };
                     const scopeParam = scopeMap[id] || id;
                     const res = await fetch(`${API}/oauth/start/${provider}?scopes=${scopeParam}`);
