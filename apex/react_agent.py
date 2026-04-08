@@ -156,8 +156,12 @@ When you have completed the task, respond with a summary of what was done."""
             step.result = serialize(result)  # Convert to plain data
             step.status = StepStatus.COMPLETED
             
-            # Add result to messages (as string for Anthropic)
+            # Add result to messages (truncated for Anthropic context limits)
             result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
+            MAX_RESULT_LEN = 8000
+            if len(result_str) > MAX_RESULT_LEN:
+                result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
+            
             self.state.messages.append({
                 "role": "user",
                 "content": [{
@@ -261,8 +265,13 @@ When you have completed the task, respond with a summary of what was done."""
                     step.result = serialize(result)  # Convert to plain data
                     step.status = StepStatus.COMPLETED
                     
-                    # Add result to messages (as string for Anthropic)
+                    # Add result to messages (truncated for Anthropic context limits)
                     result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
+                    # Truncate long results to avoid context overflow
+                    MAX_RESULT_LEN = 8000
+                    if len(result_str) > MAX_RESULT_LEN:
+                        result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
+                    
                     self.state.messages.append({
                         "role": "user",
                         "content": [{
