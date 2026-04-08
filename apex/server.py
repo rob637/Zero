@@ -977,20 +977,39 @@ async def chat(req: ChatRequest):
                             for key, val in step.params.items():
                                 resolved_params[key] = resolve_wire_value(val, read_results, primitive_to_step)
                             
-                            # Execute
-                            primitive = engine._primitives.get(step.primitive.upper())
+                            # Execute - handle PRIMITIVE.OPERATION format
+                            prim_name = step.primitive.upper()
+                            op_name = step.operation
+                            if "." in prim_name:
+                                parts = prim_name.split(".", 1)
+                                prim_name = parts[0]
+                                op_name = op_name or parts[1].lower()
+                            
+                            primitive = engine._primitives.get(prim_name)
                             if primitive:
-                                step_result = await primitive.execute(step.operation, resolved_params)
+                                step_result = await primitive.execute(op_name, resolved_params)
                                 read_results[step.id] = step_result
+                                # Extract actual data from StepResult if needed
+                                result_data = step_result.data if hasattr(step_result, 'data') else step_result
                                 completed_steps.append({
                                     "id": step.id,
                                     "description": step.description,
-                                    "primitive": step.primitive,
-                                    "operation": step.operation,
+                                    "primitive": prim_name,
+                                    "operation": op_name,
                                     "status": "completed",
-                                    "result_summary": str(step_result)[:500] if step_result else None
+                                    "result_summary": str(result_data)[:500] if result_data else None
                                 })
-                                print(f"[CHAT]   Got: {str(step_result)[:200]}")
+                                print(f"[CHAT]   Got: {str(result_data)[:200]}")
+                            else:
+                                print(f"[CHAT]   Unknown primitive: {prim_name}")
+                                completed_steps.append({
+                                    "id": step.id,
+                                    "description": step.description,
+                                    "primitive": prim_name,
+                                    "operation": op_name,
+                                    "status": "failed",
+                                    "error": f"Unknown primitive: {prim_name}"
+                                })
                         except Exception as e:
                             import traceback
                             traceback.print_exc()
@@ -1123,6 +1142,12 @@ async def execute_plan(req: ExecuteRequest):
                 prim_name = ws["primitive"].upper()
                 op = ws["operation"]
                 params = ws["params"]  # Already resolved with actual data
+                
+                # Handle PRIMITIVE.OPERATION format (e.g., "DOCUMENT.CREATE" -> "DOCUMENT" + "create")
+                if "." in prim_name:
+                    parts = prim_name.split(".", 1)
+                    prim_name = parts[0]
+                    op = op or parts[1].lower()
                 
                 # Skip CLARIFY - it's a signal, not a real primitive
                 if prim_name == "CLARIFY":

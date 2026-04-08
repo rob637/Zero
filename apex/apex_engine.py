@@ -5833,45 +5833,30 @@ class TaskPlanner:
         self._primitives = primitives
     
     def _get_capabilities_prompt(self) -> str:
-        """Auto-generate capabilities + param schemas from registered primitives.
+        """Auto-generate capabilities from registered primitives.
         
-        Only shows operations that are actually configured and ready to use,
-        so the LLM never plans for unavailable operations.
+        Format is designed to be unambiguous for LLM:
+        - Primitive names are UPPERCASE
+        - Operations are lowercase
+        - Clear separation between primitive and operation
         """
-        lines = ["Available primitives:\n"]
-        examples = ["\nPARAMETER SCHEMAS:"]
+        lines = ["PRIMITIVES (use uppercase name in 'primitive' field):\n"]
         
         for name, prim in self._primitives.items():
             available_ops = prim.get_available_operations()
             if not available_ops:
-                continue  # Skip primitives with no available operations
+                continue
             
-            lines.append(f"\n{name}:")
+            lines.append(f"{name}")
             for op, desc in available_ops.items():
-                lines.append(f"  - {name}.{op}: {desc}")
-            
-            # Auto-generate param examples from schema (only for available ops)
-            schema = prim.get_param_schema()
-            if schema:
-                for op, params in schema.items():
-                    if op not in available_ops:
-                        continue
-                    example_params = {}
-                    for pname, pdef in params.items():
-                        if isinstance(pdef, dict):
-                            ptype = pdef.get("type", "str")
-                            desc = pdef.get("description", pname)
-                            if ptype == "str":
-                                example_params[pname] = f"<{desc}>"
-                            elif ptype in ("int", "float"):
-                                example_params[pname] = 0
-                            elif ptype == "dict":
-                                example_params[pname] = {"key": "value"}
-                            elif ptype == "list":
-                                example_params[pname] = []
-                    examples.append(f"  {name}.{op}: {json.dumps(example_params)}")
+                # Mark side effects for clarity
+                side_effect_note = ""
+                if any(word in op.lower() for word in ["send", "create", "write", "delete", "move", "update"]):
+                    side_effect_note = " [ACTION - needs approval]"
+                lines.append(f"  {op}: {desc}{side_effect_note}")
+            lines.append("")  # Blank line between primitives
         
-        return "\n".join(lines) + "\n" + "\n".join(examples)
+        return "\n".join(lines)
     
     async def plan(self, request: str, context: Optional[Dict] = None) -> List[PlanStep]:
         """Generate an execution plan for a request."""
@@ -5885,56 +5870,45 @@ class TaskPlanner:
         conversation_context = ""
         if context and "conversation" in context:
             conv = context["conversation"]
-            if len(conv) > 1:  # More than just current message
+            if len(conv) > 1:
                 conversation_context = "Conversation history:\n"
-                for msg in conv[:-1]:  # Exclude the current request
+                for msg in conv[:-1]:
                     role = "User" if msg["role"] == "user" else "Assistant"
                     conversation_context += f"  {role}: {msg['content']}\n"
-                conversation_context += "\nThe current message is a response to the above conversation. Use the FULL conversation to understand what the user wants.\n\n"
+                conversation_context += "\n"
         
-        prompt = f"""You are a helpful assistant that performs actions on the user's behalf.
+        prompt = f"""You are a task planner. Create a step-by-step plan using these primitives.
 
 TODAY: {today_iso}
 
-{conversation_context}You have these capabilities:
-{capabilities}
+{conversation_context}{capabilities}
 
-The user says: "{request}"
+User request: "{request}"
 
-HOW THIS WORKS:
-1. Info-gathering steps (search, read, extract, compute) run automatically and user sees results
-2. Action steps (send email, create file, delete) wait for user approval AFTER they see the results
-3. If a search might find multiple items (documents, emails, etc.), plan to show choices to the user
+PLAN FORMAT:
+- Each step must have: primitive (UPPERCASE), operation (lowercase), params, side_effect
+- Use "side_effect": false for info gathering (search, read, extract, compute)
+- Use "side_effect": true for actions (send, create, write, delete)
+- Reference previous results using step_N format in params
 
-IMPORTANT:
-- Set "side_effect": false for SEARCH, READ, COMPUTE, EXTRACT (info gathering runs automatically)
-- Set "side_effect": true for SEND, CREATE, DELETE, WRITE (actions need approval)
-- If you find multiple matching items, ASK which one before proceeding
-- If any required info is unclear, ASK first with: {{"clarify": "your question"}}
-- The user will see computed results (like an amortization schedule) BEFORE approving send/create actions
-
-Think through this:
-1. What does the user want?
-2. What info do I need to gather first?
-3. Might there be multiple matches that need user choice?
-4. What actions need approval after user sees results?
-
-If you need clarification: {{"clarify": "your question"}}
-
-Otherwise provide your plan as a JSON array. Example structure:
+EXAMPLE - "Find my invoice and email it to Bob":
+```json
 [
-  {{"description": "Search for X", "primitive": "...", "operation": "search", "params": {{}}, "wires": {{}}, "side_effect": false}},
-  {{"description": "Send result", "primitive": "...", "operation": "send", "params": {{}}, "wires": {{}}, "side_effect": true}}
+  {{"primitive": "FILE", "operation": "search", "params": {{"query": "invoice"}}, "description": "Find invoice file", "side_effect": false}},
+  {{"primitive": "CONTACTS", "operation": "search", "params": {{"query": "Bob"}}, "description": "Find Bob's email", "side_effect": false}},
+  {{"primitive": "EMAIL", "operation": "send", "params": {{"to": "step_1.results[0].email", "subject": "Invoice", "body": "Here is the invoice", "attachments": ["step_0.results[0].path"]}}, "description": "Email invoice to Bob", "side_effect": true}}
 ]
+```
 
-Think first, then output the plan:"""
+If you need to ask the user something first: {{"clarify": "your question"}}
+
+Now create your plan:"""
 
         response = await self._llm(prompt)
         
         # Check for clarification request
         clarify_match = re.search(r'\{\s*"clarify"\s*:\s*"([^"]+)"\s*\}', response)
         if clarify_match:
-            # Return special step that signals clarification needed
             return [PlanStep(0, clarify_match.group(1), "CLARIFY", "ask", {"question": clarify_match.group(1)}, side_effect=False)]
         
         # Parse response
@@ -5961,11 +5935,22 @@ Think first, then output the plan:"""
                 if m:
                     explicit_deps.add(int(m.group(1)))
             
+            # Handle primitive.operation notation (e.g., "DOCUMENT.CREATE" -> "DOCUMENT" + "create")
+            raw_primitive = s.get("primitive", "").upper()
+            raw_operation = s.get("operation", "")
+            if "." in raw_primitive:
+                parts = raw_primitive.split(".", 1)
+                primitive = parts[0]
+                operation = raw_operation or parts[1].lower()
+            else:
+                primitive = raw_primitive
+                operation = raw_operation
+            
             step = PlanStep(
                 id=i + id_offset,
                 description=s.get("description", f"Step {i}"),
-                primitive=s.get("primitive", "").upper(),
-                operation=s.get("operation", ""),
+                primitive=primitive,
+                operation=operation,
                 params=s.get("params", {}),
                 depends_on=sorted(explicit_deps),
                 wires=wires,
