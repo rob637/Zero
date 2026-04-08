@@ -29,6 +29,9 @@ from src.core.llm import create_client_from_env
 # Telic Engine - the REAL engine with all primitives
 from apex_engine import Apex as TelicEngine
 
+# ReAct Agent - native function calling
+from react_agent import ReActAgent, Tool, primitives_to_tools, Step, StepStatus, AgentState
+
 # Phase 7: Privacy & Control Layer
 from src.privacy import (
     AuditLogger, audit_logger,
@@ -107,6 +110,10 @@ _pending_plans: Dict[str, Any] = {}  # message -> plan steps
 _conversation_history: list = []  # [{role: "user"/"assistant", content: "..."}]
 MAX_HISTORY = 10  # Keep last 10 messages for context
 
+# ReAct Agent state (per-session, stored by session_id in production)
+_react_agent: Optional[ReActAgent] = None
+_react_state: Optional[AgentState] = None
+
 def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton."""
     global _telic_engine, _google_calendar
@@ -133,6 +140,63 @@ def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
     print(f"[ENGINE] Initialized with {len(connectors)} connectors")
     return _telic_engine
+
+
+def get_react_agent() -> Optional[ReActAgent]:
+    """Get or create the ReAct agent using Telic primitives."""
+    global _react_agent
+    
+    if _react_agent is not None:
+        return _react_agent
+    
+    # Need API key
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        # Fall back to OpenAI
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return None
+    
+    # Get the Telic engine (has all primitives)
+    engine = get_telic_engine()
+    if not engine:
+        return None
+    
+    # Convert primitives to tools
+    tools = primitives_to_tools(engine._primitives)
+    print(f"[REACT] Created {len(tools)} tools from primitives")
+    
+    # Create LLM client
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        import anthropic
+        llm_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    else:
+        import openai
+        llm_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    
+    from datetime import datetime
+    system_prompt = f"""You are Telic, an AI operating system that helps users accomplish tasks.
+
+TODAY: {datetime.now().strftime("%Y-%m-%d")}
+
+Use the available tools to accomplish what the user asks. Call tools ONE AT A TIME, observe the result, then decide what to do next.
+
+IMPORTANT BEHAVIORS:
+- If a search returns multiple results, STOP and ask the user which one they want
+- If information is unclear or missing, ASK before guessing  
+- Show computed results (calculations, data) to the user and ask if they want to proceed
+- Be conversational - explain what you're doing and what you found
+
+When you have completed the task, respond with a summary of what was done."""
+    
+    _react_agent = ReActAgent(
+        llm_client=llm_client,
+        tools=tools,
+        system_prompt=system_prompt,
+    )
+    
+    return _react_agent
+
 
 # Phase 4-5: Intelligence Layer singletons
 _proactive_monitor: Optional[ProactiveMonitor] = None
@@ -1096,11 +1160,187 @@ async def chat(req: ChatRequest):
         })
 
 
+# ============================================================
+#  REACT AGENT ENDPOINTS (New, clean implementation)
+# ============================================================
+
+class ReactRequest(BaseModel):
+    message: str
+
+
+class ReactApproveRequest(BaseModel):
+    approved: bool
+
+
+def step_to_dict(step: Step) -> Dict[str, Any]:
+    """Convert a Step to a JSON-serializable dict."""
+    return {
+        "tool": step.tool_call.name,
+        "params": step.tool_call.params,
+        "status": step.status.value,
+        "result": step.result if step.result is not None else None,
+        "error": step.error,
+        "requires_approval": step.requires_approval,
+    }
+
+
+def state_to_response(state: AgentState) -> Dict[str, Any]:
+    """Convert AgentState to API response."""
+    return {
+        "steps": [step_to_dict(s) for s in state.steps],
+        "pending_approval": step_to_dict(state.pending_approval) if state.pending_approval else None,
+        "is_complete": state.is_complete,
+        "response": state.final_response,
+    }
+
+
+@app.post("/react/chat")
+async def react_chat(req: ReactRequest):
+    """
+    ReAct-based chat endpoint.
+    
+    Uses native function calling - AI calls tools one at a time,
+    sees results, and decides what to do next.
+    
+    Returns:
+    - steps: List of completed steps with results
+    - pending_approval: Step waiting for approval (if any)
+    - is_complete: True if AI has finished
+    - response: Final response text (if complete)
+    """
+    global _react_state
+    
+    agent = get_react_agent()
+    if not agent:
+        return JSONResponse({
+            "error": "No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+            "steps": [],
+            "pending_approval": None,
+            "is_complete": True,
+            "response": None,
+        })
+    
+    try:
+        print(f"[REACT] User: {req.message[:80]}...")
+        
+        # Run the agent
+        state = await agent.run(req.message)
+        _react_state = state
+        
+        # Log what happened
+        for step in state.steps:
+            status = "✓" if step.status == StepStatus.COMPLETED else "⏸" if step.status == StepStatus.PENDING_APPROVAL else "✗"
+            print(f"[REACT] {status} {step.tool_call.name}")
+        
+        if state.pending_approval:
+            print(f"[REACT] Waiting for approval: {state.pending_approval.tool_call.name}")
+        
+        if state.is_complete:
+            print(f"[REACT] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
+        
+        return JSONResponse(state_to_response(state))
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            "error": str(e),
+            "steps": [],
+            "pending_approval": None,
+            "is_complete": True,
+            "response": f"Error: {str(e)}",
+        })
+
+
+@app.post("/react/approve")
+async def react_approve(req: ReactApproveRequest):
+    """
+    Approve or reject a pending action.
+    
+    After approval, the agent continues executing.
+    """
+    global _react_state
+    
+    agent = get_react_agent()
+    if not agent or not _react_state:
+        return JSONResponse({
+            "error": "No pending action",
+            "steps": [],
+            "pending_approval": None,
+            "is_complete": True,
+            "response": None,
+        })
+    
+    try:
+        action = "Approved" if req.approved else "Rejected"
+        if _react_state.pending_approval:
+            print(f"[REACT] {action}: {_react_state.pending_approval.tool_call.name}")
+        
+        # Continue with approval decision
+        state = await agent.continue_with_approval(req.approved)
+        _react_state = state
+        
+        return JSONResponse(state_to_response(state))
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            "error": str(e),
+            "steps": [],
+            "pending_approval": None,
+            "is_complete": True,
+            "response": f"Error: {str(e)}",
+        })
+
+
+@app.post("/react/continue")
+async def react_continue(req: ReactRequest):
+    """
+    Continue conversation with additional user input.
+    
+    Use this when the AI asks a question and user responds.
+    """
+    global _react_state
+    
+    agent = get_react_agent()
+    if not agent:
+        return JSONResponse({
+            "error": "No agent initialized",
+            "steps": [],
+            "pending_approval": None,
+            "is_complete": True,
+            "response": None,
+        })
+    
+    try:
+        print(f"[REACT] User continues: {req.message[:80]}...")
+        
+        # Continue with user input
+        state = await agent.continue_with_input(req.message)
+        _react_state = state
+        
+        return JSONResponse(state_to_response(state))
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            "error": str(e),
+            "steps": [],
+            "pending_approval": None,
+            "is_complete": True,
+            "response": f"Error: {str(e)}",
+        })
+
+
 @app.post("/clear")
 async def clear_conversation():
     """Clear conversation history to start fresh."""
-    global _conversation_history
+    global _conversation_history, _react_state, _react_agent
     _conversation_history = []
+    _react_state = None
+    _react_agent = None  # Force recreation with fresh state
     return JSONResponse({"status": "ok", "message": "Conversation cleared"})
 
 

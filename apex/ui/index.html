@@ -1677,8 +1677,10 @@
         }
 
         // ============================================
-        // Chat Functions
+        // Chat Functions (ReAct-based)
         // ============================================
+
+        let currentMsgElement = null;  // Track the message being updated
 
         async function sendMessage(text) {
             const input = document.getElementById('input');
@@ -1691,7 +1693,7 @@
             addTypingIndicator();
 
             try {
-                const res = await fetch(`${API}/chat`, {
+                const res = await fetch(`${API}/react/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message })
@@ -1700,51 +1702,176 @@
                 removeTypingIndicator();
                 setThinking(false);
 
-                if (data.error) {
+                if (data.error && !data.steps.length) {
                     addMessage(data.error, 'system');
                     return;
                 }
 
-                // Check for plan or completed steps from Telic engine
-                const hasCompletedSteps = data.completed_steps && data.completed_steps.length > 0;
-                const hasWriteSteps = data.plan && data.plan.length > 0;
-                
-                if (hasCompletedSteps || hasWriteSteps) {
-                    lastPlanMessage = message;  // Store for execute
-                    
-                    // Show completed read-only steps (info gathering)
-                    let completedHtml = '';
-                    if (hasCompletedSteps) {
-                        completedHtml = renderCompletedSteps(data.completed_steps);
-                    }
-                    
-                    // Show pending write steps for approval (if any)
-                    let planHtml = '';
-                    let executeBtn = '';
-                    if (hasWriteSteps) {
-                        planHtml = renderTelicPlan(data.plan);
-                        executeBtn = `
-                            <div style="margin-top: 16px; display: flex; gap: 12px; justify-content: center;">
-                                <button class="btn btn-approve" onclick="executePlan()" style="padding: 12px 28px; font-size: 1rem; font-weight: 600;">
-                                    ✓ Approve & Run
-                                </button>
-                                <button class="btn btn-reject" onclick="this.parentElement.innerHTML='<span style=color:var(--text-muted)>Cancelled by user</span>'" style="padding: 12px 28px; font-size: 1rem;">
-                                    ✗ Cancel
-                                </button>
-                            </div>`;
-                    }
-                    
-                    addMessage(data.response, 'assistant', completedHtml + planHtml + executeBtn);
-                    return;
-                }
-
-                // Just conversation
-                addMessage(data.response, 'assistant');
+                // Render the current state
+                renderReactState(data);
 
             } catch (e) {
                 removeTypingIndicator();
                 setThinking(false);
                 addMessage('Cannot connect to Telic. Is the server running?', 'system');
+            }
+        }
+
+        function renderReactState(data) {
+            // Build HTML for all steps so far
+            let html = '';
+            
+            // Completed steps
+            const completedSteps = data.steps.filter(s => s.status === 'completed');
+            if (completedSteps.length > 0) {
+                html += renderReactSteps(completedSteps, 'completed');
+            }
+            
+            // Failed steps
+            const failedSteps = data.steps.filter(s => s.status === 'failed');
+            if (failedSteps.length > 0) {
+                html += renderReactSteps(failedSteps, 'failed');
+            }
+            
+            // Pending approval
+            if (data.pending_approval) {
+                html += renderApprovalRequest(data.pending_approval);
+            }
+            
+            // Final response
+            if (data.is_complete && data.response) {
+                if (html) {
+                    addMessage('', 'assistant', html);
+                }
+                addMessage(data.response, 'assistant');
+            } else if (html) {
+                addMessage('', 'assistant', html);
+            }
+        }
+
+        function renderReactSteps(steps, status) {
+            const isSuccess = status === 'completed';
+            const borderColor = isSuccess ? 'var(--success)' : 'var(--error)';
+            const bgColor = isSuccess ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)';
+            const headerText = isSuccess ? '✓ Information Gathered' : '✗ Steps Failed';
+            
+            const stepsHtml = steps.map(step => {
+                const statusIcon = isSuccess ? '✓' : '✗';
+                const statusColor = borderColor;
+                
+                let resultHtml = '';
+                if (step.result) {
+                    const resultStr = typeof step.result === 'string' 
+                        ? step.result 
+                        : JSON.stringify(step.result, null, 2);
+                    resultHtml = `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; 
+                        padding: 6px 8px; background: rgba(0,0,0,0.2); border-radius: 4px; 
+                        max-height: 120px; overflow: auto; white-space: pre-wrap;">
+                        ${escapeHtml(resultStr.substring(0, 500))}${resultStr.length > 500 ? '...' : ''}
+                    </div>`;
+                }
+                if (step.error) {
+                    resultHtml = `<div style="font-size: 0.75rem; color: var(--error); margin-top: 4px;">
+                        Error: ${escapeHtml(step.error)}
+                    </div>`;
+                }
+                
+                // Format params for display
+                const paramsStr = Object.entries(step.params || {})
+                    .map(([k, v]) => `<span style="color:var(--primary)">${k}</span>: ${escapeHtml(String(v).substring(0, 50))}`)
+                    .join(' | ');
+                
+                return `
+                    <div style="padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 6px; margin-bottom: 4px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="color: ${statusColor}; font-weight: bold;">${statusIcon}</span>
+                            <div style="flex: 1;">
+                                <div style="font-size: 0.85rem; color: var(--text-primary)">${step.tool}</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted)">${paramsStr}</div>
+                            </div>
+                        </div>
+                        ${resultHtml}
+                    </div>
+                `;
+            }).join('');
+            
+            return `
+                <div style="margin-bottom: 16px; border: 1px solid ${borderColor}; border-radius: 10px; 
+                            padding: 12px; background: ${bgColor};">
+                    <div style="font-size: 0.75rem; font-weight: 600; color: ${borderColor}; 
+                                text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                        ${headerText}
+                    </div>
+                    ${stepsHtml}
+                </div>
+            `;
+        }
+
+        function renderApprovalRequest(step) {
+            // Format params for display
+            const paramsHtml = Object.entries(step.params || {}).map(([k, v]) => {
+                const valStr = typeof v === 'string' ? v : JSON.stringify(v);
+                return `<div style="margin-bottom: 4px;">
+                    <span style="color: var(--primary); font-weight: 500;">${k}:</span> 
+                    <span style="color: var(--text-secondary)">${escapeHtml(valStr.substring(0, 200))}</span>
+                </div>`;
+            }).join('');
+            
+            return `
+                <div style="border: 2px solid var(--warning); border-radius: 10px; padding: 16px; 
+                            background: rgba(245, 158, 11, 0.08); margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span style="font-size: 1.2rem;">⚠️</span>
+                        <span style="font-size: 0.8rem; font-weight: 600; color: var(--warning); 
+                                     text-transform: uppercase; letter-spacing: 0.05em;">
+                            REVIEW BEFORE APPROVING
+                        </span>
+                    </div>
+                    
+                    <div style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                        <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
+                            ${step.tool}
+                        </div>
+                        <div style="font-size: 0.8rem;">
+                            ${paramsHtml}
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px; justify-content: center;">
+                        <button class="btn btn-approve" onclick="approveAction(true)" 
+                                style="padding: 12px 28px; font-size: 1rem; font-weight: 600;">
+                            ✓ Approve & Run
+                        </button>
+                        <button class="btn btn-reject" onclick="approveAction(false)" 
+                                style="padding: 12px 28px; font-size: 1rem;">
+                            ✗ Cancel
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function approveAction(approved) {
+            setThinking(true);
+            addTypingIndicator();
+            
+            try {
+                const res = await fetch(`${API}/react/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ approved })
+                });
+                const data = await res.json();
+                removeTypingIndicator();
+                setThinking(false);
+                
+                // Render the updated state
+                renderReactState(data);
+                
+            } catch (e) {
+                removeTypingIndicator();
+                setThinking(false);
+                addMessage('Error approving action: ' + e.message, 'system');
             }
         }
 
