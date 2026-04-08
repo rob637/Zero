@@ -1681,6 +1681,7 @@
         // ============================================
 
         let currentMsgElement = null;  // Track the message being updated
+        let conversationActive = false;  // Track if we're in an ongoing conversation
 
         async function sendMessage(text) {
             const input = document.getElementById('input');
@@ -1693,7 +1694,11 @@
             addTypingIndicator();
 
             try {
-                const res = await fetch(`${API}/react/chat`, {
+                // Use /continue if conversation is active, /chat for new requests
+                const endpoint = conversationActive ? '/react/continue' : '/react/chat';
+                console.log(`[UI] Using ${endpoint}, conversationActive=${conversationActive}`);
+                
+                const res = await fetch(`${API}${endpoint}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message })
@@ -1704,8 +1709,13 @@
 
                 if (data.error && !data.steps.length) {
                     addMessage(data.error, 'system');
+                    conversationActive = false;
                     return;
                 }
+
+                // Conversation stays active until explicitly cleared
+                // This maintains context for follow-up questions
+                conversationActive = true;
 
                 // Render the current state
                 renderReactState(data);
@@ -1714,6 +1724,7 @@
                 removeTypingIndicator();
                 setThinking(false);
                 addMessage('Cannot connect to Telic. Is the server running?', 'system');
+                conversationActive = false;
             }
         }
 
