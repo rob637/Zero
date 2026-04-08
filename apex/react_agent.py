@@ -7,9 +7,29 @@ The AI calls tools one at a time, sees results, and decides next steps.
 
 import json
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Callable, Dict, List, Optional, Awaitable
 from enum import Enum
+
+
+def serialize(obj: Any) -> Any:
+    """Convert any object to JSON-serializable form."""
+    if obj is None:
+        return None
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, (list, tuple)):
+        return [serialize(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: serialize(v) for k, v in obj.items()}
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return serialize(asdict(obj))
+    if hasattr(obj, '__dict__'):
+        return serialize(vars(obj))
+    # Fallback
+    return str(obj)
 
 
 class StepStatus(Enum):
@@ -133,16 +153,17 @@ When you have completed the task, respond with a summary of what was done."""
         if approved:
             # Execute the approved tool
             result = await self._execute_tool(step.tool_call)
-            step.result = result
+            step.result = serialize(result)  # Convert to plain data
             step.status = StepStatus.COMPLETED
             
-            # Add result to messages
+            # Add result to messages (as string for Anthropic)
+            result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
             self.state.messages.append({
                 "role": "user",
                 "content": [{
                     "type": "tool_result",
                     "tool_use_id": step.tool_call.id,
-                    "content": json.dumps(result) if not isinstance(result, str) else result
+                    "content": result_str
                 }]
             })
         else:
@@ -237,15 +258,17 @@ When you have completed the task, respond with a summary of what was done."""
                 
                 try:
                     result = await self._execute_tool(tc)
-                    step.result = result
+                    step.result = serialize(result)  # Convert to plain data
                     step.status = StepStatus.COMPLETED
                     
+                    # Add result to messages (as string for Anthropic)
+                    result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
                     self.state.messages.append({
                         "role": "user",
                         "content": [{
                             "type": "tool_result",
                             "tool_use_id": tc.id,
-                            "content": json.dumps(result) if not isinstance(result, str) else result
+                            "content": result_str
                         }]
                     })
                 except Exception as e:
