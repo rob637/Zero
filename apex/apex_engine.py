@@ -1030,9 +1030,10 @@ ComputePrimitive._BUILTIN_FORMULAS = {
 class EmailPrimitive(Primitive):
     """Email operations via Gmail or other providers."""
     
-    def __init__(self, send_func: Optional[Callable] = None, list_func: Optional[Callable] = None):
+    def __init__(self, send_func: Optional[Callable] = None, list_func: Optional[Callable] = None, read_func: Optional[Callable] = None):
         self._send = send_func
         self._list = list_func
+        self._read = read_func
     
     @property
     def name(self) -> str:
@@ -1044,6 +1045,7 @@ class EmailPrimitive(Primitive):
             "draft": "Create a draft email",
             "search": "Search emails",
             "list": "List recent emails",
+            "read": "Read a specific email by ID to get its full body content",
         }
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
@@ -1066,6 +1068,9 @@ class EmailPrimitive(Primitive):
             "list": {
                 "query": {"type": "str", "required": False, "description": "Filter query using Gmail syntax"},
                 "limit": {"type": "int", "required": False, "description": "Max results (default 10)"},
+            },
+            "read": {
+                "message_id": {"type": "str", "required": True, "description": "The email message ID (from search/list results)"},
             },
         }
     
@@ -1105,6 +1110,19 @@ class EmailPrimitive(Primitive):
                     max_results=params.get("limit", 10),
                 )
                 return StepResult(True, data=result)
+            
+            elif operation == "read":
+                if not self._read:
+                    return StepResult(False, error="Email reading not configured")
+                
+                message_id = params.get("message_id")
+                if not message_id:
+                    return StepResult(False, error="message_id is required")
+                
+                email = await self._read(message_id)
+                if hasattr(email, 'to_dict'):
+                    return StepResult(True, data=email.to_dict())
+                return StepResult(True, data=email)
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
@@ -6078,15 +6096,19 @@ class Apex:
         # Email — wire Gmail and/or Outlook connectors
         email_send = None
         email_list = None
+        email_read = None
         gmail = c.get("gmail")
         outlook = c.get("outlook")
         if gmail:
             email_send = gmail.send_email
             email_list = gmail.list_messages
+            email_read = gmail.get_message
         elif outlook:
             email_send = outlook.send_email
             email_list = outlook.list_messages
-        self._primitives["EMAIL"] = EmailPrimitive(send_func=email_send, list_func=email_list)
+            if hasattr(outlook, 'get_message'):
+                email_read = outlook.get_message
+        self._primitives["EMAIL"] = EmailPrimitive(send_func=email_send, list_func=email_list, read_func=email_read)
         
         # Contacts — wire Google Contacts and/or Microsoft Contacts
         contacts_providers = {}
