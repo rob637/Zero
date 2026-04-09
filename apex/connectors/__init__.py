@@ -160,6 +160,9 @@ from .reddit import RedditConnector
 # Telegram
 from .telegram import TelegramConnector
 
+# HubSpot
+from .hubspot import HubSpotConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -263,6 +266,8 @@ __all__ = [
     'RedditConnector',
     # Telegram
     'TelegramConnector',
+    # HubSpot
+    'HubSpotConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

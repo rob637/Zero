@@ -748,6 +748,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+
+        try:
+            from .hubspot import HubSpotConnector
+            self.register(ConnectorMetadata(
+                name="hubspot",
+                display_name="HubSpot",
+                provider="hubspot",
+                primitives=["CRM", "CONTACTS", "DEALS"],
+                scopes=[],
+                connector_class=HubSpotConnector,
+                description="CRM contacts, companies, deals, tickets, notes, and pipelines via HubSpot API",
+                icon="hubspot",
+                setup_url="https://developers.hubspot.com/docs/api/private-apps",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

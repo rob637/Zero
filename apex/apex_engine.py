@@ -3135,6 +3135,239 @@ class TelegramPrimitive(Primitive):
             return StepResult(False, error=str(e))
 
 
+class HubSpotPrimitive(Primitive):
+    """HubSpot CRM — contacts, companies, deals, tickets, notes, pipelines.
+    
+    Uses HubSpot CRM API v3 via HubSpotConnector.
+    """
+
+    NAME = "HUBSPOT"
+    DESCRIPTION = (
+        "Manage HubSpot CRM: contacts, companies, deals, tickets, notes, "
+        "associations, pipelines, and owners."
+    )
+    OPERATIONS = [
+        "list_contacts", "get_contact", "create_contact", "update_contact",
+        "delete_contact", "search_contacts",
+        "list_companies", "get_company", "create_company", "update_company",
+        "delete_company", "search_companies",
+        "list_deals", "get_deal", "create_deal", "update_deal",
+        "delete_deal", "search_deals",
+        "list_tickets", "get_ticket", "create_ticket", "update_ticket",
+        "delete_ticket",
+        "create_note", "get_note",
+        "get_associations", "create_association",
+        "list_pipelines", "get_pipeline_stages",
+        "list_owners",
+    ]
+
+    def __init__(self, connector):
+        self._c = connector
+
+    async def run(self, operation: str, params: dict) -> StepResult:
+        op = operation.lower().strip()
+        try:
+            if op == "list_contacts":
+                data = await self._c.list_contacts(
+                    limit=params.get("limit", 20),
+                    after=params.get("after"),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_contact":
+                data = await self._c.get_contact(
+                    str(params["contact_id"]),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "create_contact":
+                data = await self._c.create_contact(params.get("properties", {}))
+                return StepResult(True, data=data)
+
+            elif op == "update_contact":
+                data = await self._c.update_contact(
+                    str(params["contact_id"]),
+                    params.get("properties", {}),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "delete_contact":
+                await self._c.delete_contact(str(params["contact_id"]))
+                return StepResult(True, data={"deleted": True})
+
+            elif op == "search_contacts":
+                data = await self._c.search_contacts(
+                    params["query"],
+                    limit=params.get("limit", 10),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_companies":
+                data = await self._c.list_companies(
+                    limit=params.get("limit", 20),
+                    after=params.get("after"),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_company":
+                data = await self._c.get_company(
+                    str(params["company_id"]),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "create_company":
+                data = await self._c.create_company(params.get("properties", {}))
+                return StepResult(True, data=data)
+
+            elif op == "update_company":
+                data = await self._c.update_company(
+                    str(params["company_id"]),
+                    params.get("properties", {}),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "delete_company":
+                await self._c.delete_company(str(params["company_id"]))
+                return StepResult(True, data={"deleted": True})
+
+            elif op == "search_companies":
+                data = await self._c.search_companies(
+                    params["query"],
+                    limit=params.get("limit", 10),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_deals":
+                data = await self._c.list_deals(
+                    limit=params.get("limit", 20),
+                    after=params.get("after"),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_deal":
+                data = await self._c.get_deal(
+                    str(params["deal_id"]),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "create_deal":
+                data = await self._c.create_deal(params.get("properties", {}))
+                return StepResult(True, data=data)
+
+            elif op == "update_deal":
+                data = await self._c.update_deal(
+                    str(params["deal_id"]),
+                    params.get("properties", {}),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "delete_deal":
+                await self._c.delete_deal(str(params["deal_id"]))
+                return StepResult(True, data={"deleted": True})
+
+            elif op == "search_deals":
+                data = await self._c.search_deals(
+                    params["query"],
+                    limit=params.get("limit", 10),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_tickets":
+                data = await self._c.list_tickets(
+                    limit=params.get("limit", 20),
+                    after=params.get("after"),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_ticket":
+                data = await self._c.get_ticket(
+                    str(params["ticket_id"]),
+                    properties=params.get("properties"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "create_ticket":
+                data = await self._c.create_ticket(params.get("properties", {}))
+                return StepResult(True, data=data)
+
+            elif op == "update_ticket":
+                data = await self._c.update_ticket(
+                    str(params["ticket_id"]),
+                    params.get("properties", {}),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "delete_ticket":
+                await self._c.delete_ticket(str(params["ticket_id"]))
+                return StepResult(True, data={"deleted": True})
+
+            elif op == "create_note":
+                data = await self._c.create_note(
+                    params["body"],
+                    contact_id=params.get("contact_id"),
+                    company_id=params.get("company_id"),
+                    deal_id=params.get("deal_id"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_note":
+                data = await self._c.get_note(str(params["note_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "get_associations":
+                data = await self._c.get_associations(
+                    params["object_type"],
+                    str(params["object_id"]),
+                    params["to_object_type"],
+                )
+                return StepResult(True, data=data)
+
+            elif op == "create_association":
+                data = await self._c.create_association(
+                    params["from_type"],
+                    str(params["from_id"]),
+                    params["to_type"],
+                    str(params["to_id"]),
+                    int(params["association_type_id"]),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_pipelines":
+                data = await self._c.list_pipelines(
+                    object_type=params.get("object_type", "deals"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_pipeline_stages":
+                data = await self._c.get_pipeline_stages(
+                    object_type=params.get("object_type", "deals"),
+                    pipeline_id=params.get("pipeline_id", "default"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_owners":
+                data = await self._c.list_owners(
+                    limit=params.get("limit", 100),
+                    after=params.get("after"),
+                )
+                return StepResult(True, data=data)
+
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
 # ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
@@ -7574,6 +7807,11 @@ class Apex:
         telegram_connector = c.get("telegram")
         if telegram_connector:
             self._primitives["TELEGRAM"] = TelegramPrimitive(telegram_connector)
+        
+        # HubSpot — wire HubSpot connector
+        hubspot_connector = c.get("hubspot")
+        if hubspot_connector:
+            self._primitives["HUBSPOT"] = HubSpotPrimitive(hubspot_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None
