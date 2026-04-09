@@ -40,6 +40,9 @@ from apex_engine import Apex as TelicEngine
 # ReAct Agent - native function calling
 from react_agent import ReActAgent, Tool, primitives_to_tools, Step, StepStatus, AgentState
 
+# Session persistence
+import sessions as session_store
+
 # Phase 7: Privacy & Control Layer
 from src.privacy import (
     AuditLogger, audit_logger,
@@ -129,6 +132,7 @@ _react_state: Optional[AgentState] = None
 # Session-based conversation (like ChatGPT/Gemini)
 _session_messages: list = []  # Full conversation history for session
 _session_agent: Optional[ReActAgent] = None   # Persistent agent for session
+_session_id: Optional[str] = None  # Current session ID for persistence
 
 def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton.
@@ -2380,6 +2384,10 @@ async def react_chat(req: ReactRequest):
         })
     
     try:
+        # Ensure we have a session ID
+        if not _session_id:
+            _session_id = session_store.new_session_id()
+        
         print(f"[SESSION] User: {req.message[:80]}...")
         print(f"[SESSION] Conversation history: {len(_session_messages)} messages")
         
@@ -2412,6 +2420,9 @@ Remember: References like "the first one", "send it to him", "the information ab
         _session_messages.append({"role": "user", "content": req.message})
         if state.final_response:
             _session_messages.append({"role": "assistant", "content": state.final_response})
+        
+        # Auto-save session
+        _auto_save_session()
         
         # Log what happened
         for step in state.steps:
@@ -2447,7 +2458,11 @@ async def react_chat_stream(req: ReactRequest):
     so the UI can show real-time activity instead of waiting.
     """
     import json
-    global _react_state, _session_messages
+    global _react_state, _session_messages, _session_id
+
+    # Ensure we have a session ID
+    if not _session_id:
+        _session_id = session_store.new_session_id()
 
     agent = get_session_agent()
     if not agent:
@@ -2534,6 +2549,9 @@ Remember: References like "the first one", "send it to him", "the information ab
             if state.final_response:
                 _session_messages.append({"role": "assistant", "content": state.final_response})
 
+            # Auto-save session
+            _auto_save_session()
+
             # Log
             for s in state.steps:
                 icon = "✓" if s.status == StepStatus.COMPLETED else "⏸" if s.status == StepStatus.PENDING_APPROVAL else "✗"
@@ -2560,13 +2578,19 @@ Remember: References like "the first one", "send it to him", "the information ab
 
 @app.post("/react/new")
 async def react_new_conversation():
-    """Start a fresh conversation - clears session history."""
-    global _session_messages, _session_agent, _react_state
+    """Start a fresh conversation - saves current session, then clears."""
+    global _session_messages, _session_agent, _react_state, _session_id
+    
+    # Auto-save current session if it has messages
+    if _session_id and _session_messages:
+        _auto_save_session()
+    
     _session_messages = []
     _session_agent = None
     _react_state = None
-    print("[SESSION] Started new conversation")
-    return JSONResponse({"status": "ok", "message": "New conversation started"})
+    _session_id = session_store.new_session_id()
+    print(f"[SESSION] Started new conversation: {_session_id}")
+    return JSONResponse({"status": "ok", "message": "New conversation started", "session_id": _session_id})
 
 
 @app.post("/react/approve")
@@ -2624,6 +2648,70 @@ async def react_continue(req: ReactRequest):
     """
     return await react_chat(req)
     return await react_chat(req)
+
+
+# ==========================================================
+# Session History - save, list, load, delete past conversations
+# ==========================================================
+
+def _auto_save_session():
+    """Save the current session to SQLite. Call before clearing."""
+    global _session_id
+    if not _session_id or not _session_messages:
+        return
+    # Generate title from first user message
+    title = "Untitled"
+    for m in _session_messages:
+        if m["role"] == "user":
+            title = m["content"][:80].strip()
+            break
+    session_store.save_session(_session_id, title, _session_messages)
+    print(f"[SESSION] Auto-saved session {_session_id}: {title[:50]}")
+
+
+@app.get("/sessions")
+async def list_sessions(limit: int = 50):
+    """List all saved sessions, most recent first."""
+    return JSONResponse(session_store.list_sessions(limit))
+
+
+@app.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get a saved session with its full message history."""
+    session = session_store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return JSONResponse(session)
+
+
+@app.post("/sessions/{session_id}/load")
+async def load_session(session_id: str):
+    """Load a saved session as the active conversation."""
+    global _session_id, _session_messages, _session_agent, _react_state
+    
+    # Save current session first if it has messages
+    if _session_id and _session_messages:
+        _auto_save_session()
+    
+    session = session_store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    _session_id = session_id
+    _session_messages = session["messages"]
+    _session_agent = None  # Force agent recreation to pick up new context
+    _react_state = None
+    print(f"[SESSION] Loaded session {session_id} with {len(_session_messages)} messages")
+    return JSONResponse({"status": "ok", "session": session})
+
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a saved session."""
+    deleted = session_store.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return JSONResponse({"status": "ok"})
 
 
 @app.post("/clear")

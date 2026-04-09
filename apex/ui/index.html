@@ -150,6 +150,61 @@
         .status-dot.connected { background: var(--success); }
         .status-dot.error { background: var(--error); }
         
+        /* Session history in sidebar */
+        .session-list {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        .session-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .session-item.active {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-primary);
+        }
+        .session-item-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .session-item-delete {
+            opacity: 0;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+        .session-item:hover .session-item-delete {
+            opacity: 1;
+        }
+        .session-item-delete:hover {
+            color: var(--error);
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .session-date-group {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            padding: 8px 12px 4px;
+        }
+
         .sidebar-footer {
             margin-top: auto;
             padding: 16px;
@@ -1532,6 +1587,13 @@
             </div>
         </div>
         
+        <div class="sidebar-section session-list">
+            <div class="sidebar-section-title">Recent Sessions</div>
+            <div id="sessionsList">
+                <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.75rem;">No sessions yet</div>
+            </div>
+        </div>
+        
         <div class="sidebar-footer">
             <div class="user-card" onclick="openSettings()">
                 <div class="user-avatar">U</div>
@@ -1811,6 +1873,7 @@
                     if (event.data?.response) {
                         addMessage(event.data.response, 'assistant');
                     }
+                    loadSessions();  // Refresh sidebar with saved session
                     break;
 
                 case 'error':
@@ -1953,10 +2016,14 @@
                 </div>
             `;
             
-            // Clear server session
+            // Clear server session (auto-saves current session)
             try {
-                await fetch(`${API}/react/new`, { method: 'POST' });
-                console.log('[UI] Started new conversation');
+                const res = await fetch(`${API}/react/new`, { method: 'POST' });
+                const data = await res.json();
+                _currentSessionId = data.session_id || null;
+                console.log('[UI] Started new conversation:', _currentSessionId);
+                // Refresh session list to show the saved conversation
+                loadSessions();
             } catch (e) {
                 console.error('[UI] Error starting new conversation', e);
             }
@@ -2926,6 +2993,95 @@
         }
 
         // ============================================
+        // Session History
+        // ============================================
+
+        let _currentSessionId = null;
+
+        async function loadSessions() {
+            try {
+                const res = await fetch(`${API}/sessions`);
+                const sessions = await res.json();
+                const list = document.getElementById('sessionsList');
+                
+                if (!sessions.length) {
+                    list.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem; padding: 4px 12px;">No sessions yet</div>';
+                    return;
+                }
+
+                // Group by date
+                const today = new Date().toDateString();
+                const yesterday = new Date(Date.now() - 86400000).toDateString();
+                const groups = { 'Today': [], 'Yesterday': [], 'Earlier': [] };
+
+                for (const s of sessions) {
+                    const d = new Date(s.updated_at).toDateString();
+                    if (d === today) groups['Today'].push(s);
+                    else if (d === yesterday) groups['Yesterday'].push(s);
+                    else groups['Earlier'].push(s);
+                }
+
+                let html = '';
+                for (const [label, items] of Object.entries(groups)) {
+                    if (!items.length) continue;
+                    html += `<div class="session-date-group">${label}</div>`;
+                    for (const s of items) {
+                        const isActive = s.id === _currentSessionId;
+                        html += `
+                            <div class="session-item ${isActive ? 'active' : ''}" onclick="loadSession('${s.id}')">
+                                <span style="font-size: 0.85rem;">💬</span>
+                                <span class="session-item-title">${escapeHtml(s.title)}</span>
+                                <span class="session-item-delete" onclick="event.stopPropagation(); deleteSession('${s.id}')" title="Delete">✕</span>
+                            </div>`;
+                    }
+                }
+                list.innerHTML = html;
+            } catch(e) {
+                console.log('Could not load sessions', e);
+            }
+        }
+
+        async function loadSession(sessionId) {
+            try {
+                const res = await fetch(`${API}/sessions/${sessionId}/load`, { method: 'POST' });
+                const data = await res.json();
+                if (data.status !== 'ok') return;
+
+                _currentSessionId = sessionId;
+                const session = data.session;
+
+                // Rebuild chat UI from saved messages
+                const chat = document.getElementById('chat');
+                const welcome = document.getElementById('welcome');
+                if (welcome) welcome.style.display = 'none';
+
+                chat.innerHTML = '';
+                for (const m of session.messages) {
+                    addMessage(m.content, m.role === 'user' ? 'user' : 'assistant');
+                }
+
+                // Refresh sidebar to highlight active session
+                loadSessions();
+            } catch(e) {
+                console.error('Error loading session', e);
+            }
+        }
+
+        async function deleteSession(sessionId) {
+            try {
+                await fetch(`${API}/sessions/${sessionId}`, { method: 'DELETE' });
+                // If we deleted the active session, start fresh
+                if (sessionId === _currentSessionId) {
+                    _currentSessionId = null;
+                    startNewChat();
+                }
+                loadSessions();
+            } catch(e) {
+                console.error('Error deleting session', e);
+            }
+        }
+
+        // ============================================
         // Step Preview Rendering (Sprint 4)
         // ============================================
 
@@ -3432,15 +3588,17 @@
         
         document.getElementById('input').focus();
         
-        // Check alerts and load providers on startup
+        // Check alerts, load providers, and load sessions on startup
         setTimeout(() => {
             fetchAlerts();
             loadProviders();
+            loadSessions();
         }, 1000);
         
         // Periodic refresh
         setInterval(fetchAlerts, 60 * 1000);
         setInterval(loadProviders, 60 * 1000);
+        setInterval(loadSessions, 30 * 1000);
     </script>
 </body>
 </html>
