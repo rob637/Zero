@@ -287,9 +287,10 @@ async def startup_event():
             from google.oauth2.credentials import Credentials
             from google.auth.transport.requests import Request
             
-            # Load credentials - don't restrict scopes, use whatever's in token
-            # Request all scopes we might need
-            all_scopes = auth._resolve_scopes(['calendar', 'gmail'])
+            # Load credentials with ALL possible scopes so we don't lose any
+            # Google's library restricts creds to only the scopes you request,
+            # so we must request everything the token might contain
+            all_scopes = auth._resolve_scopes(['calendar', 'gmail', 'drive', 'contacts', 'photos', 'sheets', 'slides'])
             creds = Credentials.from_authorized_user_file(str(auth._token_file), all_scopes)
             
             if creds and creds.expired and creds.refresh_token:
@@ -1266,7 +1267,7 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                             "client_secret": client_secret,
                             "grant_type": "authorization_code",
                             "code": code,
-                            "redirect_uri": "http://localhost:8000/oauth/callback",
+                            "redirect_uri": "http://127.0.0.1:8000/oauth/callback",
                         },
                         headers={"Content-Type": "application/x-www-form-urlencoded"},
                     )
