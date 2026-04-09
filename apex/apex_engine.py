@@ -1753,6 +1753,87 @@ Return ONLY a JSON object with the extracted data."""
 
 
 # ============================================================
+#  WEATHER PRIMITIVE
+# ============================================================
+
+class WeatherPrimitive(Primitive):
+    """Weather — current conditions, forecasts, and air quality.
+    
+    Uses OpenWeatherMap via the WeatherConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "WEATHER"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "current": "Get current weather for a city, zip code, or coordinates (e.g. 'New York', '10001', '40.7,-74.0')",
+            "forecast": "Get weather forecast for the next 1-5 days (3-hour intervals)",
+            "air_quality": "Get air quality index (AQI) and pollutant levels for a location",
+            "search_cities": "Search for cities by name to find the right location",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "current": {
+                "location": {"type": "str", "required": True, "description": "City name, zip code, or lat,lon coordinates"},
+            },
+            "forecast": {
+                "location": {"type": "str", "required": True, "description": "City name, zip code, or lat,lon coordinates"},
+                "days": {"type": "int", "required": False, "description": "Number of days (1-5, default 3)"},
+            },
+            "air_quality": {
+                "location": {"type": "str", "required": True, "description": "City name or lat,lon coordinates"},
+            },
+            "search_cities": {
+                "query": {"type": "str", "required": True, "description": "City name to search for"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 5)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "current":
+                location = params.get("location", "")
+                if not location:
+                    return StepResult(False, error="Missing 'location' parameter")
+                result = await self._connector.get_current(location)
+                return StepResult(True, data=result.to_dict())
+            
+            elif operation == "forecast":
+                location = params.get("location", "")
+                if not location:
+                    return StepResult(False, error="Missing 'location' parameter")
+                days = int(params.get("days", 3))
+                result = await self._connector.get_forecast(location, days=days)
+                return StepResult(True, data=result)
+            
+            elif operation == "air_quality":
+                location = params.get("location", "")
+                if not location:
+                    return StepResult(False, error="Missing 'location' parameter")
+                result = await self._connector.get_air_quality(location)
+                return StepResult(True, data=result)
+            
+            elif operation == "search_cities":
+                query = params.get("query", "")
+                if not query:
+                    return StepResult(False, error="Missing 'query' parameter")
+                limit = int(params.get("limit", 5))
+                results = await self._connector.search_cities(query, limit=limit)
+                return StepResult(True, data={"cities": results})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -6141,6 +6222,11 @@ class Apex:
         )
         
         self._primitives["WEB"] = WebPrimitive(self._llm_complete, search_provider=c.get("web_search"))
+        
+        # Weather — wire OpenWeatherMap connector
+        weather_connector = c.get("weather")
+        if weather_connector:
+            self._primitives["WEATHER"] = WeatherPrimitive(weather_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

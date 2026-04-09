@@ -578,6 +578,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .weather import WeatherConnector
+            self.register(ConnectorMetadata(
+                name="weather",
+                display_name="Weather",
+                provider="weather",
+                primitives=["WEATHER"],
+                scopes=[],
+                connector_class=WeatherConnector,
+                description="Current weather, forecasts, and air quality via OpenWeatherMap",
+                icon="weather",
+                setup_url="https://openweathermap.org/api",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

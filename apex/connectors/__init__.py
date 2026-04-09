@@ -220,6 +220,9 @@ __all__ = [
     # Web Search
     'WebSearchConnector',
     'SearchResult',
+    # Weather
+    'WeatherConnector',
+    'WeatherData',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow
