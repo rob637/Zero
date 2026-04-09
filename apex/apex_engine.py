@@ -1834,6 +1834,102 @@ class WeatherPrimitive(Primitive):
 
 
 # ============================================================
+#  NEWS PRIMITIVE
+# ============================================================
+
+class NewsPrimitive(Primitive):
+    """News — top headlines, search, and source discovery.
+    
+    Uses NewsAPI via the NewsConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "NEWS"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "headlines": "Get top headlines by country and/or category (business, sports, tech, health, science, entertainment)",
+            "search": "Search all news articles by keyword. Supports AND, OR, NOT operators. Can filter by date range and source.",
+            "sources": "List available news sources, optionally filtered by category, language, or country",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "headlines": {
+                "country": {"type": "str", "required": False, "description": "2-letter country code (default: us). Options: us, gb, ca, au, de, fr, it, etc."},
+                "category": {"type": "str", "required": False, "description": "Category: business, entertainment, general, health, science, sports, technology"},
+                "query": {"type": "str", "required": False, "description": "Keywords to filter headlines"},
+                "limit": {"type": "int", "required": False, "description": "Max articles (default 10)"},
+            },
+            "search": {
+                "query": {"type": "str", "required": True, "description": "Search keywords (supports AND, OR, NOT)"},
+                "sort_by": {"type": "str", "required": False, "description": "relevancy, popularity, or publishedAt (default: relevancy)"},
+                "from_date": {"type": "str", "required": False, "description": "Start date (YYYY-MM-DD)"},
+                "to_date": {"type": "str", "required": False, "description": "End date (YYYY-MM-DD)"},
+                "sources": {"type": "str", "required": False, "description": "Comma-separated source IDs (e.g. 'bbc-news,cnn')"},
+                "limit": {"type": "int", "required": False, "description": "Max articles (default 10)"},
+            },
+            "sources": {
+                "category": {"type": "str", "required": False, "description": "Category filter"},
+                "language": {"type": "str", "required": False, "description": "2-letter language code (default: en)"},
+                "country": {"type": "str", "required": False, "description": "2-letter country code"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "headlines":
+                articles = await self._connector.top_headlines(
+                    country=params.get("country", "us"),
+                    category=params.get("category"),
+                    query=params.get("query"),
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data={
+                    "count": len(articles),
+                    "articles": [a.to_dict() for a in articles],
+                })
+            
+            elif operation == "search":
+                query = params.get("query", "")
+                if not query:
+                    return StepResult(False, error="Missing 'query' parameter")
+                articles = await self._connector.search(
+                    query=query,
+                    sort_by=params.get("sort_by", "relevancy"),
+                    from_date=params.get("from_date"),
+                    to_date=params.get("to_date"),
+                    sources=params.get("sources"),
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data={
+                    "query": query,
+                    "count": len(articles),
+                    "articles": [a.to_dict() for a in articles],
+                })
+            
+            elif operation == "sources":
+                sources = await self._connector.get_sources(
+                    category=params.get("category"),
+                    language=params.get("language", "en"),
+                    country=params.get("country"),
+                )
+                return StepResult(True, data={
+                    "count": len(sources),
+                    "sources": sources,
+                })
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -6227,6 +6323,11 @@ class Apex:
         weather_connector = c.get("weather")
         if weather_connector:
             self._primitives["WEATHER"] = WeatherPrimitive(weather_connector)
+        
+        # News — wire NewsAPI connector
+        news_connector = c.get("news")
+        if news_connector:
+            self._primitives["NEWS"] = NewsPrimitive(news_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

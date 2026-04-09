@@ -223,6 +223,9 @@ __all__ = [
     # Weather
     'WeatherConnector',
     'WeatherData',
+    # News
+    'NewsConnector',
+    'Article',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

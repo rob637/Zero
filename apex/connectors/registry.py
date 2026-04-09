@@ -595,6 +595,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .news import NewsConnector
+            self.register(ConnectorMetadata(
+                name="news",
+                display_name="News",
+                provider="news",
+                primitives=["NEWS"],
+                scopes=[],
+                connector_class=NewsConnector,
+                description="Top headlines, news search, and source discovery via NewsAPI",
+                icon="news",
+                setup_url="https://newsapi.org/register",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

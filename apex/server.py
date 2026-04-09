@@ -217,6 +217,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "youtube": "youtube",
         "web_search": "web_search",
         "weather": "weather",
+        "news": "news",
     }
     
     # Check which providers have valid credentials
@@ -238,6 +239,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "smartthings": "SMARTTHINGS_TOKEN",
         "twilio": "TWILIO_ACCOUNT_SID",
         "weather": "OPENWEATHERMAP_API_KEY",
+        "news": "NEWSAPI_KEY",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):
