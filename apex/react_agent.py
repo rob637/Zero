@@ -7,9 +7,12 @@ The AI calls tools one at a time, sees results, and decides next steps.
 
 import json
 import asyncio
+import logging
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Callable, Dict, List, Optional, Awaitable
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 def serialize(obj: Any) -> Any:
@@ -165,7 +168,7 @@ When you have completed the task, respond with a summary of what was done."""
             
             # Prepare truncated result
             result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
-            MAX_RESULT_LEN = 8000
+            MAX_RESULT_LEN = 2000
             if len(result_str) > MAX_RESULT_LEN:
                 result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
             
@@ -290,9 +293,9 @@ When you have completed the task, respond with a summary of what was done."""
                     step.result = serialize(result)  # Convert to plain data
                     step.status = StepStatus.COMPLETED
                     
-                    # Truncate long results
+                    # Truncate long results to keep context lean
                     result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
-                    MAX_RESULT_LEN = 8000
+                    MAX_RESULT_LEN = 2000
                     if len(result_str) > MAX_RESULT_LEN:
                         result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
                     
@@ -335,6 +338,10 @@ When you have completed the task, respond with a summary of what was done."""
     
     async def _call_anthropic(self) -> Any:
         """Call Anthropic's Claude API."""
+        import time as _time
+        _t0 = _time.perf_counter()
+        # Calculate context size for logging
+        _ctx_size = sum(len(json.dumps(m)) for m in self.state.messages)
         response = await asyncio.to_thread(
             self.llm_client.messages.create,
             model="claude-sonnet-4-20250514",
@@ -343,6 +350,8 @@ When you have completed the task, respond with a summary of what was done."""
             tools=self.tool_schemas,
             messages=self.state.messages
         )
+        _elapsed = _time.perf_counter() - _t0
+        logger.info(f"LLM call: {_elapsed:.1f}s | context: {_ctx_size:,} chars | usage: {response.usage}")
         return response
     
     async def _call_openai(self) -> Any:

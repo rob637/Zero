@@ -1060,12 +1060,12 @@ class EmailPrimitive(Primitive):
                 "body": {"type": "str", "required": True, "description": "Email body text"},
             },
             "search": {
-                "query": {"type": "str", "required": True, "description": "Search query (e.g. 'from:bob subject:report')"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+                "query": {"type": "str", "required": True, "description": "Search query using Gmail syntax (e.g. 'from:bob subject:report', 'label:travel', 'in:anywhere Africa trip'). Use label: to search folders."},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 10)"},
             },
             "list": {
-                "query": {"type": "str", "required": False, "description": "Filter query"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+                "query": {"type": "str", "required": False, "description": "Filter query using Gmail syntax"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 10)"},
             },
         }
     
@@ -1102,7 +1102,7 @@ class EmailPrimitive(Primitive):
                 
                 result = await self._list(
                     query=params.get("query", ""),
-                    max_results=params.get("limit", 20),
+                    max_results=params.get("limit", 10),
                 )
                 return StepResult(True, data=result)
             
