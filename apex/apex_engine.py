@@ -3858,28 +3858,41 @@ class StripePrimitive(Primitive):
     Uses Stripe REST API via StripeConnector.
     """
 
-    NAME = "STRIPE"
-    DESCRIPTION = (
-        "Manage Stripe payments: customers, products, prices, invoices, "
-        "subscriptions, charges, payment intents, and account balance."
-    )
-    OPERATIONS = [
-        "list_customers", "get_customer", "create_customer", "update_customer",
-        "delete_customer",
-        "list_products", "get_product", "create_product",
-        "list_prices", "create_price",
-        "list_invoices", "get_invoice", "create_invoice",
-        "finalize_invoice", "void_invoice",
-        "list_subscriptions", "get_subscription", "cancel_subscription",
-        "list_payment_intents", "get_payment_intent",
-        "list_charges", "get_charge",
-        "get_balance",
-    ]
-
     def __init__(self, connector):
         self._c = connector
 
-    async def run(self, operation: str, params: dict) -> StepResult:
+    @property
+    def name(self) -> str:
+        return "STRIPE"
+
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "list_customers": "List Stripe customers",
+            "get_customer": "Get a Stripe customer by ID",
+            "create_customer": "Create a new Stripe customer",
+            "update_customer": "Update a Stripe customer",
+            "delete_customer": "Delete a Stripe customer",
+            "list_products": "List Stripe products",
+            "get_product": "Get a Stripe product by ID",
+            "create_product": "Create a new Stripe product",
+            "list_prices": "List prices for a product",
+            "create_price": "Create a price for a product",
+            "list_invoices": "List Stripe invoices",
+            "get_invoice": "Get a Stripe invoice by ID",
+            "create_invoice": "Create a new invoice for a customer",
+            "finalize_invoice": "Finalize a draft invoice",
+            "void_invoice": "Void an invoice",
+            "list_subscriptions": "List subscriptions",
+            "get_subscription": "Get a subscription by ID",
+            "cancel_subscription": "Cancel a subscription",
+            "list_payment_intents": "List payment intents",
+            "get_payment_intent": "Get a payment intent by ID",
+            "list_charges": "List charges",
+            "get_charge": "Get a charge by ID",
+            "get_balance": "Get Stripe account balance",
+        }
+
+    async def execute(self, operation: str, params: dict) -> StepResult:
         op = operation.lower().strip()
         try:
             if op == "list_customers":
@@ -3904,8 +3917,14 @@ class StripePrimitive(Primitive):
                 return StepResult(True, data=data)
 
             elif op == "update_customer":
-                cid = str(params.pop("customer_id"))
-                data = await self._c.update_customer(cid, **params)
+                cid = str(params["customer_id"])
+                data = await self._c.update_customer(
+                    cid,
+                    name=params.get("name"),
+                    email=params.get("email"),
+                    description=params.get("description"),
+                    metadata=params.get("metadata"),
+                )
                 return StepResult(True, data=data)
 
             elif op == "delete_customer":
@@ -6465,9 +6484,10 @@ class AutomationPrimitive(Primitive):
 # ============================================================
 
 class SearchPrimitive(Primitive):
-    """Universal search — across files, emails, calendar, tasks, and more.
+    """Universal search — dynamically searches across all available primitives.
     
-    Aggregates results from multiple primitives for a unified search experience.
+    Discovers which primitives have a 'search' or 'recall' operation
+    and aggregates results. No hard-coded source list.
     """
     
     def __init__(self, primitives: Optional[Dict[str, 'Primitive']] = None):
@@ -6483,13 +6503,7 @@ class SearchPrimitive(Primitive):
     
     def get_operations(self) -> Dict[str, str]:
         return {
-            "all": "Search across all available sources",
-            "files": "Search local files",
-            "email": "Search emails",
-            "calendar": "Search calendar events",
-            "tasks": "Search tasks and todos",
-            "knowledge": "Search remembered facts",
-            "messages": "Search messages (Slack, Teams, etc.)",
+            "all": "Search across all available sources (files, email, calendar, tasks, contacts, messages, etc.)",
         }
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
@@ -6498,123 +6512,42 @@ class SearchPrimitive(Primitive):
                 "query": {"type": "str", "required": True, "description": "Search query"},
                 "limit": {"type": "int", "required": False, "description": "Max results per source (default 5)"},
             },
-            "files": {
-                "query": {"type": "str", "required": True, "description": "Search query or pattern"},
-                "path": {"type": "str", "required": False, "description": "Directory to search in"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
-            },
-            "email": {
-                "query": {"type": "str", "required": True, "description": "Search query"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
-            },
-            "calendar": {
-                "query": {"type": "str", "required": True, "description": "Search query"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
-            },
-            "tasks": {
-                "query": {"type": "str", "required": True, "description": "Search query"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
-            },
-            "knowledge": {
-                "query": {"type": "str", "required": True, "description": "Search query"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
-            },
-            "messages": {
-                "query": {"type": "str", "required": True, "description": "Search query"},
-                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
-            },
         }
+    
+    def _find_searchable(self) -> Dict[str, tuple]:
+        """Discover all primitives that support search/recall operations."""
+        searchable = {}
+        for name, prim in self._primitives.items():
+            if name == "SEARCH":
+                continue  # Don't recurse into ourselves
+            ops = prim.get_operations()
+            if "search" in ops:
+                searchable[name.lower()] = (prim, "search")
+            elif "recall" in ops:
+                searchable[name.lower()] = (prim, "recall")
+        return searchable
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
             query = params.get("query", "")
-            limit = params.get("limit", 20)
+            limit = params.get("limit", 5)
             
             if not query:
                 return StepResult(False, error="Missing 'query' parameter")
             
             if operation == "all":
-                # Search all available sources
                 results = {"query": query, "sources": {}}
-                per_source = params.get("limit", 5)
+                searchable = self._find_searchable()
                 
-                # Files
-                if "FILE" in self._primitives:
+                for source_name, (prim, op) in searchable.items():
                     try:
-                        file_result = await self._primitives["FILE"].execute("search", {"query": query, "limit": per_source})
-                        if file_result.success:
-                            results["sources"]["files"] = file_result.data
-                    except Exception:
-                        pass
-                
-                # Knowledge
-                if "KNOWLEDGE" in self._primitives:
-                    try:
-                        know_result = await self._primitives["KNOWLEDGE"].execute("recall", {"query": query, "limit": per_source})
-                        if know_result.success:
-                            results["sources"]["knowledge"] = know_result.data
-                    except Exception:
-                        pass
-                
-                # Calendar
-                if "CALENDAR" in self._primitives:
-                    try:
-                        cal_result = await self._primitives["CALENDAR"].execute("search", {"query": query, "limit": per_source})
-                        if cal_result.success:
-                            results["sources"]["calendar"] = cal_result.data
-                    except Exception:
-                        pass
-                
-                # Tasks
-                if "TASK" in self._primitives:
-                    try:
-                        task_result = await self._primitives["TASK"].execute("search", {"query": query, "limit": per_source})
-                        if task_result.success:
-                            results["sources"]["tasks"] = task_result.data
-                    except Exception:
-                        pass
-                
-                # Messages
-                if "MESSAGE" in self._primitives:
-                    try:
-                        msg_result = await self._primitives["MESSAGE"].execute("search", {"query": query, "limit": per_source})
-                        if msg_result.success:
-                            results["sources"]["messages"] = msg_result.data
+                        result = await prim.execute(op, {"query": query, "limit": limit})
+                        if result.success and result.data:
+                            results["sources"][source_name] = result.data
                     except Exception:
                         pass
                 
                 return StepResult(True, data=results)
-            
-            elif operation == "files":
-                if "FILE" not in self._primitives:
-                    return StepResult(False, error="FILE primitive not available")
-                path = params.get("path", str(Path.home()))
-                return await self._primitives["FILE"].execute("search", {"query": query, "path": path, "limit": limit})
-            
-            elif operation == "email":
-                if "EMAIL" not in self._primitives:
-                    return StepResult(False, error="EMAIL primitive not available")
-                return await self._primitives["EMAIL"].execute("search", {"query": query, "limit": limit})
-            
-            elif operation == "calendar":
-                if "CALENDAR" not in self._primitives:
-                    return StepResult(False, error="CALENDAR primitive not available")
-                return await self._primitives["CALENDAR"].execute("search", {"query": query, "limit": limit})
-            
-            elif operation == "tasks":
-                if "TASK" not in self._primitives:
-                    return StepResult(False, error="TASK primitive not available")
-                return await self._primitives["TASK"].execute("search", {"query": query, "limit": limit})
-            
-            elif operation == "knowledge":
-                if "KNOWLEDGE" not in self._primitives:
-                    return StepResult(False, error="KNOWLEDGE primitive not available")
-                return await self._primitives["KNOWLEDGE"].execute("recall", {"query": query, "limit": limit})
-            
-            elif operation == "messages":
-                if "MESSAGE" not in self._primitives:
-                    return StepResult(False, error="MESSAGE primitive not available")
-                return await self._primitives["MESSAGE"].execute("search", {"query": query, "limit": limit})
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
