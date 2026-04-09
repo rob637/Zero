@@ -85,6 +85,7 @@ class CalendarConnector:
         self._auth = auth or get_google_auth()
         self._service = None
         self._primary_calendar: Optional[str] = None
+        self._calendar_timezone: Optional[str] = None
         self._calendars: List[Dict] = []
     
     async def connect(self) -> bool:
@@ -109,6 +110,7 @@ class CalendarConnector:
                 self._service.calendars().get(calendarId='primary').execute
             )
             self._primary_calendar = cal.get('id')
+            self._calendar_timezone = cal.get('timeZone')
         except Exception:
             self._primary_calendar = 'primary'
         
@@ -247,15 +249,28 @@ class CalendarConnector:
         
         for cal_id in calendar_ids:
             try:
-                request = self._service.events().list(
+                # Format time bounds for Google API
+                # If datetime is tz-aware, convert to UTC and append Z
+                # If naive (e.g. date-only from user), use isoformat+Z and let
+                # the timeZone param tell Google how to interpret it
+                t_min = (time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_min.tzinfo else (time_min.isoformat() + 'Z')
+                t_max = (time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_max.tzinfo else (time_max.isoformat() + 'Z')
+
+                list_kwargs = dict(
                     calendarId=cal_id,
-                    timeMin=(time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_min.tzinfo else (time_min.isoformat() + 'Z'),
-                    timeMax=(time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_max.tzinfo else (time_max.isoformat() + 'Z'),
+                    timeMin=t_min,
+                    timeMax=t_max,
                     maxResults=max_results,
                     singleEvents=single_events,
                     orderBy='startTime',
                     q=query,
                 )
+                # When we have naive datetimes (date-only), tell Google
+                # to interpret them in the user's calendar timezone
+                if not time_min.tzinfo and self._calendar_timezone:
+                    list_kwargs['timeZone'] = self._calendar_timezone
+
+                request = self._service.events().list(**list_kwargs)
                 result = await asyncio.to_thread(request.execute)
                 all_events.extend([self._parse_event(e) for e in result.get('items', [])])
             except HttpError as e:

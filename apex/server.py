@@ -2399,11 +2399,19 @@ User request: {req.message}"""
             if os.environ.get("ANTHROPIC_API_KEY"):
                 import anthropic
                 plan_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-                plan_response = plan_client.messages.create(
-                    model="claude-haiku-4-20250414",
-                    max_tokens=300,
-                    messages=[{"role": "user", "content": plan_prompt}]
-                )
+                try:
+                    plan_response = plan_client.messages.create(
+                        model="claude-haiku-4-20250414",
+                        max_tokens=300,
+                        messages=[{"role": "user", "content": plan_prompt}]
+                    )
+                except Exception:
+                    # Fallback to sonnet if haiku unavailable
+                    plan_response = plan_client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=300,
+                        messages=[{"role": "user", "content": plan_prompt}]
+                    )
                 plan_text = plan_response.content[0].text.strip()
             else:
                 import openai
@@ -2427,7 +2435,9 @@ User request: {req.message}"""
                 yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
                 print(f"[STREAM] Blueprint: {len(plan_steps)} planned steps")
         except Exception as e:
+            import traceback
             print(f"[STREAM] Blueprint generation skipped: {e}")
+            traceback.print_exc()
 
         # Run agent as background task
         task = asyncio.create_task(agent.run(full_message))

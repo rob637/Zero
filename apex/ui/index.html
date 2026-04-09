@@ -3198,39 +3198,43 @@
 
                 const type = classifyTool(step.tool);
                 // For list-type results, get the array
-                const items = Array.isArray(result) ? result
-                    : (result.data && Array.isArray(result.data)) ? result.data
-                    : (result.items && Array.isArray(result.items)) ? result.items
-                    : (result.events && Array.isArray(result.events)) ? result.events
-                    : (result.emails && Array.isArray(result.emails)) ? result.emails
-                    : (result.messages && Array.isArray(result.messages)) ? result.messages
-                    : (result.tasks && Array.isArray(result.tasks)) ? result.tasks
-                    : (result.files && Array.isArray(result.files)) ? result.files
+                const items = Array.isArray(result) ? (result.length ? result : null)
+                    : (result.data && Array.isArray(result.data) && result.data.length) ? result.data
+                    : (result.items && Array.isArray(result.items) && result.items.length) ? result.items
+                    : (result.events && Array.isArray(result.events) && result.events.length) ? result.events
+                    : (result.emails && Array.isArray(result.emails) && result.emails.length) ? result.emails
+                    : (result.messages && Array.isArray(result.messages) && result.messages.length) ? result.messages
+                    : (result.tasks && Array.isArray(result.tasks) && result.tasks.length) ? result.tasks
+                    : (result.files && Array.isArray(result.files) && result.files.length) ? result.files
                     : null;
 
                 const key = type || step.tool;
                 if (rendered.has(key)) continue;
 
                 let card = '';
+                // Only use single-object fallback if the object looks like actual
+                // data (has domain-specific fields), not a StepResult wrapper
+                const singleItem = (items === null && result && !Array.isArray(result) && !('success' in result))
+                    ? [result] : null;
                 switch (type) {
                     case 'calendar':
-                        card = renderCalendarCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        card = renderCalendarCard(items || singleItem);
                         break;
                     case 'email':
-                        card = renderEmailCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        card = renderEmailCard(items || singleItem);
                         break;
                     case 'tasks':
-                        card = renderTasksCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        card = renderTasksCard(items || singleItem);
                         break;
                     case 'weather':
-                        card = renderWeatherCard(Array.isArray(result) ? result[0] : result);
+                        card = renderWeatherCard(items ? items[0] : (singleItem ? singleItem[0] : (result.data || result)));
                         break;
                     case 'music':
-                        card = renderMusicCard(Array.isArray(result) ? result[0] : result);
+                        card = renderMusicCard(items ? items[0] : (singleItem ? singleItem[0] : (result.data || result)));
                         break;
                     case 'files':
                     case 'photos':
-                        card = renderFilesCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        card = renderFilesCard(items || singleItem);
                         break;
                     default:
                         // Skip generic cards, main response covers them

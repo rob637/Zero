@@ -2024,13 +2024,12 @@ class CalendarPrimitive(Primitive):
                     api_params = {}
                     if params.get("start_date"):
                         dt = datetime.fromisoformat(params["start_date"])
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
+                        # Don't force timezone on date-only strings — let the
+                        # connector handle them so the calendar's own timezone
+                        # is respected by the Google API.
                         api_params["time_min"] = dt
                     if params.get("end_date"):
                         dt = datetime.fromisoformat(params["end_date"])
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
                         api_params["time_max"] = dt + timedelta(days=1)
                     if params.get("limit"):
                         api_params["max_results"] = params["limit"]
