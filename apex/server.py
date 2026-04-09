@@ -3167,31 +3167,37 @@ async def get_checkpoints(limit: int = 20):
 @app.get("/health")
 async def health():
     """Health check."""
-    cred_manager = get_credential_manager()
-    services = cred_manager.list_services()
-    
-    # Check brain status
-    brain_status = "not_initialized"
-    if _brain:
-        brain_status = "awake" if _brain._awake else "initialized"
+    try:
+        credential_store = get_credential_store()
+        providers = credential_store.list_providers()
+    except Exception:
+        providers = []
     
     # Check connected services 
-    monitor = get_proactive_monitor()
-    devtools = get_devtools()
+    try:
+        devtools = get_devtools()
+        devtools_providers = devtools.providers if hasattr(devtools, 'providers') else {}
+    except Exception:
+        devtools_providers = {}
+    
+    try:
+        monitor = get_proactive_monitor()
+        monitor_services = list(monitor._services.keys()) if hasattr(monitor, '_services') else []
+    except Exception:
+        monitor_services = []
     
     service_status = {
-        "google": any(s.get("name") == "google" and s.get("has_access_token") for s in services),
-        "microsoft": any(s.get("name") == "microsoft" and s.get("has_access_token") for s in services),
-        "github": "github" in devtools.providers,
-        "jira": "jira" in devtools.providers,
-        "slack": "slack" in [svc for svc in monitor._services.keys()] if hasattr(monitor, '_services') else False,
+        "google": "google" in providers,
+        "microsoft": "microsoft" in providers,
+        "github": "github" in devtools_providers,
+        "jira": "jira" in devtools_providers,
+        "slack": "slack" in monitor_services,
     }
     
     return {
         "status": "ok",
         "llm_configured": create_client_from_env() is not None,
-        "connected_services": len([s for s in services if s.get("has_access_token")]),
-        "brain": brain_status,
+        "connected_services": len(providers),
         "services": service_status,
     }
 
@@ -3211,10 +3217,8 @@ async def setup_status():
     # Count connected services
     connected = []
     try:
-        cred_manager = get_credential_manager()
-        for svc in cred_manager.list_services():
-            if svc.get("has_access_token"):
-                connected.append(svc.get("name"))
+        credential_store = get_credential_store()
+        connected = credential_store.list_providers()
     except Exception:
         pass
     
