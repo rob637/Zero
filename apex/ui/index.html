@@ -1740,6 +1740,12 @@
                 <button class="icon-btn" onclick="startNewChat()" title="New Session" style="font-size: 0.85rem; padding: 6px 12px; margin-right: 8px;">
                     + New
                 </button>
+                <button class="icon-btn" onclick="openActionHistory()" title="Action History" style="position:relative;">
+                    📜
+                </button>
+                <button class="icon-btn" onclick="openAuditLog()" title="Audit Log" style="position:relative;">
+                    🔒
+                </button>
                 <button class="icon-btn" onclick="toggleAlerts()" id="alertsBtn" style="position:relative;">
                     🔔
                 </button>
@@ -2357,7 +2363,7 @@
             const paramsHtml = Object.entries(step.params || {}).map(([k, v]) => {
                 const valStr = typeof v === 'string' ? v : JSON.stringify(v);
                 return `<div style="margin-bottom: 4px;">
-                    <span style="color: var(--primary); font-weight: 500;">${k}:</span> 
+                    <span style="color: var(--accent-primary); font-weight: 500;">${escapeHtml(k)}:</span> 
                     <span style="color: var(--text-secondary)">${escapeHtml(valStr.substring(0, 200))}</span>
                 </div>`;
             }).join('');
@@ -2375,14 +2381,19 @@
                     
                     <div style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
                         <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
-                            ${step.tool}
+                            ${escapeHtml(step.tool)}
                         </div>
                         <div style="font-size: 0.8rem;">
                             ${paramsHtml}
                         </div>
                     </div>
                     
-                    <div style="display: flex; gap: 12px; justify-content: center;">
+                    <div style="display: flex; align-items: center; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; 
+                                      color: var(--text-muted); cursor: pointer; width: 100%; justify-content: center; margin-bottom: 4px;">
+                            <input type="checkbox" id="rememberApproval" style="accent-color: var(--accent-primary);">
+                            Always allow <strong style="color: var(--text-secondary)">${escapeHtml(step.tool)}</strong>
+                        </label>
                         <button class="btn btn-approve" onclick="approveAction(true)" 
                                 style="padding: 12px 28px; font-size: 1rem; font-weight: 600;">
                             ✓ Approve & Run
@@ -2398,24 +2409,57 @@
 
         async function approveAction(approved) {
             setThinking(true);
-            addTypingIndicator();
-            
+
+            // Create live activity feed for continuation
+            const activityEl = approved ? addActivityFeed() : null;
+
             try {
-                const res = await fetch(`${API}/react/approve`, {
+                const res = await fetch(`${API}/react/approve/stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ approved })
                 });
-                const data = await res.json();
-                removeTypingIndicator();
+
+                if (!res.ok || !res.body) {
+                    // Fallback to non-streaming approve
+                    if (activityEl) activityEl.remove();
+                    const fallback = await fetch(`${API}/react/approve`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ approved })
+                    });
+                    const data = await fallback.json();
+                    setThinking(false);
+                    renderReactState(data);
+                    return;
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        try {
+                            const event = JSON.parse(line.slice(6));
+                            handleStreamEvent(event, activityEl);
+                        } catch (parseErr) {}
+                    }
+                }
+
                 setThinking(false);
-                
-                // Render the updated state
-                renderReactState(data);
-                
+
             } catch (e) {
-                removeTypingIndicator();
                 setThinking(false);
+                if (activityEl) activityEl.remove();
                 addMessage('Error approving action: ' + e.message, 'system');
             }
         }

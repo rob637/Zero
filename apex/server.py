@@ -2663,6 +2663,91 @@ async def react_approve(req: ReactApproveRequest):
         })
 
 
+@app.post("/react/approve/stream")
+async def react_approve_stream(req: ReactApproveRequest):
+    """
+    Streaming version of approve. Returns SSE events as agent continues
+    executing after approval, so the UI can show real-time tool progress.
+    """
+    import json
+    global _react_state, _session_messages
+
+    agent = get_session_agent()
+    if not agent or not _react_state:
+        async def err():
+            yield f"data: {json.dumps({'event': 'error', 'message': 'No pending action'})}\n\n"
+        return StreamingResponse(err(), media_type="text/event-stream")
+
+    action = "Approved" if req.approved else "Rejected"
+    if _react_state.pending_approval:
+        print(f"[STREAM-APPROVE] {action}: {_react_state.pending_approval.tool_call.name}")
+
+    if not req.approved:
+        # Rejection is instant — no streaming needed
+        async def reject_stream():
+            state = await agent.continue_with_approval(False)
+            _react_state = state
+            yield f"data: {json.dumps({'event': 'complete', 'data': state_to_response(state)})}\n\n"
+        return StreamingResponse(reject_stream(), media_type="text/event-stream")
+
+    # Approved — stream the continuation
+    queue = asyncio.Queue()
+
+    async def on_step(step):
+        data = step_to_dict(step)
+        data["id"] = step.tool_call.id
+        if step.status == StepStatus.RUNNING:
+            await queue.put({"event": "tool_start", "step": data})
+        elif step.status == StepStatus.COMPLETED:
+            await queue.put({"event": "tool_complete", "step": data})
+        elif step.status == StepStatus.FAILED:
+            await queue.put({"event": "tool_failed", "step": data})
+        elif step.status == StepStatus.PENDING_APPROVAL:
+            await queue.put({"event": "approval_needed", "step": data})
+
+    async def on_thinking():
+        await queue.put({"event": "thinking"})
+
+    prev_on_step = agent.on_step
+    prev_on_thinking = getattr(agent, 'on_thinking', None)
+    agent.on_step = on_step
+    agent.on_thinking = on_thinking
+
+    async def event_generator():
+        global _react_state
+        yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
+        task = asyncio.create_task(agent.continue_with_approval(True))
+        try:
+            while not task.done():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+            while not queue.empty():
+                event = await queue.get()
+                yield f"data: {json.dumps(event)}\n\n"
+            state = task.result()
+            _react_state = state
+            if state.final_response:
+                _session_messages.append({"role": "assistant", "content": state.final_response})
+            _auto_save_session()
+            yield f"data: {json.dumps({'event': 'complete', 'data': state_to_response(state)})}\n\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
+        finally:
+            agent.on_step = prev_on_step
+            agent.on_thinking = prev_on_thinking
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # /react/continue is now deprecated - /react/chat handles all messages with session context
 @app.post("/react/continue")
 async def react_continue(req: ReactRequest):
