@@ -1888,6 +1888,7 @@ class CalendarPrimitive(Primitive):
                 "start_date": {"type": "str", "required": False, "description": "Start of range (ISO date, defaults to today)"},
                 "end_date": {"type": "str", "required": False, "description": "End of range (ISO date, defaults to 7 days out)"},
                 "limit": {"type": "int", "required": False, "description": "Max events to return (default 50)"},
+                "calendar_id": {"type": "str", "required": False, "description": "Calendar ID or name (default: queries user's own calendars, not subscriptions)"},
             },
             "search": {
                 "query": {"type": "str", "required": True, "description": "Search term"},
@@ -2033,6 +2034,9 @@ class CalendarPrimitive(Primitive):
                         api_params["time_max"] = dt + timedelta(days=1)
                     if params.get("limit"):
                         api_params["max_results"] = params["limit"]
+                    if params.get("calendar_id"):
+                        raw_cal = params["calendar_id"]
+                        api_params["calendar_id"] = await self._resolve_calendar_id(raw_cal)
                     result = await self._list_func(**api_params)
                     # Convert CalendarEvent objects to dicts
                     if result and hasattr(result[0], 'to_dict'):
