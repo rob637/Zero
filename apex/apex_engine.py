@@ -6088,10 +6088,12 @@ class Apex:
             email_list = outlook.list_messages
         self._primitives["EMAIL"] = EmailPrimitive(send_func=email_send, list_func=email_list)
         
-        # Contacts — wire Google Contacts
+        # Contacts — wire Google Contacts and/or Microsoft Contacts
         contacts_providers = {}
         if c.get("contacts"):
             contacts_providers["google"] = c["contacts"]
+        if c.get("contacts_microsoft"):
+            contacts_providers["microsoft"] = c["contacts_microsoft"]
         self._primitives["CONTACTS"] = ContactsPrimitive(providers=contacts_providers)
         
         self._primitives["KNOWLEDGE"] = KnowledgePrimitive(str(self._storage_path / "knowledge.json"))

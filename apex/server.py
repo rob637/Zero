@@ -131,7 +131,11 @@ _session_messages: list = []  # Full conversation history for session
 _session_agent: Optional[ReActAgent] = None   # Persistent agent for session
 
 def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
-    """Get or create the Telic engine singleton."""
+    """Get or create the Telic engine singleton.
+    
+    Auto-discovers all connected connectors from the registry
+    and credential store instead of hardcoding individual services.
+    """
     global _telic_engine, _google_calendar, _react_agent
     
     if _telic_engine is not None and not force_rebuild:
@@ -147,26 +151,122 @@ def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
         
     model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
     
-    # Wire up available connectors
-    connectors = {}
-    
-    # Check for Google Calendar connection
-    if HAS_GOOGLE_CALENDAR and _google_calendar and _google_calendar.connected:
-        connectors["calendar"] = _google_calendar
-        print("[ENGINE] Google Calendar connected - using real API")
-    else:
-        print("[ENGINE] Google Calendar not connected - using local storage")
-    
-    # Check for Gmail connection
-    if _gmail_connector:
-        connectors["gmail"] = _gmail_connector
-        print("[ENGINE] Gmail connected - using real API")
-    else:
-        print("[ENGINE] Gmail not connected")
+    # Auto-discover connectors from registry + credentials
+    connectors = _build_connectors_from_registry()
     
     _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
-    print(f"[ENGINE] Initialized with {len(connectors)} connectors")
+    print(f"[ENGINE] Initialized with {len(connectors)} connectors: {list(connectors.keys())}")
     return _telic_engine
+
+
+def _build_connectors_from_registry() -> Dict[str, Any]:
+    """
+    Scan the registry and credential store to auto-discover all
+    connected services and build the connectors dict for the engine.
+    
+    This replaces manual hardcoding of individual connectors.
+    """
+    from connectors.registry import ConnectorRegistry
+    
+    connectors: Dict[str, Any] = {}
+    
+    # 1. Wire up already-initialized connectors (Google services from OAuth flow)
+    if HAS_GOOGLE_CALENDAR and _google_calendar and _google_calendar.connected:
+        connectors["calendar"] = _google_calendar
+    if _gmail_connector:
+        connectors["gmail"] = _gmail_connector
+    
+    # 2. Scan registry for all registered connectors and try to instantiate
+    #    those that have valid credentials
+    registry = ConnectorRegistry()
+    store = get_cred_store()
+    
+    # Map from registry connector names to engine connector keys
+    # (engine uses short keys, registry uses full names)
+    registry_to_engine = {
+        "gmail": "gmail",
+        "google_calendar": "calendar",
+        "google_drive": "drive",
+        "google_contacts": "contacts",
+        "google_sheets": "google_sheets",
+        "google_slides": "google_slides",
+        "google_photos": "google_photos",
+        "outlook": "outlook",
+        "outlook_calendar": "outlook_calendar",
+        "onedrive": "onedrive",
+        "microsoft_todo": "microsoft_todo",
+        "microsoft_excel": "excel",
+        "microsoft_powerpoint": "powerpoint",
+        "microsoft_contacts": "contacts_microsoft",
+        "onenote": "onenote",
+        "teams": "teams",
+        "slack": "slack",
+        "discord": "discord",
+        "github": "github",
+        "jira": "jira",
+        "todoist": "todoist",
+        "spotify": "spotify",
+        "dropbox": "dropbox",
+        "twilio": "twilio",
+        "twitter": "twitter",
+        "smartthings": "smartthings",
+        "youtube": "youtube",
+        "web_search": "web_search",
+    }
+    
+    # Check which providers have valid credentials
+    connected_providers = set()
+    try:
+        for provider in store.list_providers():
+            if store.has_valid(provider):
+                connected_providers.add(provider)
+    except Exception:
+        pass
+    
+    # Also check env vars for token-based services
+    env_tokens = {
+        "github": "GITHUB_TOKEN",
+        "slack": "SLACK_BOT_TOKEN",
+        "discord": "DISCORD_BOT_TOKEN",
+        "todoist": "TODOIST_API_TOKEN",
+        "spotify": "SPOTIFY_CLIENT_ID",
+        "smartthings": "SMARTTHINGS_TOKEN",
+        "twilio": "TWILIO_ACCOUNT_SID",
+    }
+    for provider, env_var in env_tokens.items():
+        if os.environ.get(env_var):
+            connected_providers.add(provider)
+    
+    # Also add Google services that were connected via OAuth
+    if _google_connected_services:
+        connected_providers.add("google")
+    
+    # Check Microsoft auth
+    if "microsoft" in connected_providers or os.environ.get("AZURE_CLIENT_ID"):
+        connected_providers.add("microsoft")
+    
+    # Instantiate connectors for connected providers
+    for metadata in registry.list_connectors():
+        engine_key = registry_to_engine.get(metadata.name)
+        if not engine_key:
+            continue
+        
+        # Skip if already wired (e.g., Gmail/Calendar from OAuth)
+        if engine_key in connectors:
+            continue
+        
+        # Check if this provider has credentials
+        if metadata.provider not in connected_providers:
+            continue
+        
+        try:
+            instance = metadata.connector_class()
+            connectors[engine_key] = instance
+            print(f"[ENGINE] Auto-wired: {metadata.display_name} -> {engine_key}")
+        except Exception as e:
+            print(f"[ENGINE] Failed to instantiate {metadata.name}: {e}")
+    
+    return connectors
 
 
 def get_react_agent() -> Optional[ReActAgent]:
