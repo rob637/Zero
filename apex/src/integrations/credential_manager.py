@@ -249,7 +249,7 @@ class CredentialManager:
                 data = json.loads(decrypted)
                 self._cache[service] = data
             except Exception as e:
-                logger.warning(f"Failed to load credentials for {cred_file.stem}: {e}")
+                logger.debug(f"Skipping credential file {cred_file.stem} (encrypted with different key)")
     
     def _save_credential(self, service: str, data: Dict[str, Any]):
         """Save credential to encrypted storage."""
