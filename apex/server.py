@@ -939,7 +939,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 ]
                 scope_str = ",".join(slack_scopes)  # Slack uses comma-separated
                 
-                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
+                redirect_uri = "http://localhost:8000/oauth/callback"
                 auth_url = (
                     f"https://slack.com/oauth/v2/authorize"
                     f"?client_id={client_id}"
@@ -1423,7 +1423,7 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                             "client_id": client_id,
                             "client_secret": client_secret,
                             "code": code,
-                            "redirect_uri": "http://127.0.0.1:8000/oauth/callback",
+                            "redirect_uri": "http://localhost:8000/oauth/callback",
                         },
                         headers={"Content-Type": "application/x-www-form-urlencoded"},
                     )
