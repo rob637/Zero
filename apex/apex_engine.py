@@ -1030,26 +1030,42 @@ ComputePrimitive._BUILTIN_FORMULAS = {
 class EmailPrimitive(Primitive):
     """Email operations via Gmail or other providers."""
     
-    def __init__(self, send_func: Optional[Callable] = None, list_func: Optional[Callable] = None, read_func: Optional[Callable] = None):
+    def __init__(self, send_func: Optional[Callable] = None, list_func: Optional[Callable] = None, read_func: Optional[Callable] = None, connector: Optional[Any] = None):
         self._send = send_func
         self._list = list_func
         self._read = read_func
+        self._connector = connector
     
     @property
     def name(self) -> str:
         return "EMAIL"
     
     def get_operations(self) -> Dict[str, str]:
-        return {
+        ops = {
             "send": "Send an email",
             "draft": "Create a draft email",
             "search": "Search emails",
             "list": "List recent emails",
             "read": "Read a specific email by ID to get its full body content",
         }
+        if self._connector:
+            ops.update({
+                "reply": "Reply to an email",
+                "forward": "Forward an email to another recipient",
+                "delete": "Permanently delete an email",
+                "trash": "Move an email to trash",
+                "archive": "Archive an email (remove from inbox)",
+                "mark_read": "Mark an email as read",
+                "mark_unread": "Mark an email as unread",
+                "add_label": "Add a label/folder to an email",
+                "remove_label": "Remove a label/folder from an email",
+                "get_labels": "List all available labels/folders",
+                "get_thread": "Get all messages in an email thread",
+            })
+        return ops
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
-        return {
+        schema = {
             "send": {
                 "to": {"type": "str", "required": True, "description": "Recipient email address"},
                 "subject": {"type": "str", "required": True, "description": "Email subject line"},
@@ -1072,7 +1088,44 @@ class EmailPrimitive(Primitive):
             "read": {
                 "message_id": {"type": "str", "required": True, "description": "The email message ID (from search/list results)"},
             },
+            "reply": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email to reply to"},
+                "body": {"type": "str", "required": True, "description": "Reply body text"},
+            },
+            "forward": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email to forward"},
+                "to": {"type": "str", "required": True, "description": "Recipient email address"},
+                "body": {"type": "str", "required": False, "description": "Additional message to include"},
+            },
+            "delete": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email to delete permanently"},
+            },
+            "trash": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email to move to trash"},
+            },
+            "archive": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email to archive"},
+            },
+            "mark_read": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email to mark as read"},
+            },
+            "mark_unread": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email to mark as unread"},
+            },
+            "add_label": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email"},
+                "label_ids": {"type": "list", "required": True, "description": "Label IDs to add"},
+            },
+            "remove_label": {
+                "message_id": {"type": "str", "required": True, "description": "ID of the email"},
+                "label_ids": {"type": "list", "required": True, "description": "Label IDs to remove"},
+            },
+            "get_labels": {},
+            "get_thread": {
+                "thread_id": {"type": "str", "required": True, "description": "Thread ID to get all messages for"},
+            },
         }
+        return schema
     
     def get_available_operations(self) -> Dict[str, str]:
         """All email operations are always available - execute returns helpful errors if no provider."""
@@ -1123,6 +1176,80 @@ class EmailPrimitive(Primitive):
                 if hasattr(email, 'to_dict'):
                     return StepResult(True, data=email.to_dict())
                 return StepResult(True, data=email)
+            
+            elif operation == "reply":
+                if not self._connector or not hasattr(self._connector, "reply"):
+                    return StepResult(False, error="Reply not supported by this email provider")
+                result = await self._connector.reply(
+                    message_id=params["message_id"],
+                    body=params["body"],
+                    html=params.get("html", False),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "forward":
+                if not self._connector or not hasattr(self._connector, "forward"):
+                    return StepResult(False, error="Forward not supported by this email provider")
+                result = await self._connector.forward(
+                    message_id=params["message_id"],
+                    to=params["to"],
+                    additional_body=params.get("body", ""),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "delete":
+                if not self._connector or not hasattr(self._connector, "delete_message"):
+                    return StepResult(False, error="Delete not supported by this email provider")
+                await self._connector.delete_message(params["message_id"])
+                return StepResult(True, data={"deleted": True})
+            
+            elif operation == "trash":
+                if not self._connector or not hasattr(self._connector, "trash_message"):
+                    return StepResult(False, error="Trash not supported by this email provider")
+                await self._connector.trash_message(params["message_id"])
+                return StepResult(True, data={"trashed": True})
+            
+            elif operation == "archive":
+                if not self._connector or not hasattr(self._connector, "archive_message"):
+                    return StepResult(False, error="Archive not supported by this email provider")
+                await self._connector.archive_message(params["message_id"])
+                return StepResult(True, data={"archived": True})
+            
+            elif operation == "mark_read":
+                if not self._connector or not hasattr(self._connector, "mark_read"):
+                    return StepResult(False, error="Mark read not supported by this email provider")
+                await self._connector.mark_read(params["message_id"])
+                return StepResult(True, data={"marked_read": True})
+            
+            elif operation == "mark_unread":
+                if not self._connector or not hasattr(self._connector, "mark_unread"):
+                    return StepResult(False, error="Mark unread not supported by this email provider")
+                await self._connector.mark_unread(params["message_id"])
+                return StepResult(True, data={"marked_unread": True})
+            
+            elif operation == "add_label":
+                if not self._connector or not hasattr(self._connector, "add_label"):
+                    return StepResult(False, error="Labels not supported by this email provider")
+                await self._connector.add_label(params["message_id"], params["label_ids"])
+                return StepResult(True, data={"labels_added": True})
+            
+            elif operation == "remove_label":
+                if not self._connector or not hasattr(self._connector, "remove_label"):
+                    return StepResult(False, error="Labels not supported by this email provider")
+                await self._connector.remove_label(params["message_id"], params["label_ids"])
+                return StepResult(True, data={"labels_removed": True})
+            
+            elif operation == "get_labels":
+                if not self._connector or not hasattr(self._connector, "get_labels"):
+                    return StepResult(False, error="Labels not supported by this email provider")
+                result = await self._connector.get_labels()
+                return StepResult(True, data=result)
+            
+            elif operation == "get_thread":
+                if not self._connector or not hasattr(self._connector, "get_thread"):
+                    return StepResult(False, error="Threads not supported by this email provider")
+                result = await self._connector.get_thread(params["thread_id"])
+                return StepResult(True, data=result)
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
@@ -4942,6 +5069,13 @@ class DevToolsPrimitive(Primitive):
             "list_prs": "List pull requests or merge requests",
             "create_pr": "Create a pull request",
             "list_repos": "List repositories or projects",
+            "search": "Search issues, PRs, or repositories",
+            "list_notifications": "List GitHub notifications",
+            "review_requests": "List PRs awaiting your review",
+            "list_commits": "List recent commits in a repository",
+            "list_branches": "List branches in a repository",
+            "list_workflow_runs": "List CI/CD workflow runs (GitHub Actions)",
+            "activity_summary": "Get a summary of your dev activity",
         }
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
@@ -4998,6 +5132,38 @@ class DevToolsPrimitive(Primitive):
                 "limit": {"type": "int", "required": False, "description": "Max results"},
                 "provider": {"type": "str", "required": False, "description": "Provider name"},
             },
+            "search": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "type": {"type": "str", "required": False, "description": "Search type: issues, repos (default issues)"},
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "list_notifications": {
+                "all": {"type": "bool", "required": False, "description": "Include read notifications"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "review_requests": {
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "list_commits": {
+                "repo": {"type": "str", "required": True, "description": "Repository (e.g. 'owner/repo')"},
+                "branch": {"type": "str", "required": False, "description": "Branch or SHA"},
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "list_branches": {
+                "repo": {"type": "str", "required": True, "description": "Repository (e.g. 'owner/repo')"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "list_workflow_runs": {
+                "repo": {"type": "str", "required": True, "description": "Repository (e.g. 'owner/repo')"},
+                "status": {"type": "str", "required": False, "description": "Filter: completed, in_progress, queued"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "activity_summary": {
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
         }
     
     def _get_provider(self, name: Optional[str]) -> Optional[Any]:
@@ -5007,6 +5173,14 @@ class DevToolsPrimitive(Primitive):
             return next(iter(self._providers.values()))
         return None
     
+    @staticmethod
+    def _split_repo(repo_str: str):
+        """Split 'owner/repo' into (owner, repo). Returns ('', '') if invalid."""
+        if "/" in repo_str:
+            parts = repo_str.split("/", 1)
+            return parts[0], parts[1]
+        return "", repo_str
+    
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
             provider_name = params.get("provider")
@@ -5015,84 +5189,147 @@ class DevToolsPrimitive(Primitive):
             if not provider:
                 return StepResult(False, error="No devtools provider configured. Connect GitHub, Jira, etc.")
             
+            repo_str = params.get("repo", "")
+            owner, repo = self._split_repo(repo_str) if repo_str else ("", "")
+            
             if operation == "list_issues":
                 if hasattr(provider, "list_issues"):
                     result = await provider.list_issues(
-                        repo=params.get("repo", ""),
+                        owner, repo,
                         state=params.get("state", "open"),
                         per_page=params.get("limit", 20),
                     )
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support list_issues")
+                return StepResult(False, error="Provider does not support list_issues")
             
             elif operation == "get_issue":
                 issue_id = params.get("issue_id", "")
                 if hasattr(provider, "get_issue"):
-                    result = await provider.get_issue(repo=params.get("repo", ""), issue_number=issue_id)
+                    result = await provider.get_issue(owner, repo, int(issue_id))
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support get_issue")
+                return StepResult(False, error="Provider does not support get_issue")
             
             elif operation == "create_issue":
                 if hasattr(provider, "create_issue"):
                     result = await provider.create_issue(
-                        repo=params.get("repo", ""),
+                        owner, repo,
                         title=params.get("title", ""),
                         body=params.get("body", ""),
                         labels=params.get("labels"),
                         assignees=[params["assignee"]] if params.get("assignee") else None,
                     )
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support create_issue")
+                return StepResult(False, error="Provider does not support create_issue")
             
             elif operation == "update_issue":
                 if hasattr(provider, "update_issue"):
                     result = await provider.update_issue(
-                        repo=params.get("repo", ""),
-                        issue_number=params.get("issue_id", ""),
+                        owner, repo,
+                        number=int(params.get("issue_id", 0)),
                         title=params.get("title"),
                         body=params.get("body"),
                         state=params.get("state"),
                         labels=params.get("labels"),
                     )
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support update_issue")
+                return StepResult(False, error="Provider does not support update_issue")
             
             elif operation == "comment":
                 if hasattr(provider, "add_comment"):
                     result = await provider.add_comment(
-                        repo=params.get("repo", ""),
-                        issue_number=params.get("issue_id", ""),
+                        owner, repo,
+                        issue_number=int(params.get("issue_id", 0)),
                         body=params.get("body", ""),
                     )
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support add_comment")
+                return StepResult(False, error="Provider does not support add_comment")
             
             elif operation == "list_prs":
                 if hasattr(provider, "list_pull_requests"):
                     result = await provider.list_pull_requests(
-                        repo=params.get("repo", ""),
+                        owner, repo,
                         state=params.get("state", "open"),
                     )
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support list_prs")
+                return StepResult(False, error="Provider does not support list_prs")
             
             elif operation == "create_pr":
                 if hasattr(provider, "create_pull_request"):
                     result = await provider.create_pull_request(
-                        repo=params.get("repo", ""),
+                        owner, repo,
                         title=params.get("title", ""),
-                        body=params.get("body", ""),
                         head=params.get("head", ""),
                         base=params.get("base", "main"),
+                        body=params.get("body", ""),
                     )
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support create_pr")
+                return StepResult(False, error="Provider does not support create_pr")
             
             elif operation == "list_repos":
                 if hasattr(provider, "list_repos"):
                     result = await provider.list_repos(per_page=params.get("limit", 20))
                     return StepResult(True, data=result)
-                return StepResult(False, error=f"Provider does not support list_repos")
+                return StepResult(False, error="Provider does not support list_repos")
+            
+            elif operation == "search":
+                search_type = params.get("type", "issues")
+                query = params.get("query", "")
+                limit = params.get("limit", 20)
+                if search_type == "repos" and hasattr(provider, "search_repos"):
+                    result = await provider.search_repos(query, per_page=limit)
+                    return StepResult(True, data=result)
+                elif hasattr(provider, "search_issues"):
+                    result = await provider.search_issues(query, per_page=limit)
+                    return StepResult(True, data=result)
+                return StepResult(False, error="Provider does not support search")
+            
+            elif operation == "list_notifications":
+                if hasattr(provider, "list_notifications"):
+                    result = await provider.list_notifications(
+                        all=params.get("all", False),
+                    )
+                    return StepResult(True, data=result)
+                return StepResult(False, error="Provider does not support list_notifications")
+            
+            elif operation == "review_requests":
+                if hasattr(provider, "get_review_requests"):
+                    result = await provider.get_review_requests(
+                        per_page=params.get("limit", 20),
+                    )
+                    return StepResult(True, data=result)
+                return StepResult(False, error="Provider does not support review_requests")
+            
+            elif operation == "list_commits":
+                if hasattr(provider, "list_commits"):
+                    result = await provider.list_commits(
+                        owner, repo,
+                        sha=params.get("branch"),
+                        per_page=params.get("limit", 20),
+                    )
+                    return StepResult(True, data=result)
+                return StepResult(False, error="Provider does not support list_commits")
+            
+            elif operation == "list_branches":
+                if hasattr(provider, "list_branches"):
+                    result = await provider.list_branches(owner, repo)
+                    return StepResult(True, data=result)
+                return StepResult(False, error="Provider does not support list_branches")
+            
+            elif operation == "list_workflow_runs":
+                if hasattr(provider, "list_workflow_runs"):
+                    result = await provider.list_workflow_runs(
+                        owner, repo,
+                        status=params.get("status"),
+                        per_page=params.get("limit", 10),
+                    )
+                    return StepResult(True, data=result)
+                return StepResult(False, error="Provider does not support list_workflow_runs")
+            
+            elif operation == "activity_summary":
+                if hasattr(provider, "get_activity_summary"):
+                    result = await provider.get_activity_summary()
+                    return StepResult(True, data=result)
+                return StepResult(False, error="Provider does not support activity_summary")
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
@@ -7886,18 +8123,21 @@ class Apex:
         email_send = None
         email_list = None
         email_read = None
+        email_connector = None
         gmail = c.get("gmail")
         outlook = c.get("outlook")
         if gmail:
             email_send = gmail.send_email
             email_list = gmail.list_messages
             email_read = gmail.get_message
+            email_connector = gmail
         elif outlook:
             email_send = outlook.send_email
             email_list = outlook.list_messages
             if hasattr(outlook, 'get_message'):
                 email_read = outlook.get_message
-        self._primitives["EMAIL"] = EmailPrimitive(send_func=email_send, list_func=email_list, read_func=email_read)
+            email_connector = outlook
+        self._primitives["EMAIL"] = EmailPrimitive(send_func=email_send, list_func=email_list, read_func=email_read, connector=email_connector)
         
         # Contacts — wire Google Contacts and/or Microsoft Contacts
         contacts_providers = {}

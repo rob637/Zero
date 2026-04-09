@@ -751,6 +751,162 @@ class GitHubConnector:
         })
         return [GitHubRepo.from_api(r) for r in data.get("items", [])]
     
+    # === Comments ===
+    
+    async def add_comment(
+        self,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        body: str,
+    ) -> Dict:
+        """Add a comment to an issue or pull request."""
+        result = await self._post(
+            f"/repos/{owner}/{repo}/issues/{int(issue_number)}/comments",
+            {"body": body},
+        )
+        return {
+            "id": result.get("id"),
+            "body": result.get("body"),
+            "user": result.get("user", {}).get("login"),
+            "html_url": result.get("html_url"),
+            "created_at": result.get("created_at"),
+        }
+    
+    # === Pull Request Creation ===
+    
+    async def create_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        title: str,
+        head: str,
+        base: str = "main",
+        body: str = None,
+        draft: bool = False,
+    ) -> Dict:
+        """Create a pull request."""
+        data = {"title": title, "head": head, "base": base}
+        if body:
+            data["body"] = body
+        if draft:
+            data["draft"] = True
+        
+        result = await self._post(f"/repos/{owner}/{repo}/pulls", data)
+        return {
+            "number": result.get("number"),
+            "title": result.get("title"),
+            "html_url": result.get("html_url"),
+            "state": result.get("state"),
+            "head": result.get("head", {}).get("ref"),
+            "base": result.get("base", {}).get("ref"),
+            "user": result.get("user", {}).get("login"),
+            "created_at": result.get("created_at"),
+            "draft": result.get("draft", False),
+        }
+    
+    # === Commits & Branches ===
+    
+    async def list_commits(
+        self,
+        owner: str,
+        repo: str,
+        sha: str = None,
+        author: str = None,
+        per_page: int = 20,
+    ) -> List[Dict]:
+        """List commits for a repository."""
+        params = {"per_page": per_page}
+        if sha:
+            params["sha"] = sha
+        if author:
+            params["author"] = author
+        data = await self._get(f"/repos/{owner}/{repo}/commits", params)
+        return [
+            {
+                "sha": c.get("sha", "")[:7],
+                "message": c.get("commit", {}).get("message", "").split("\n")[0],
+                "author": c.get("commit", {}).get("author", {}).get("name"),
+                "date": c.get("commit", {}).get("author", {}).get("date"),
+                "html_url": c.get("html_url"),
+            }
+            for c in data
+        ]
+    
+    async def list_branches(
+        self,
+        owner: str,
+        repo: str,
+        per_page: int = 30,
+    ) -> List[Dict]:
+        """List branches for a repository."""
+        data = await self._get(f"/repos/{owner}/{repo}/branches", {"per_page": per_page})
+        return [
+            {
+                "name": b.get("name"),
+                "sha": b.get("commit", {}).get("sha", "")[:7],
+                "protected": b.get("protected", False),
+            }
+            for b in data
+        ]
+    
+    # === Workflow Runs (CI/CD) ===
+    
+    async def list_workflow_runs(
+        self,
+        owner: str,
+        repo: str,
+        status: str = None,
+        per_page: int = 10,
+    ) -> List[Dict]:
+        """List recent workflow runs (GitHub Actions)."""
+        params = {"per_page": per_page}
+        if status:
+            params["status"] = status  # completed, in_progress, queued, etc.
+        data = await self._get(f"/repos/{owner}/{repo}/actions/runs", params)
+        return [
+            {
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "status": r.get("status"),
+                "conclusion": r.get("conclusion"),
+                "branch": r.get("head_branch"),
+                "event": r.get("event"),
+                "html_url": r.get("html_url"),
+                "created_at": r.get("created_at"),
+            }
+            for r in data.get("workflow_runs", [])
+        ]
+    
+    # === Repository Contents ===
+    
+    async def get_contents(
+        self,
+        owner: str,
+        repo: str,
+        path: str = "",
+        ref: str = None,
+    ) -> Any:
+        """Get repository file or directory contents."""
+        params = {}
+        if ref:
+            params["ref"] = ref
+        data = await self._get(f"/repos/{owner}/{repo}/contents/{path}", params or None)
+        if isinstance(data, list):
+            return [
+                {"name": f.get("name"), "type": f.get("type"), "path": f.get("path"), "size": f.get("size")}
+                for f in data
+            ]
+        return {
+            "name": data.get("name"),
+            "path": data.get("path"),
+            "type": data.get("type"),
+            "size": data.get("size"),
+            "content": data.get("content"),
+            "encoding": data.get("encoding"),
+            "html_url": data.get("html_url"),
+        }
+    
     # === Activity Summary (for proactive monitoring) ===
     
     async def get_activity_summary(self) -> Dict:

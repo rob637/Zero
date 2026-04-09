@@ -444,3 +444,178 @@ class GmailConnector:
             body={'addLabelIds': ['UNREAD']}
         )
         await asyncio.to_thread(request.execute)
+    
+    async def delete_message(self, message_id: str):
+        """Permanently delete a message (not recoverable)."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        request = self._service.users().messages().delete(
+            userId='me', id=message_id
+        )
+        await asyncio.to_thread(request.execute)
+    
+    async def trash_message(self, message_id: str):
+        """Move a message to trash."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        request = self._service.users().messages().trash(
+            userId='me', id=message_id
+        )
+        await asyncio.to_thread(request.execute)
+    
+    async def untrash_message(self, message_id: str):
+        """Remove a message from trash."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        request = self._service.users().messages().untrash(
+            userId='me', id=message_id
+        )
+        await asyncio.to_thread(request.execute)
+    
+    async def archive_message(self, message_id: str):
+        """Archive a message (remove from INBOX)."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        request = self._service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body={'removeLabelIds': ['INBOX']}
+        )
+        await asyncio.to_thread(request.execute)
+    
+    async def add_label(self, message_id: str, label_ids: List[str]):
+        """Add labels to a message."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        request = self._service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body={'addLabelIds': label_ids}
+        )
+        await asyncio.to_thread(request.execute)
+    
+    async def remove_label(self, message_id: str, label_ids: List[str]):
+        """Remove labels from a message."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        request = self._service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body={'removeLabelIds': label_ids}
+        )
+        await asyncio.to_thread(request.execute)
+    
+    async def reply(
+        self,
+        message_id: str,
+        body: str,
+        html: bool = False,
+    ) -> Dict:
+        """Reply to an existing message (maintains thread)."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        import base64
+        from email.mime.text import MIMEText
+        
+        # Get the original message for headers
+        original = await self.get_message(message_id)
+        
+        reply_to = original.sender
+        subject = original.subject
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+        
+        msg = MIMEText(body, 'html' if html else 'plain')
+        msg['to'] = reply_to
+        msg['subject'] = subject
+        msg['In-Reply-To'] = message_id
+        msg['References'] = message_id
+        
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        
+        try:
+            request = self._service.users().messages().send(
+                userId='me',
+                body={
+                    'raw': raw,
+                    'threadId': original.thread_id if hasattr(original, 'thread_id') else None,
+                }
+            )
+            result = await asyncio.to_thread(request.execute)
+            return {'message_id': result.get('id'), 'thread_id': result.get('threadId')}
+        except HttpError as e:
+            raise RuntimeError(f"Failed to reply: {e}")
+    
+    async def forward(
+        self,
+        message_id: str,
+        to: str,
+        additional_body: str = "",
+    ) -> Dict:
+        """Forward a message to another recipient."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        import base64
+        from email.mime.text import MIMEText
+        
+        original = await self.get_message(message_id)
+        
+        subject = original.subject
+        if not subject.lower().startswith("fwd:"):
+            subject = f"Fwd: {subject}"
+        
+        forwarded_body = additional_body
+        if additional_body:
+            forwarded_body += "\n\n"
+        forwarded_body += f"---------- Forwarded message ----------\n"
+        forwarded_body += f"From: {original.sender}\n"
+        forwarded_body += f"Date: {original.date}\n"
+        forwarded_body += f"Subject: {original.subject}\n\n"
+        forwarded_body += original.snippet or ""
+        
+        msg = MIMEText(forwarded_body, 'plain')
+        msg['to'] = to
+        msg['subject'] = subject
+        
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        
+        try:
+            request = self._service.users().messages().send(
+                userId='me', body={'raw': raw}
+            )
+            result = await asyncio.to_thread(request.execute)
+            return {'message_id': result.get('id'), 'thread_id': result.get('threadId')}
+        except HttpError as e:
+            raise RuntimeError(f"Failed to forward: {e}")
+    
+    async def get_thread(self, thread_id: str) -> List[Dict]:
+        """Get all messages in a thread."""
+        if not self._service:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        request = self._service.users().threads().get(
+            userId='me', id=thread_id, format='metadata',
+            metadataHeaders=['From', 'To', 'Subject', 'Date']
+        )
+        result = await asyncio.to_thread(request.execute)
+        
+        messages = []
+        for msg in result.get('messages', []):
+            headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
+            messages.append({
+                'id': msg.get('id'),
+                'from': headers.get('from', ''),
+                'to': headers.get('to', ''),
+                'subject': headers.get('subject', ''),
+                'date': headers.get('date', ''),
+                'snippet': msg.get('snippet', ''),
+            })
+        return messages
