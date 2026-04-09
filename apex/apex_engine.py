@@ -3368,6 +3368,179 @@ class HubSpotPrimitive(Primitive):
             return StepResult(False, error=str(e))
 
 
+class StripePrimitive(Primitive):
+    """Stripe — customers, charges, invoices, subscriptions, products, payments.
+    
+    Uses Stripe REST API via StripeConnector.
+    """
+
+    NAME = "STRIPE"
+    DESCRIPTION = (
+        "Manage Stripe payments: customers, products, prices, invoices, "
+        "subscriptions, charges, payment intents, and account balance."
+    )
+    OPERATIONS = [
+        "list_customers", "get_customer", "create_customer", "update_customer",
+        "delete_customer",
+        "list_products", "get_product", "create_product",
+        "list_prices", "create_price",
+        "list_invoices", "get_invoice", "create_invoice",
+        "finalize_invoice", "void_invoice",
+        "list_subscriptions", "get_subscription", "cancel_subscription",
+        "list_payment_intents", "get_payment_intent",
+        "list_charges", "get_charge",
+        "get_balance",
+    ]
+
+    def __init__(self, connector):
+        self._c = connector
+
+    async def run(self, operation: str, params: dict) -> StepResult:
+        op = operation.lower().strip()
+        try:
+            if op == "list_customers":
+                data = await self._c.list_customers(
+                    limit=params.get("limit", 20),
+                    starting_after=params.get("starting_after"),
+                    email=params.get("email"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_customer":
+                data = await self._c.get_customer(str(params["customer_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "create_customer":
+                data = await self._c.create_customer(
+                    email=params.get("email"),
+                    name=params.get("name"),
+                    description=params.get("description"),
+                    metadata=params.get("metadata"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "update_customer":
+                cid = str(params.pop("customer_id"))
+                data = await self._c.update_customer(cid, **params)
+                return StepResult(True, data=data)
+
+            elif op == "delete_customer":
+                data = await self._c.delete_customer(str(params["customer_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "list_products":
+                data = await self._c.list_products(
+                    limit=params.get("limit", 20),
+                    active=params.get("active"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_product":
+                data = await self._c.get_product(str(params["product_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "create_product":
+                data = await self._c.create_product(
+                    name=params["name"],
+                    description=params.get("description"),
+                    metadata=params.get("metadata"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_prices":
+                data = await self._c.list_prices(
+                    product_id=params.get("product_id"),
+                    limit=params.get("limit", 20),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "create_price":
+                data = await self._c.create_price(
+                    product_id=str(params["product_id"]),
+                    unit_amount=int(params["unit_amount"]),
+                    currency=params.get("currency", "usd"),
+                    recurring_interval=params.get("recurring_interval"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_invoices":
+                data = await self._c.list_invoices(
+                    customer_id=params.get("customer_id"),
+                    limit=params.get("limit", 20),
+                    status=params.get("status"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_invoice":
+                data = await self._c.get_invoice(str(params["invoice_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "create_invoice":
+                data = await self._c.create_invoice(
+                    customer_id=str(params["customer_id"]),
+                    auto_advance=params.get("auto_advance", True),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "finalize_invoice":
+                data = await self._c.finalize_invoice(str(params["invoice_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "void_invoice":
+                data = await self._c.void_invoice(str(params["invoice_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "list_subscriptions":
+                data = await self._c.list_subscriptions(
+                    customer_id=params.get("customer_id"),
+                    limit=params.get("limit", 20),
+                    status=params.get("status"),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_subscription":
+                data = await self._c.get_subscription(str(params["subscription_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "cancel_subscription":
+                data = await self._c.cancel_subscription(
+                    str(params["subscription_id"]),
+                    at_period_end=params.get("at_period_end", True),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "list_payment_intents":
+                data = await self._c.list_payment_intents(
+                    customer_id=params.get("customer_id"),
+                    limit=params.get("limit", 20),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_payment_intent":
+                data = await self._c.get_payment_intent(str(params["payment_intent_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "list_charges":
+                data = await self._c.list_charges(
+                    customer_id=params.get("customer_id"),
+                    limit=params.get("limit", 20),
+                )
+                return StepResult(True, data=data)
+
+            elif op == "get_charge":
+                data = await self._c.get_charge(str(params["charge_id"]))
+                return StepResult(True, data=data)
+
+            elif op == "get_balance":
+                data = await self._c.get_balance()
+                return StepResult(True, data=data)
+
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
 # ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
@@ -7812,6 +7985,11 @@ class Apex:
         hubspot_connector = c.get("hubspot")
         if hubspot_connector:
             self._primitives["HUBSPOT"] = HubSpotPrimitive(hubspot_connector)
+        
+        # Stripe — wire Stripe connector
+        stripe_connector = c.get("stripe")
+        if stripe_connector:
+            self._primitives["STRIPE"] = StripePrimitive(stripe_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

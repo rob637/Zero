@@ -765,6 +765,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+
+        try:
+            from .stripe import StripeConnector
+            self.register(ConnectorMetadata(
+                name="stripe",
+                display_name="Stripe",
+                provider="stripe",
+                primitives=["PAYMENTS", "BILLING"],
+                scopes=[],
+                connector_class=StripeConnector,
+                description="Customers, charges, invoices, subscriptions, products, and payment intents via Stripe API",
+                icon="stripe",
+                setup_url="https://dashboard.stripe.com/apikeys",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

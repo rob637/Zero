@@ -227,6 +227,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "reddit": "reddit",
         "telegram": "telegram",
         "hubspot": "hubspot",
+        "stripe": "stripe",
     }
     
     # Check which providers have valid credentials
@@ -258,6 +259,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "reddit": "REDDIT_CLIENT_ID",
         "telegram": "TELEGRAM_BOT_TOKEN",
         "hubspot": "HUBSPOT_ACCESS_TOKEN",
+        "stripe": "STRIPE_SECRET_KEY",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):
