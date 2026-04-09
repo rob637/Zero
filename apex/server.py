@@ -308,11 +308,13 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         
         try:
             # Try to inject token from credential store
+            # Microsoft connectors get tokens via GraphClient, not constructor args
             kwargs = {}
-            token = store.get_token(metadata.provider)
-            if token:
-                param_name = _token_param_names.get(metadata.provider, "access_token")
-                kwargs[param_name] = token
+            if metadata.provider != "microsoft":
+                token = store.get_token(metadata.provider)
+                if token and metadata.provider in _token_param_names:
+                    param_name = _token_param_names[metadata.provider]
+                    kwargs[param_name] = token
             
             instance = metadata.connector_class(**kwargs)
             connectors[engine_key] = instance
@@ -331,12 +333,14 @@ async def _connect_engine_connectors(engine: TelicEngine):
     """
     for key, connector in list(engine._connectors.items()):
         if hasattr(connector, 'connect'):
-            # Check if already connected (supports .connected property or .is_connected() method)
+            # Check if already connected (supports .connected property/attr or .is_connected() method)
             is_connected = False
             if hasattr(connector, 'connected'):
-                is_connected = connector.connected
+                val = getattr(connector, 'connected')
+                is_connected = val() if callable(val) else val
             elif hasattr(connector, 'is_connected'):
-                is_connected = connector.is_connected()
+                val = getattr(connector, 'is_connected')
+                is_connected = val() if callable(val) else val
             
             if not is_connected:
                 try:
