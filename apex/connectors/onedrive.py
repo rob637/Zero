@@ -72,18 +72,17 @@ class DriveItem:
     quota_used: int = 0
     
     def to_dict(self) -> Dict:
-        return {
+        d = {
             "id": self.id,
             "name": self.name,
             "path": self.path,
             "type": "folder" if self.is_folder else "file",
             "size": self.size,
-            "created": self.created_datetime.isoformat() if self.created_datetime else None,
             "modified": self.modified_datetime.isoformat() if self.modified_datetime else None,
-            "mime_type": self.mime_type,
-            "web_url": self.web_url,
-            "shared": self.shared,
         }
+        if self.web_url:
+            d["web_url"] = self.web_url
+        return d
 
 
 @dataclass

@@ -2024,6 +2024,28 @@ def step_to_dict(step: Step) -> Dict[str, Any]:
     }
 
 
+def step_to_sse_dict(step: Step) -> Dict[str, Any]:
+    """Convert a Step to a lightweight dict for SSE streaming (no full results)."""
+    result_data = serialize_result(step.result)
+    # For SSE mid-stream events, send only a compact preview
+    if result_data is not None:
+        try:
+            result_json = json.dumps(result_data) if not isinstance(result_data, str) else result_data
+        except (TypeError, ValueError):
+            result_json = str(result_data)
+        if len(result_json) > 1500:
+            result_data = f"[{len(result_json)} bytes — see final results]"
+    params = step.tool_call.params or {}
+    return {
+        "tool": step.tool_call.name,
+        "params": {k: (v if len(str(v)) < 100 else str(v)[:100] + "...") for k, v in params.items()},
+        "status": step.status.value,
+        "result": result_data,
+        "error": step.error,
+        "requires_approval": step.requires_approval,
+    }
+
+
 def state_to_response(state: AgentState) -> Dict[str, Any]:
     """Convert AgentState to API response."""
     return {
@@ -2324,7 +2346,7 @@ Remember: References like "the first one", "send it to him", "the information ab
 
     async def on_step(step: Step):
         """Push step events to SSE queue and record observations."""
-        data = step_to_dict(step)
+        data = step_to_sse_dict(step)
         data["id"] = step.tool_call.id  # Unique ID for matching start/complete
         if step.status == StepStatus.RUNNING:
             await queue.put({"event": "tool_start", "step": data})
@@ -2597,7 +2619,7 @@ async def react_approve_stream(req: ReactApproveRequest):
     queue = asyncio.Queue()
 
     async def on_step(step):
-        data = step_to_dict(step)
+        data = step_to_sse_dict(step)
         data["id"] = step.tool_call.id
         if step.status == StepStatus.RUNNING:
             await queue.put({"event": "tool_start", "step": data})

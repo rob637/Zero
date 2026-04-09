@@ -73,17 +73,20 @@ class Contact:
         return None
     
     def to_dict(self) -> Dict:
-        return {
-            "resource_name": self.resource_name,
+        d = {
             "name": self.display_name,
             "email": self.primary_email,
             "phone": self.primary_phone,
-            "company": self.company,
-            "job_title": self.job_title,
-            "emails": [e.get('value') for e in self.emails],
-            "phones": [p.get('value') for p in self.phones],
-            "photo": self.photo_url,
         }
+        if self.company:
+            d["company"] = self.company
+        if self.job_title:
+            d["job_title"] = self.job_title
+        # Only include extra emails/phones if more than one
+        extra_emails = [e.get('value') for e in self.emails[1:] if e.get('value')]
+        if extra_emails:
+            d["other_emails"] = extra_emails
+        return d
 
 
 class ContactsConnector:
@@ -168,7 +171,7 @@ class ContactsConnector:
                 resourceName='people/me',
                 pageSize=max_results,
                 sortOrder=sort_order,
-                personFields='names,emailAddresses,phoneNumbers,organizations,addresses,photos,biographies',
+                personFields='names,emailAddresses,phoneNumbers,organizations',
             )
             result = await asyncio.to_thread(request.execute)
             

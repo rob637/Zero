@@ -98,12 +98,9 @@ class DriveFile:
             "name": self.name,
             "mime_type": self.mime_type,
             "size": self.size,
-            "created": self.created_time.isoformat() if self.created_time else None,
             "modified": self.modified_time.isoformat() if self.modified_time else None,
-            "parents": self.parents,
             "web_link": self.web_view_link,
             "is_folder": self.is_folder,
-            "shared": self.shared,
         }
 
 
@@ -216,7 +213,7 @@ class DriveConnector:
                 q=q,
                 pageSize=max_results,
                 orderBy=order_by,
-                fields="files(id, name, mimeType, size, createdTime, modifiedTime, parents, webViewLink, webContentLink, owners, shared, starred, trashed)",
+                fields="files(id, name, mimeType, size, modifiedTime, parents, webViewLink)",
             )
             result = await asyncio.to_thread(request.execute)
             

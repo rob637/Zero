@@ -74,26 +74,23 @@ class OutlookEmail:
         return self.sender.get('name', '')
     
     def to_dict(self) -> Dict:
-        return {
+        d = {
             "id": self.id,
-            "conversation_id": self.conversation_id,
             "subject": self.subject,
             "sender": f"{self.sender_name} <{self.sender_email}>",
-            "sender_email": self.sender_email,
-            "sender_name": self.sender_name,
             "to": [f"{r.get('name', '')} <{r.get('email', '')}>".strip() for r in self.to_recipients],
-            "cc": [f"{r.get('name', '')} <{r.get('email', '')}>".strip() for r in self.cc_recipients],
             "date": self.received_datetime.isoformat() if self.received_datetime else None,
             "snippet": self.body_preview,
-            "body": self.body_content,
-            "importance": self.importance,
-            "is_read": self.is_read,
-            "is_draft": self.is_draft,
-            "has_attachments": self.has_attachments,
-            "attachments": self.attachments,
-            "categories": self.categories,
-            "web_link": self.web_link,
         }
+        if not self.is_read:
+            d["unread"] = True
+        if self.has_attachments:
+            d["has_attachments"] = True
+        if self.body_content:
+            d["body"] = self.body_content
+        if self.importance != "normal":
+            d["importance"] = self.importance
+        return d
 
 
 class OutlookConnector:

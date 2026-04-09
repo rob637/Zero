@@ -69,25 +69,22 @@ class CalendarEvent:
     categories: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict:
-        return {
+        d = {
             "id": self.id,
             "subject": self.subject,
             "start": self.start.isoformat() if self.start else None,
             "end": self.end.isoformat() if self.end else None,
-            "location": self.location,
-            "description": self.description,
             "is_all_day": self.is_all_day,
-            "is_online": self.is_online,
-            "online_meeting_url": self.online_meeting_url,
-            "organizer": self.organizer,
-            "attendees": self.attendees,
-            "is_recurring": self.is_recurring,
-            "reminder_minutes": self.reminder_minutes,
-            "show_as": self.show_as,
-            "importance": self.importance,
-            "web_link": self.web_link,
-            "categories": self.categories,
         }
+        if self.location:
+            d["location"] = self.location
+        if self.description:
+            d["description"] = self.description[:200] + '...' if len(self.description) > 200 else self.description
+        if self.is_online and self.online_meeting_url:
+            d["online_meeting_url"] = self.online_meeting_url
+        if self.attendees:
+            d["attendees"] = [{"name": a.get("name"), "email": a.get("email")} for a in self.attendees]
+        return d
 
 
 @dataclass

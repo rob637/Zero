@@ -5331,10 +5331,21 @@
             renderSidebarActions();
         }, 500);
         
-        // Periodic refresh
-        setInterval(fetchAlerts, 30 * 1000);  // Every 30s for responsiveness
-        setInterval(loadProviders, 60 * 1000);
-        setInterval(loadSessions, 30 * 1000);
+        // Periodic refresh — pause when tab hidden
+        let _pollTimers = {};
+        function startPolling() {
+            _pollTimers.alerts = setInterval(fetchAlerts, 60 * 1000);
+            _pollTimers.providers = setInterval(loadProviders, 5 * 60 * 1000);
+            _pollTimers.sessions = setInterval(loadSessions, 2 * 60 * 1000);
+        }
+        function stopPolling() {
+            Object.values(_pollTimers).forEach(t => clearInterval(t));
+            _pollTimers = {};
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) { stopPolling(); } else { startPolling(); fetchAlerts(); }
+        });
+        startPolling();
     </script>
 </body>
 </html>

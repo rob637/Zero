@@ -58,15 +58,26 @@ class CalendarEvent:
     recurrence: List[str] = field(default_factory=list)
     all_day: bool = False
     
-    def to_dict(self) -> Dict:
+    def to_dict(self, compact: bool = False) -> Dict:
+        if compact:
+            d = {
+                "id": self.id,
+                "summary": self.summary,
+                "start": self.start.isoformat() if self.start else None,
+                "end": self.end.isoformat() if self.end else None,
+                "all_day": self.all_day,
+            }
+            if self.location:
+                d["location"] = self.location
+            return d
         return {
             "id": self.id,
             "summary": self.summary,
             "start": self.start.isoformat() if self.start else None,
             "end": self.end.isoformat() if self.end else None,
-            "description": self.description,
+            "description": self.description[:200] + '...' if self.description and len(self.description) > 200 else self.description,
             "location": self.location,
-            "attendees": self.attendees,
+            "attendees": [{"email": a.get("email"), "name": a.get("displayName")} for a in self.attendees] if self.attendees else [],
             "organizer": self.organizer,
             "status": self.status,
             "html_link": self.html_link,

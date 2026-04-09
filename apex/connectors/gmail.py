@@ -57,18 +57,22 @@ class Email:
     attachments: List[Dict] = None
     
     def to_dict(self) -> Dict:
-        return {
+        d = {
             "id": self.id,
-            "thread_id": self.thread_id,
             "subject": self.subject,
             "sender": self.sender,
             "to": self.to,
             "date": self.date.isoformat() if self.date else None,
             "snippet": self.snippet,
-            "body": self.body,
-            "labels": self.labels or [],
-            "attachments": self.attachments or [],
         }
+        if self.body:
+            d["body"] = self.body
+        if self.attachments:
+            d["attachments"] = [{"filename": a.get("filename"), "mime_type": a.get("mime_type")} for a in self.attachments]
+        # Include unread status from labels
+        if self.labels and "UNREAD" in self.labels:
+            d["unread"] = True
+        return d
 
 
 class GmailConnector:

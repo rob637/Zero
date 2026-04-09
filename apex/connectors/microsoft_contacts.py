@@ -67,20 +67,16 @@ class MicrosoftContact:
         return None
 
     def to_dict(self) -> Dict:
-        return {
-            "id": self.id,
+        d = {
             "name": self.display_name,
-            "given_name": self.given_name,
-            "surname": self.surname,
             "email": self.primary_email,
             "phone": self.primary_phone,
-            "company": self.company,
-            "job_title": self.job_title,
-            "department": self.department,
-            "emails": [e.get("address") for e in self.emails],
-            "phones": self.phones,
-            "birthday": self.birthday,
         }
+        if self.company:
+            d["company"] = self.company
+        if self.job_title:
+            d["job_title"] = self.job_title
+        return d
 
     @classmethod
     def from_api(cls, data: Dict) -> "MicrosoftContact":
