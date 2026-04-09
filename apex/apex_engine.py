@@ -249,6 +249,20 @@ class Primitive(ABC):
         """
         return self.get_operations()
     
+    def get_connected_providers(self) -> List[str]:
+        """Return list of connected provider names for this primitive.
+        
+        Used to enrich tool descriptions so the LLM knows what services
+        are available and can route intelligently.
+        Auto-detects from _providers dict or _connector attribute.
+        """
+        if hasattr(self, '_providers') and self._providers:
+            return list(self._providers.keys())
+        if hasattr(self, '_connector') and self._connector:
+            name = getattr(self._connector, 'name', None) or type(self._connector).__name__
+            return [name]
+        return []
+    
     @abstractmethod
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         """Execute an operation."""
@@ -1033,13 +1047,20 @@ ComputePrimitive._BUILTIN_FORMULAS = {
 # ============================================================
 
 class EmailPrimitive(Primitive):
-    """Email operations via Gmail or other providers."""
+    """Email operations via Gmail, Outlook, or other providers."""
     
-    def __init__(self, send_func: Optional[Callable] = None, list_func: Optional[Callable] = None, read_func: Optional[Callable] = None, connector: Optional[Any] = None):
-        self._send = send_func
-        self._list = list_func
-        self._read = read_func
-        self._connector = connector
+    def __init__(self, providers: Optional[Dict[str, Any]] = None, **kwargs):
+        # Support both old single-connector and new multi-provider patterns
+        self._providers = providers or {}
+        # Legacy compat: if old-style args passed, wrap in provider
+        if not self._providers and kwargs.get('connector'):
+            connector = kwargs['connector']
+            provider_name = 'gmail' if 'Gmail' in type(connector).__name__ else 'outlook'
+            self._providers[provider_name] = connector
+        self._send = kwargs.get('send_func')
+        self._list = kwargs.get('list_func')
+        self._read = kwargs.get('read_func')
+        self._connector = kwargs.get('connector') or (next(iter(self._providers.values())) if self._providers else None)
     
     @property
     def name(self) -> str:
@@ -1817,12 +1838,15 @@ class CalendarPrimitive(Primitive):
         create_func: Optional[Callable] = None,
         list_func: Optional[Callable] = None,
         list_calendars_func: Optional[Callable] = None,
+        providers: Optional[Dict[str, Any]] = None,
     ):
         self._events: List[Dict] = []
         self._storage_path = storage_path
         self._create_func = create_func
         self._list_func = list_func
         self._list_calendars_func = list_calendars_func
+        self._providers = providers or {}
+        self._connector = next(iter(self._providers.values())) if self._providers else None
         self._calendars_cache: List[Dict] = []  # Cache of available calendars
         if storage_path and Path(storage_path).exists():
             try:
@@ -3625,30 +3649,49 @@ class HubSpotPrimitive(Primitive):
     Uses HubSpot CRM API v3 via HubSpotConnector.
     """
 
-    NAME = "HUBSPOT"
-    DESCRIPTION = (
-        "Manage HubSpot CRM: contacts, companies, deals, tickets, notes, "
-        "associations, pipelines, and owners."
-    )
-    OPERATIONS = [
-        "list_contacts", "get_contact", "create_contact", "update_contact",
-        "delete_contact", "search_contacts",
-        "list_companies", "get_company", "create_company", "update_company",
-        "delete_company", "search_companies",
-        "list_deals", "get_deal", "create_deal", "update_deal",
-        "delete_deal", "search_deals",
-        "list_tickets", "get_ticket", "create_ticket", "update_ticket",
-        "delete_ticket",
-        "create_note", "get_note",
-        "get_associations", "create_association",
-        "list_pipelines", "get_pipeline_stages",
-        "list_owners",
-    ]
-
     def __init__(self, connector):
         self._c = connector
+        self._connector = connector
 
-    async def run(self, operation: str, params: dict) -> StepResult:
+    @property
+    def name(self) -> str:
+        return "HUBSPOT"
+
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "list_contacts": "List HubSpot contacts",
+            "get_contact": "Get a HubSpot contact by ID",
+            "create_contact": "Create a new HubSpot contact",
+            "update_contact": "Update a HubSpot contact",
+            "delete_contact": "Delete a HubSpot contact",
+            "search_contacts": "Search HubSpot contacts",
+            "list_companies": "List HubSpot companies",
+            "get_company": "Get a HubSpot company by ID",
+            "create_company": "Create a new HubSpot company",
+            "update_company": "Update a HubSpot company",
+            "delete_company": "Delete a HubSpot company",
+            "search_companies": "Search HubSpot companies",
+            "list_deals": "List HubSpot deals",
+            "get_deal": "Get a HubSpot deal by ID",
+            "create_deal": "Create a new HubSpot deal",
+            "update_deal": "Update a HubSpot deal",
+            "delete_deal": "Delete a HubSpot deal",
+            "search_deals": "Search HubSpot deals",
+            "list_tickets": "List HubSpot tickets",
+            "get_ticket": "Get a HubSpot ticket by ID",
+            "create_ticket": "Create a new HubSpot ticket",
+            "update_ticket": "Update a HubSpot ticket",
+            "delete_ticket": "Delete a HubSpot ticket",
+            "create_note": "Create a note on a HubSpot record",
+            "get_note": "Get a HubSpot note by ID",
+            "get_associations": "Get associations between HubSpot objects",
+            "create_association": "Create an association between HubSpot objects",
+            "list_pipelines": "List HubSpot pipelines",
+            "get_pipeline_stages": "Get stages of a HubSpot pipeline",
+            "list_owners": "List HubSpot owners",
+        }
+
+    async def execute(self, operation: str, params: dict) -> StepResult:
         op = operation.lower().strip()
         try:
             if op == "list_contacts":
@@ -8086,24 +8129,21 @@ class Apex:
         self._primitives["COMPUTE"] = ComputePrimitive(self._llm_complete)
         
         # Email — wire Gmail and/or Outlook connectors
-        email_send = None
-        email_list = None
-        email_read = None
-        email_connector = None
+        email_providers = {}
         gmail = c.get("gmail")
         outlook = c.get("outlook")
         if gmail:
-            email_send = gmail.send_email
-            email_list = gmail.list_messages
-            email_read = gmail.get_message
-            email_connector = gmail
-        elif outlook:
-            email_send = outlook.send_email
-            email_list = outlook.list_messages
-            if hasattr(outlook, 'get_message'):
-                email_read = outlook.get_message
-            email_connector = outlook
-        self._primitives["EMAIL"] = EmailPrimitive(send_func=email_send, list_func=email_list, read_func=email_read, connector=email_connector)
+            email_providers["gmail"] = gmail
+        if outlook:
+            email_providers["outlook"] = outlook
+        first_email = gmail or outlook
+        self._primitives["EMAIL"] = EmailPrimitive(
+            providers=email_providers,
+            send_func=first_email.send_email if first_email else None,
+            list_func=first_email.list_messages if first_email else None,
+            read_func=first_email.get_message if first_email and hasattr(first_email, 'get_message') else None,
+            connector=first_email,
+        )
         
         # Contacts — wire Google Contacts and/or Microsoft Contacts
         contacts_providers = {}
@@ -8118,23 +8158,20 @@ class Apex:
         self._primitives["INTELLIGENCE"] = IntelligencePrimitive()
         
         # Calendar — wire Google Calendar and/or Outlook Calendar
-        cal_create = None
-        cal_list = None
-        cal_list_calendars = None
+        cal_providers = {}
         gcal = c.get("calendar")
         ocal = c.get("outlook_calendar")
         if gcal:
-            cal_create = gcal.create_event
-            cal_list = gcal.list_events
-            cal_list_calendars = gcal.list_calendars
-        elif ocal:
-            cal_create = ocal.create_event
-            cal_list = ocal.list_events
+            cal_providers["google_calendar"] = gcal
+        if ocal:
+            cal_providers["outlook_calendar"] = ocal
+        first_cal = gcal or ocal
         self._primitives["CALENDAR"] = CalendarPrimitive(
             str(self._storage_path / "calendar.json"),
-            create_func=cal_create,
-            list_func=cal_list,
-            list_calendars_func=cal_list_calendars,
+            create_func=first_cal.create_event if first_cal else None,
+            list_func=first_cal.list_events if first_cal else None,
+            list_calendars_func=first_cal.list_calendars if first_cal and hasattr(first_cal, 'list_calendars') else None,
+            providers=cal_providers,
         )
         
         self._primitives["WEB"] = WebPrimitive(self._llm_complete, search_provider=c.get("web_search"))

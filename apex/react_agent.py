@@ -459,12 +459,20 @@ def primitives_to_tools(primitives: Dict[str, Any]) -> List[Tool]:
     Convert Apex primitives to ReAct tools.
     
     Each primitive operation becomes a tool.
+    Tool descriptions are enriched with connected provider info
+    so the LLM knows what services are available.
     """
     tools = []
     
     for prim_name, primitive in primitives.items():
         available_ops = primitive.get_available_operations()
         schema = primitive.get_param_schema() or {}
+        
+        # Get connected providers for description enrichment
+        connected = []
+        if hasattr(primitive, 'get_connected_providers'):
+            connected = primitive.get_connected_providers()
+        provider_suffix = f" [via {', '.join(connected)}]" if connected else ""
         
         for op_name, description in available_ops.items():
             # Determine if this operation has side effects
@@ -499,7 +507,7 @@ def primitives_to_tools(primitives: Dict[str, Any]) -> List[Tool]:
             
             tool = Tool(
                 name=f"{prim_name.lower()}_{op_name}",
-                description=description,
+                description=f"{description}{provider_suffix}",
                 parameters={"properties": properties, "required": required},
                 handler=make_handler(primitive, op_name),
                 side_effect=has_side_effect
