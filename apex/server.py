@@ -944,7 +944,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                     f"https://slack.com/oauth/v2/authorize"
                     f"?client_id={client_id}"
                     f"&redirect_uri={redirect_uri}"
-                    f"&scope={scope_str}"
+                    f"&user_scope={scope_str}"
                     f"&state={state}"
                 )
                 
@@ -1437,14 +1437,15 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                     
                     tokens = data
                 
-                # Store tokens - Slack has different structure
+                # Store tokens - Slack user tokens come in authed_user
                 store = get_cred_store()
+                authed_user = tokens.get("authed_user", {})
                 store.save_token(
                     provider="slack",
-                    access_token=tokens.get("access_token"),
-                    refresh_token=tokens.get("refresh_token"),
+                    access_token=authed_user.get("access_token") or tokens.get("access_token"),
+                    refresh_token=authed_user.get("refresh_token") or tokens.get("refresh_token"),
                     expires_in=None,  # Slack tokens don't expire
-                    scopes=tokens.get("scope", "").split(","),
+                    scopes=(authed_user.get("scope", "") or tokens.get("scope", "")).split(","),
                 )
                 
                 team_name = tokens.get("team", {}).get("name", "Workspace")
