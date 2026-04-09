@@ -109,7 +109,9 @@ class GraphClient:
             True if connected successfully
         """
         if not self._auth.has_credentials():
-            print(self._auth.get_setup_instructions())
+            if not getattr(GraphClient, '_setup_instructions_shown', False):
+                print(self._auth.get_setup_instructions())
+                GraphClient._setup_instructions_shown = True
             return False
         
         # Get initial token to verify authentication

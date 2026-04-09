@@ -15,6 +15,9 @@ fi
 
 source .venv/bin/activate
 
+# Sync dependencies in case requirements.txt changed
+pip install -r requirements.txt --quiet 2>/dev/null
+
 # Check for API key
 if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ]; then
     echo "⚠  No API key set. Run ./setup.sh or:"

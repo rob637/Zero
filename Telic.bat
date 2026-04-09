@@ -52,6 +52,8 @@ if not exist ".venv" (
     echo.
 ) else (
     call .venv\Scripts\activate.bat
+    :: Sync dependencies in case requirements.txt changed
+    pip install -r requirements.txt --quiet 2>nul
 )
 
 echo Starting Telic...
