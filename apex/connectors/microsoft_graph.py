@@ -101,6 +101,7 @@ class GraphClient:
         Connect to Microsoft Graph API.
         
         Performs authentication and creates HTTP client.
+        Supports both MSAL (credentials file) and server OAuth (credential store) flows.
         
         Args:
             scopes: List of permission scopes needed
@@ -108,15 +109,27 @@ class GraphClient:
         Returns:
             True if connected successfully
         """
-        if not self._auth.has_credentials():
+        token = None
+        
+        # Try MSAL auth first (credentials file approach)
+        if self._auth.has_credentials():
+            token = await self._auth.get_token(scopes)
+        
+        # Fall back to credential store (server OAuth approach)
+        if not token:
+            try:
+                from .credentials import get_credential_store
+                store = get_credential_store()
+                store_token = store.get_token("microsoft")
+                if store_token:
+                    token = store_token
+            except Exception:
+                pass
+        
+        if not token:
             if not getattr(GraphClient, '_setup_instructions_shown', False):
                 print(self._auth.get_setup_instructions())
                 GraphClient._setup_instructions_shown = True
-            return False
-        
-        # Get initial token to verify authentication
-        token = await self._auth.get_token(scopes)
-        if not token:
             return False
         
         # Create HTTP client
@@ -145,7 +158,26 @@ class GraphClient:
     
     async def _get_headers(self, scopes: List[str] = None) -> Dict[str, str]:
         """Get headers with fresh auth token."""
-        return await self._auth.get_headers(scopes)
+        # Try MSAL auth first
+        try:
+            return await self._auth.get_headers(scopes)
+        except Exception:
+            pass
+        
+        # Fall back to credential store token
+        try:
+            from .credentials import get_credential_store
+            store = get_credential_store()
+            store_token = store.get_token("microsoft")
+            if store_token:
+                return {
+                    'Authorization': f'Bearer {store_token}',
+                    'Content-Type': 'application/json',
+                }
+        except Exception:
+            pass
+        
+        raise RuntimeError("No valid Microsoft auth token available.")
     
     def _parse_error(self, response: httpx.Response) -> GraphError:
         """Parse error response from Graph API."""
