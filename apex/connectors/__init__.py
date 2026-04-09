@@ -142,6 +142,9 @@ from .resolver import (
 # Linear
 from .linear import LinearConnector
 
+# Trello
+from .trello import TrelloConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -233,6 +236,8 @@ __all__ = [
     'NotionConnector',
     # Linear
     'LinearConnector',
+    # Trello
+    'TrelloConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

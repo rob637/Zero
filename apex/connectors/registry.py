@@ -646,6 +646,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .trello import TrelloConnector
+            self.register(ConnectorMetadata(
+                name="trello",
+                display_name="Trello",
+                provider="trello",
+                primitives=["BOARD", "TASK", "PROJECT"],
+                scopes=[],
+                connector_class=TrelloConnector,
+                description="Boards, lists, cards, checklists, and labels via Trello",
+                icon="trello",
+                setup_url="https://trello.com/power-ups/admin",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

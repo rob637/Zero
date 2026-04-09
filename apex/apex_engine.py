@@ -2256,6 +2256,212 @@ class LinearPrimitive(Primitive):
 
 
 # ============================================================
+#  TRELLO PRIMITIVE
+# ============================================================
+
+class TrelloPrimitive(Primitive):
+    """Trello — boards, lists, cards, checklists, and search.
+    
+    Uses the Trello REST API via TrelloConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "TRELLO"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "list_boards": "List all boards for the authenticated user",
+            "get_board": "Get a board with its lists, labels, and metadata",
+            "create_board": "Create a new board",
+            "get_lists": "Get all lists on a board",
+            "create_list": "Create a new list on a board",
+            "get_cards": "Get cards from a list or board",
+            "get_card": "Get a single card with comments, checklists, and full details",
+            "create_card": "Create a new card in a list with name, description, due date, labels",
+            "update_card": "Update a card's name, description, due date, list, or archive status",
+            "move_card": "Move a card to a different list",
+            "delete_card": "Permanently delete a card",
+            "add_comment": "Add a comment to a card",
+            "add_checklist": "Add a checklist with items to a card",
+            "search": "Search across boards and cards",
+            "get_board_members": "Get members of a board",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "list_boards": {
+                "filter": {"type": "str", "required": False, "description": "'open', 'closed', or 'all' (default: open)"},
+            },
+            "get_board": {
+                "board_id": {"type": "str", "required": True, "description": "Board ID"},
+            },
+            "create_board": {
+                "name": {"type": "str", "required": True, "description": "Board name"},
+                "description": {"type": "str", "required": False, "description": "Board description"},
+            },
+            "get_lists": {
+                "board_id": {"type": "str", "required": True, "description": "Board ID"},
+            },
+            "create_list": {
+                "board_id": {"type": "str", "required": True, "description": "Board ID"},
+                "name": {"type": "str", "required": True, "description": "List name"},
+            },
+            "get_cards": {
+                "list_id": {"type": "str", "required": False, "description": "List ID (get cards in this list)"},
+                "board_id": {"type": "str", "required": False, "description": "Board ID (get all cards on board)"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 50)"},
+            },
+            "get_card": {
+                "card_id": {"type": "str", "required": True, "description": "Card ID"},
+            },
+            "create_card": {
+                "list_id": {"type": "str", "required": True, "description": "List ID to create card in"},
+                "name": {"type": "str", "required": True, "description": "Card name/title"},
+                "description": {"type": "str", "required": False, "description": "Card description (markdown)"},
+                "due": {"type": "str", "required": False, "description": "Due date (ISO 8601 or YYYY-MM-DD)"},
+                "labels": {"type": "list", "required": False, "description": "List of label IDs"},
+                "position": {"type": "str", "required": False, "description": "'top' or 'bottom'"},
+            },
+            "update_card": {
+                "card_id": {"type": "str", "required": True, "description": "Card ID"},
+                "name": {"type": "str", "required": False, "description": "New name"},
+                "description": {"type": "str", "required": False, "description": "New description"},
+                "due": {"type": "str", "required": False, "description": "New due date"},
+                "due_complete": {"type": "bool", "required": False, "description": "Mark due date complete"},
+                "list_id": {"type": "str", "required": False, "description": "Move to different list"},
+                "closed": {"type": "bool", "required": False, "description": "Archive (true) or unarchive (false)"},
+            },
+            "move_card": {
+                "card_id": {"type": "str", "required": True, "description": "Card ID"},
+                "list_id": {"type": "str", "required": True, "description": "Target list ID"},
+            },
+            "delete_card": {
+                "card_id": {"type": "str", "required": True, "description": "Card ID"},
+            },
+            "add_comment": {
+                "card_id": {"type": "str", "required": True, "description": "Card ID"},
+                "text": {"type": "str", "required": True, "description": "Comment text"},
+            },
+            "add_checklist": {
+                "card_id": {"type": "str", "required": True, "description": "Card ID"},
+                "name": {"type": "str", "required": True, "description": "Checklist name"},
+                "items": {"type": "list", "required": False, "description": "List of checklist item names"},
+            },
+            "search": {
+                "query": {"type": "str", "required": True, "description": "Search text"},
+                "model_types": {"type": "str", "required": False, "description": "Comma-separated: 'cards', 'boards' (default: both)"},
+                "limit": {"type": "int", "required": False, "description": "Max results per type (default 10)"},
+            },
+            "get_board_members": {
+                "board_id": {"type": "str", "required": True, "description": "Board ID"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "list_boards":
+                results = await self._connector.list_boards(
+                    filter=params.get("filter", "open"),
+                )
+                return StepResult(True, data={"count": len(results), "boards": results})
+            
+            elif operation == "get_board":
+                result = await self._connector.get_board(params["board_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "create_board":
+                result = await self._connector.create_board(
+                    name=params["name"],
+                    description=params.get("description"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "get_lists":
+                results = await self._connector.get_lists(params["board_id"])
+                return StepResult(True, data={"count": len(results), "lists": results})
+            
+            elif operation == "create_list":
+                result = await self._connector.create_list(params["board_id"], params["name"])
+                return StepResult(True, data=result)
+            
+            elif operation == "get_cards":
+                results = await self._connector.get_cards(
+                    list_id=params.get("list_id"),
+                    board_id=params.get("board_id"),
+                    limit=int(params.get("limit", 50)),
+                )
+                return StepResult(True, data={"count": len(results), "cards": results})
+            
+            elif operation == "get_card":
+                result = await self._connector.get_card(params["card_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "create_card":
+                result = await self._connector.create_card(
+                    list_id=params["list_id"],
+                    name=params["name"],
+                    description=params.get("description"),
+                    due=params.get("due"),
+                    labels=params.get("labels"),
+                    position=params.get("position"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "update_card":
+                result = await self._connector.update_card(
+                    card_id=params["card_id"],
+                    name=params.get("name"),
+                    description=params.get("description"),
+                    due=params.get("due"),
+                    due_complete=params.get("due_complete"),
+                    list_id=params.get("list_id"),
+                    closed=params.get("closed"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "move_card":
+                result = await self._connector.move_card(params["card_id"], params["list_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "delete_card":
+                await self._connector.delete_card(params["card_id"])
+                return StepResult(True, data={"deleted": True})
+            
+            elif operation == "add_comment":
+                result = await self._connector.add_comment(params["card_id"], params["text"])
+                return StepResult(True, data=result)
+            
+            elif operation == "add_checklist":
+                result = await self._connector.add_checklist(
+                    card_id=params["card_id"],
+                    name=params["name"],
+                    items=params.get("items"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "search":
+                results = await self._connector.search(
+                    query=params["query"],
+                    model_types=params.get("model_types", "cards,boards"),
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data=results)
+            
+            elif operation == "get_board_members":
+                results = await self._connector.get_board_members(params["board_id"])
+                return StepResult(True, data={"count": len(results), "members": results})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -6664,6 +6870,11 @@ class Apex:
         linear_connector = c.get("linear")
         if linear_connector:
             self._primitives["LINEAR"] = LinearPrimitive(linear_connector)
+        
+        # Trello — wire Trello connector
+        trello_connector = c.get("trello")
+        if trello_connector:
+            self._primitives["TRELLO"] = TrelloPrimitive(trello_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None
