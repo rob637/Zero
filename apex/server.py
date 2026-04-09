@@ -1207,30 +1207,60 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                     "provider": provider,
                 })
         
-        # For other providers, use generic OAuth flow (requires client credentials setup)
-        from connectors.oauth_flow import get_oauth_flow
-        flow = get_oauth_flow()
+        # For any other provider in OAUTH_PROVIDERS, check env vars
+        env_prefix = provider.upper()
+        # Handle special env var naming
+        env_map = {"atlassian": "ATLASSIAN", "jira": "ATLASSIAN"}
+        env_name = env_map.get(provider, env_prefix)
         
-        # Get client credentials
-        store = get_cred_store()
-        client_creds = store.get_client_credentials(provider)
-        if not client_creds:
+        client_id = os.environ.get(f"{env_name}_CLIENT_ID")
+        client_secret = os.environ.get(f"{env_name}_CLIENT_SECRET")
+        
+        if client_id and client_secret:
+            import secrets as _secrets
+            state = _secrets.token_urlsafe(32)
+            
+            config = OAUTH_PROVIDERS[provider]
+            
+            # Build scopes
+            scope_list = config.scopes.get("all", list(config.scopes.values())[0]) if config.scopes else []
+            scope_str = "%20".join(scope_list) if scope_list else ""
+            
+            redirect_uri = "http://127.0.0.1:8000/oauth/callback"
+            from urllib.parse import urlencode, quote
+            
+            params = {
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "state": state,
+            }
+            if scope_str:
+                params["scope"] = " ".join(scope_list)
+            
+            # Add provider-specific extra params
+            params.update(config.extra_auth_params)
+            
+            auth_url = f"{config.auth_url}?{urlencode(params)}"
+            
+            _oauth_pending_states[state] = {
+                "provider": provider,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }
+            
+            print(f"[OAUTH] Starting {provider} OAuth flow")
+            
             return JSONResponse({
-                "error": f"No client credentials configured for {provider}. Set up in /setup page.",
-            }, status_code=400)
-        
-        scope_list = scopes.split(",") if scopes else None
-        auth_url = flow.get_auth_url(
-            provider=provider,
-            client_id=client_creds["client_id"],
-            client_secret=client_creds.get("client_secret"),
-            services=scope_list,
-        )
+                "auth_url": auth_url,
+                "state": state,
+                "provider": provider,
+            })
         
         return JSONResponse({
-            "auth_url": auth_url,
-            "provider": provider,
-        })
+            "error": f"No credentials configured for {provider}. Add {env_name}_CLIENT_ID and {env_name}_CLIENT_SECRET to .env",
+            "needs_setup": True,
+        }, status_code=400)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1442,6 +1472,11 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                     expires_in=tokens.get("expires_in"),
                     scopes=tokens.get("scope", "").split(),
                 )
+                store.save_client_credentials(
+                    provider="discord",
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
                 
                 print(f"[OAUTH] Discord connected!")
                 
@@ -1519,6 +1554,11 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                     refresh_token=tokens.get("refresh_token"),
                     expires_in=tokens.get("expires_in"),
                     scopes=tokens.get("scope", "").split(),
+                )
+                store.save_client_credentials(
+                    provider="microsoft",
+                    client_id=client_id,
+                    client_secret=client_secret,
                 )
                 
                 print(f"[OAUTH] Microsoft connected!")
@@ -1603,6 +1643,11 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                     expires_in=None,  # Slack tokens don't expire
                     scopes=(authed_user.get("scope", "") or tokens.get("scope", "")).split(","),
                 )
+                store.save_client_credentials(
+                    provider="slack",
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
                 
                 team_name = tokens.get("team", {}).get("name", "Workspace")
                 print(f"[OAUTH] Slack connected to {team_name}!")
@@ -1686,6 +1731,11 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                     expires_in=tokens.get("expires_in"),
                     scopes=tokens.get("scope", "").split(","),
                 )
+                store.save_client_credentials(
+                    provider="github",
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
                 
                 print(f"[OAUTH] GitHub connected!")
                 
@@ -1768,6 +1818,11 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                     expires_in=tokens.get("expires_in"),
                     scopes=tokens.get("scope", "").split(),
                 )
+                store.save_client_credentials(
+                    provider="spotify",
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
                 
                 print(f"[OAUTH] Spotify connected!")
                 
@@ -1805,6 +1860,112 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                             window.opener.postMessage({{
                                 type: 'oauth_success',
                                 provider: 'spotify'
+                            }}, '*');
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    </script>
+                </body>
+                </html>
+                """)
+            
+            else:
+                # Generic OAuth 2.0 token exchange for any other provider
+                from connectors.oauth_flow import OAUTH_PROVIDERS as _OAUTH_PROVIDERS
+                import httpx
+                
+                client_id = pending["client_id"]
+                client_secret = pending["client_secret"]
+                config = _OAUTH_PROVIDERS.get(provider_used)
+                
+                if not config:
+                    raise Exception(f"No OAuth config for {provider_used}")
+                
+                # Some providers (Notion, Zoom) use Basic auth for token exchange
+                headers = {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json",
+                }
+                
+                token_data = {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": "http://127.0.0.1:8000/oauth/callback",
+                }
+                
+                # Notion uses Basic auth instead of client_secret in body
+                if provider_used == "notion":
+                    import base64
+                    auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+                    headers["Authorization"] = f"Basic {auth_header}"
+                    del token_data["client_secret"]
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        config.token_url,
+                        data=token_data,
+                        headers=headers,
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"{config.name} token exchange failed: {response.text}")
+                    
+                    tokens = response.json()
+                
+                if "error" in tokens:
+                    raise Exception(f"{config.name} error: {tokens.get('error_description', tokens.get('error'))}")
+                
+                # Store tokens
+                store = get_cred_store()
+                store.save_token(
+                    provider=provider_used,
+                    access_token=tokens.get("access_token"),
+                    refresh_token=tokens.get("refresh_token"),
+                    expires_in=tokens.get("expires_in"),
+                    scopes=tokens.get("scope", "").split() if tokens.get("scope") else [],
+                )
+                store.save_client_credentials(
+                    provider=provider_used,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
+                
+                print(f"[OAUTH] {config.name} connected!")
+                
+                return HTMLResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>{config.name} Connected</title>
+                    <style>
+                        body {{
+                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                            background: #0a0a0f;
+                            color: #f4f4f5;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                        }}
+                        .card {{ text-align: center; padding: 40px; }}
+                        .checkmark {{ font-size: 48px; margin-bottom: 16px; }}
+                        h2 {{ margin-bottom: 8px; }}
+                        p {{ color: #a1a1aa; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="checkmark">✓</div>
+                        <h2>{config.name} Connected!</h2>
+                        <p>You can close this window.</p>
+                    </div>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{
+                                type: 'oauth_success',
+                                provider: '{provider_used}'
                             }}, '*');
                         }}
                         setTimeout(() => window.close(), 1500);

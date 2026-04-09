@@ -486,7 +486,7 @@
                 <span class="difficulty-badge">⚡ One-Click</span>
                 <h2 class="section-title">Just Sign In</h2>
             </div>
-            <p class="difficulty-desc">Click connect, sign in with your account, done. No setup required.</p>
+            <p class="difficulty-desc">Click connect, sign in with your account, done. Requires CLIENT_ID & CLIENT_SECRET in your .env file.</p>
             
             <div class="capabilities-grid" id="oneClickGrid">
                 <!-- Populated by JS -->
@@ -570,13 +570,23 @@
             notion: '📝',
             linear: '🔲',
             zoom: '📹',
+            hubspot: '🟠',
+            reddit: '🔴',
+            linkedin: '🔗',
+            weather: '🌤️',
+            news: '📰',
+            web_search: '🔍',
+            telegram: '✈️',
+            airtable: '📊',
+            stripe: '💳',
+            trello: '📋',
         };
         
         // Token configuration per provider
         const tokenConfig = {
             github: {
                 label: 'Personal Access Token',
-                help: 'Get one from <a href="https://github.com/settings/tokens" target="_blank" style="color: var(--accent-primary);">GitHub Settings → Developer settings → Personal access tokens</a>',
+                help: 'Get one from <a href="https://github.com/settings/tokens" target="_blank" style="color: var(--accent-primary);">GitHub Settings → Personal access tokens</a>',
                 placeholder: 'ghp_...',
             },
             slack: {
@@ -591,17 +601,17 @@
             },
             jira: {
                 label: 'API Token',
-                help: 'Get one from <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color: var(--accent-primary);">Atlassian Account → Security → API tokens</a>',
+                help: 'Get one from <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color: var(--accent-primary);">Atlassian Account → API tokens</a>',
                 placeholder: 'Your Jira API token',
             },
             todoist: {
                 label: 'API Token',
-                help: 'Get one from <a href="https://todoist.com/app/settings/integrations/developer" target="_blank" style="color: var(--accent-primary);">Todoist Settings → Integrations → Developer</a>',
+                help: 'Get one from <a href="https://todoist.com/app/settings/integrations/developer" target="_blank" style="color: var(--accent-primary);">Todoist Settings → Developer</a>',
                 placeholder: 'Your Todoist API token',
             },
             twilio: {
                 label: 'Auth Token',
-                help: 'Get one from <a href="https://console.twilio.com/" target="_blank" style="color: var(--accent-primary);">Twilio Console</a>',
+                help: 'Get from <a href="https://console.twilio.com/" target="_blank" style="color: var(--accent-primary);">Twilio Console</a> (Account SID + Auth Token)',
                 placeholder: 'Your Twilio Auth Token',
             },
             openai: {
@@ -614,6 +624,70 @@
                 help: 'Get one from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: var(--accent-primary);">Anthropic Console</a>',
                 placeholder: 'sk-ant-...',
             },
+            weather: {
+                label: 'API Key',
+                help: 'Get a free key from <a href="https://home.openweathermap.org/api_keys" target="_blank" style="color: var(--accent-primary);">OpenWeatherMap → API Keys</a>',
+                placeholder: 'Your OpenWeatherMap API key',
+            },
+            news: {
+                label: 'API Key',
+                help: 'Get a free key from <a href="https://newsapi.org/register" target="_blank" style="color: var(--accent-primary);">NewsAPI.org → Register</a>',
+                placeholder: 'Your NewsAPI key',
+            },
+            web_search: {
+                label: 'API Key',
+                help: 'Get from <a href="https://programmablesearchengine.google.com/controlpanel/create" target="_blank" style="color: var(--accent-primary);">Google Custom Search</a> or <a href="https://www.microsoft.com/en-us/bing/apis/bing-web-search-api" target="_blank" style="color: var(--accent-primary);">Bing Search API</a>',
+                placeholder: 'Your search API key',
+            },
+            telegram: {
+                label: 'Bot Token',
+                help: 'Message <a href="https://t.me/BotFather" target="_blank" style="color: var(--accent-primary);">@BotFather on Telegram</a> and use /newbot',
+                placeholder: '123456:ABC-DEF...',
+            },
+            linear: {
+                label: 'API Key',
+                help: 'Get from <a href="https://linear.app/settings/api" target="_blank" style="color: var(--accent-primary);">Linear → Settings → API</a>',
+                placeholder: 'lin_api_...',
+            },
+            airtable: {
+                label: 'Personal Access Token',
+                help: 'Create one at <a href="https://airtable.com/create/tokens" target="_blank" style="color: var(--accent-primary);">Airtable → Developer Hub → Tokens</a>',
+                placeholder: 'pat...',
+            },
+            smartthings: {
+                label: 'Personal Access Token',
+                help: 'Create one at <a href="https://account.smartthings.com/tokens" target="_blank" style="color: var(--accent-primary);">SmartThings → Personal Access Tokens</a>',
+                placeholder: 'Your SmartThings PAT',
+            },
+            stripe: {
+                label: 'Secret Key',
+                help: 'Get from <a href="https://dashboard.stripe.com/apikeys" target="_blank" style="color: var(--accent-primary);">Stripe Dashboard → API Keys</a>',
+                placeholder: 'sk_live_... or sk_test_...',
+            },
+            trello: {
+                label: 'API Key + Token',
+                help: 'Get API Key from <a href="https://trello.com/power-ups/admin" target="_blank" style="color: var(--accent-primary);">Trello Power-Up Admin</a>, then generate a Token',
+                placeholder: 'Your Trello API key',
+            },
+        };
+
+        // OAuth developer console links (for getting CLIENT_ID / CLIENT_SECRET)
+        const oauthSetupLinks = {
+            google: { name: 'Google', url: 'https://console.cloud.google.com/apis/credentials' },
+            microsoft: { name: 'Microsoft', url: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade' },
+            discord: { name: 'Discord', url: 'https://discord.com/developers/applications' },
+            slack: { name: 'Slack', url: 'https://api.slack.com/apps' },
+            github: { name: 'GitHub', url: 'https://github.com/settings/developers' },
+            spotify: { name: 'Spotify', url: 'https://developer.spotify.com/dashboard' },
+            dropbox: { name: 'Dropbox', url: 'https://www.dropbox.com/developers/apps' },
+            todoist: { name: 'Todoist', url: 'https://developer.todoist.com/appconsole.html' },
+            notion: { name: 'Notion', url: 'https://www.notion.so/my-integrations' },
+            hubspot: { name: 'HubSpot', url: 'https://developers.hubspot.com/' },
+            atlassian: { name: 'Atlassian', url: 'https://developer.atlassian.com/console/myapps/' },
+            zoom: { name: 'Zoom', url: 'https://marketplace.zoom.us/develop/create' },
+            reddit: { name: 'Reddit', url: 'https://www.reddit.com/prefs/apps' },
+            linkedin: { name: 'LinkedIn', url: 'https://www.linkedin.com/developers/apps' },
+            twitter: { name: 'Twitter/X', url: 'https://developer.x.com/en/portal/dashboard' },
         };
         
         // Listen for OAuth popup callback
@@ -629,14 +703,14 @@
 
         // Categorize services by setup difficulty
         const setupDifficulty = {
-            // One-Click: OAuth with pre-configured credentials (or env vars)
-            oneClick: ['google', 'discord', 'microsoft', 'slack', 'github', 'spotify'],
+            // One-Click: OAuth with pre-configured credentials (env vars)
+            oneClick: ['google', 'discord', 'microsoft', 'slack', 'github', 'spotify', 'dropbox', 'todoist', 'notion', 'hubspot', 'atlassian', 'zoom', 'reddit', 'linkedin', 'twitter'],
             
             // API Key: Just paste a token
-            apiKey: ['todoist', 'dropbox', 'twilio', 'smartthings', 'notion', 'linear'],
+            apiKey: ['weather', 'news', 'web_search', 'telegram', 'linear', 'airtable', 'smartthings', 'stripe', 'twilio', 'trello'],
             
-            // Developer Setup: Requires registering an OAuth app (not configured yet)
-            devSetup: ['twitter', 'jira', 'zoom']
+            // Developer Setup: Complex multi-step setup
+            devSetup: []
         };
 
         function getServiceDifficulty(provider) {
@@ -685,8 +759,28 @@
                 });
                 
                 // Render function for capability cards
-                const renderCards = (caps) => caps.map(cap => {
+                const renderCards = (caps, section) => caps.map(cap => {
                     const anyConnected = cap.services.some(s => connected[s.id]);
+                    
+                    // Build links for each unique provider in this card
+                    const providersSeen = new Set();
+                    let linksHtml = '';
+                    cap.services.forEach(s => {
+                        if (providersSeen.has(s.provider)) return;
+                        providersSeen.add(s.provider);
+                        if (section === 'apiKey') {
+                            const tc = tokenConfig[s.provider] || tokenConfig[s.id];
+                            if (tc) {
+                                linksHtml += `<div style="font-size:0.75rem;margin-top:4px;">${tc.help}</div>`;
+                            }
+                        } else if (section === 'oneClick') {
+                            const link = oauthSetupLinks[s.provider];
+                            if (link) {
+                                linksHtml += `<div style="font-size:0.75rem;margin-top:4px;"><a href="${link.url}" target="_blank" style="color:var(--accent-primary);text-decoration:none;">🔗 ${link.name} Developer Console</a></div>`;
+                            }
+                        }
+                    });
+                    
                     return `
                         <div class="capability-card">
                             <div class="capability-header">
@@ -705,14 +799,15 @@
                                     </button>
                                 `).join('')}
                             </div>
+                            ${linksHtml ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-subtle);">${linksHtml}</div>` : ''}
                         </div>
                     `;
                 }).join('');
                 
                 // Render each section
-                document.getElementById('oneClickGrid').innerHTML = renderCards(groups.oneClick);
-                document.getElementById('apiKeyGrid').innerHTML = renderCards(groups.apiKey);
-                document.getElementById('devSetupGrid').innerHTML = renderCards(groups.devSetup);
+                document.getElementById('oneClickGrid').innerHTML = renderCards(groups.oneClick, 'oneClick');
+                document.getElementById('apiKeyGrid').innerHTML = renderCards(groups.apiKey, 'apiKey');
+                document.getElementById('devSetupGrid').innerHTML = renderCards(groups.devSetup, 'devSetup');
                 
             } catch (e) {
                 console.error('Failed to load capabilities:', e);
@@ -738,7 +833,7 @@
             tokenForm.style.display = 'none';
             connectBtn.textContent = 'Connect';
             
-            if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify') {
+            if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify' || provider === 'dropbox' || provider === 'todoist' || provider === 'notion' || provider === 'hubspot' || provider === 'atlassian' || provider === 'zoom' || provider === 'reddit' || provider === 'linkedin' || provider === 'twitter') {
                 // OAuth providers - will open popup
                 const providerNames = {
                     'google': 'Google',
@@ -746,7 +841,16 @@
                     'discord': 'Discord',
                     'slack': 'Slack',
                     'github': 'GitHub',
-                    'spotify': 'Spotify'
+                    'spotify': 'Spotify',
+                    'dropbox': 'Dropbox',
+                    'todoist': 'Todoist',
+                    'notion': 'Notion',
+                    'hubspot': 'HubSpot',
+                    'atlassian': 'Atlassian',
+                    'zoom': 'Zoom',
+                    'reddit': 'Reddit',
+                    'linkedin': 'LinkedIn',
+                    'twitter': 'Twitter/X',
                 };
                 desc.innerHTML = `
                     <p>Connect your ${providerNames[provider]} account to use ${name} with Ziggy.</p>
@@ -799,7 +903,7 @@
             try {
                 const { id, name, provider } = currentService;
                 
-                if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify') {
+                if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify' || provider === 'dropbox' || provider === 'todoist' || provider === 'notion' || provider === 'hubspot' || provider === 'atlassian' || provider === 'zoom' || provider === 'reddit' || provider === 'linkedin' || provider === 'twitter') {
                     // OAuth flow - open popup
                     // Map service ID to scope name
                     const scopeMap = {
@@ -818,6 +922,15 @@
                         'slack': 'channels',
                         'github': 'repo',
                         'spotify': 'playback',
+                        'dropbox': 'files',
+                        'todoist': 'all',
+                        'notion': 'all',
+                        'hubspot': 'all',
+                        'jira': 'jira',
+                        'zoom': 'all',
+                        'reddit': 'all',
+                        'linkedin': 'all',
+                        'twitter': 'all',
                     };
                     const scopeParam = scopeMap[id] || id;
                     const res = await fetch(`${API}/oauth/start/${provider}?scopes=${scopeParam}`);

@@ -287,6 +287,107 @@ OAUTH_PROVIDERS: Dict[str, OAuthProviderConfig] = {
             "prompt": "consent",
         },
     ),
+    
+    "todoist": OAuthProviderConfig(
+        name="Todoist",
+        auth_url="https://todoist.com/oauth/authorize",
+        token_url="https://todoist.com/oauth/access_token",
+        scopes={
+            "all": ["data:read_write,data:delete"],
+        },
+        supports_pkce=False,
+    ),
+    
+    "notion": OAuthProviderConfig(
+        name="Notion",
+        auth_url="https://api.notion.com/v1/oauth/authorize",
+        token_url="https://api.notion.com/v1/oauth/token",
+        scopes={},  # Notion doesn't use scopes in the auth URL
+        supports_pkce=False,
+        extra_auth_params={
+            "owner": "user",
+        },
+        extra_token_params={},
+    ),
+    
+    "hubspot": OAuthProviderConfig(
+        name="HubSpot",
+        auth_url="https://app.hubspot.com/oauth/authorize",
+        token_url="https://api.hubapi.com/oauth/v1/token",
+        scopes={
+            "all": [
+                "crm.objects.contacts.read",
+                "crm.objects.contacts.write",
+                "crm.objects.companies.read",
+                "crm.objects.deals.read",
+                "crm.objects.deals.write",
+            ],
+        },
+        supports_pkce=False,
+    ),
+    
+    "zoom": OAuthProviderConfig(
+        name="Zoom",
+        auth_url="https://zoom.us/oauth/authorize",
+        token_url="https://zoom.us/oauth/token",
+        scopes={
+            "all": [
+                "meeting:read",
+                "meeting:write",
+                "user:read",
+            ],
+        },
+        supports_pkce=True,
+    ),
+    
+    "reddit": OAuthProviderConfig(
+        name="Reddit",
+        auth_url="https://www.reddit.com/api/v1/authorize",
+        token_url="https://www.reddit.com/api/v1/access_token",
+        scopes={
+            "all": [
+                "identity",
+                "read",
+                "submit",
+                "subscribe",
+                "history",
+            ],
+        },
+        supports_pkce=False,
+        extra_auth_params={
+            "duration": "permanent",
+        },
+    ),
+
+    "linkedin": OAuthProviderConfig(
+        name="LinkedIn",
+        auth_url="https://www.linkedin.com/oauth/v2/authorization",
+        token_url="https://www.linkedin.com/oauth/v2/accessToken",
+        scopes={
+            "all": [
+                "openid",
+                "profile",
+                "email",
+                "w_member_social",
+            ],
+        },
+        supports_pkce=False,
+    ),
+
+    "twitter": OAuthProviderConfig(
+        name="Twitter",
+        auth_url="https://twitter.com/i/oauth2/authorize",
+        token_url="https://api.twitter.com/2/oauth2/token",
+        scopes={
+            "all": [
+                "tweet.read",
+                "tweet.write",
+                "users.read",
+                "offline.access",
+            ],
+        },
+        supports_pkce=True,
+    ),
 }
 
 
