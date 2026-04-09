@@ -397,13 +397,9 @@ def get_proactive_monitor() -> ProactiveMonitor:
 
 
 def get_cross_service_intel() -> CrossServiceIntelligence:
-    """Get or create the CrossServiceIntelligence singleton."""
-    global _cross_service_intel, _semantic_memory
-    if _cross_service_intel is None:
-        if _semantic_memory is None:
-            _semantic_memory = SemanticMemory()
-        _cross_service_intel = CrossServiceIntelligence(_semantic_memory)
-    return _cross_service_intel
+    """Get CrossServiceIntelligence via the IntelligenceHub (shared instance)."""
+    hub = get_intelligence_hub()
+    return hub._intel
 
 
 def get_devtools() -> UnifiedDevTools:
@@ -2260,13 +2256,13 @@ Remember: References like "the first one", "send it to him", "the information ab
         # Recall relevant facts from semantic memory
         recalled = await hub.recall(req.message, limit=5, min_relevance=0.3)
         if recalled:
-            facts_text = "\n".join(f"- {f.content}" for f in recalled[:5])
+            facts_text = "\n".join(f"- {f.content}" for f, _score in recalled[:5])
             intel_parts.append(f"[MEMORY - Things I remember]\n{facts_text}")
 
         # Check what patterns are expected now
         expected = await hub.whats_expected_now()
         if expected:
-            patterns_text = "\n".join(f"- {p.name}: {p.description}" for p in expected[:3])
+            patterns_text = "\n".join(f"- {p['pattern']}: {p['description']}" for p in expected[:3])
             intel_parts.append(f"[PATTERNS - What usually happens now]\n{patterns_text}")
 
         # Get proactive suggestions
@@ -2298,7 +2294,20 @@ Remember: References like "the first one", "send it to him", "the information ab
             await queue.put({"event": "tool_complete", "step": data})
             # Record observation for intelligence learning
             try:
-                await hub.observe(step.tool_call.name, {
+                # Map tool names to preference analyzer keys
+                _ACTION_MAP = {
+                    "calendar_create": "schedule_meeting",
+                    "email_send": "send_email",
+                    "email_draft": "send_email",
+                    "document_create": "create_document",
+                    "document_write": "create_document",
+                    "task_create": "create_task",
+                    "task_add": "create_task",
+                    "web_search": "search_web",
+                }
+                raw_action = step.tool_call.name
+                action = _ACTION_MAP.get(raw_action, raw_action)
+                await hub.observe(action, {
                     "params": step.tool_call.params,
                     "result_preview": str(step.result)[:200] if step.result else None,
                     "user_message": req.message[:200],
@@ -2828,7 +2837,7 @@ async def intelligence_memory(query: str = "", entity: str = ""):
         facts = await hub.recall(query, limit=10)
         return JSONResponse({
             "query": query,
-            "facts": [f.to_dict() for f in facts] if facts else [],
+            "facts": [f.to_dict() for f, _score in facts] if facts else [],
         })
     else:
         stats = hub._memory.get_stats()

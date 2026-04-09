@@ -814,14 +814,15 @@ class CrossServiceIntelligence:
         if ContentType.MEMORY in content_types and self._memory:
             try:
                 facts = await self._memory.recall(query, limit=max_items // 4)
-                for fact in facts:
+                for item in facts:
+                    fact = item[0] if isinstance(item, tuple) else item
                     results.append(RelevantContent(
                         content_type=ContentType.MEMORY,
                         title="Memory",
                         snippet=fact.content,
                         source="semantic_memory",
                         timestamp=fact.created,
-                        relevance_score=fact.relevance_score if hasattr(fact, 'relevance_score') else 0.6,
+                        relevance_score=item[1] if isinstance(item, tuple) else 0.6,
                     ))
             except:
                 pass
@@ -877,6 +878,39 @@ class CrossServiceIntelligence:
     # =========================================================================
     # Utilities
     # =========================================================================
+    
+    async def morning_briefing(self) -> Dict:
+        """Generate a morning briefing from available intelligence sources."""
+        briefing = {
+            "patterns": [],
+            "memory_stats": {},
+            "suggestions": [],
+        }
+        
+        # Expected patterns
+        if self._patterns:
+            try:
+                expected = await self._patterns.whats_expected_now(window_minutes=120)
+                briefing["patterns"] = expected[:5]
+            except Exception:
+                pass
+        
+        # Memory stats
+        if self._memory:
+            try:
+                briefing["memory_stats"] = self._memory.get_stats()
+            except Exception:
+                pass
+        
+        # Learned preferences
+        if self._preferences:
+            try:
+                prefs = await self._preferences.get_preferences()
+                briefing["preferences_count"] = len(prefs) if prefs else 0
+            except Exception:
+                pass
+        
+        return briefing
     
     def _parse_timestamp(self, ts: Any) -> Optional[datetime]:
         """Parse various timestamp formats."""

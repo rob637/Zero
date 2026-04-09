@@ -311,14 +311,35 @@ When you have completed the task, respond with a summary of what was done."""
                         "content": result_str
                     })
                 except Exception as e:
-                    step.status = StepStatus.FAILED
-                    step.error = str(e)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": f"Error: {str(e)}",
-                        "is_error": True
-                    })
+                    # Retry once on transient failures (network, timeout, rate limit)
+                    retried = False
+                    err_str = str(e).lower()
+                    if any(kw in err_str for kw in ["timeout", "rate limit", "429", "503", "connection"]):
+                        try:
+                            result = await self._execute_tool(tc)
+                            step.result = serialize(result)
+                            step.status = StepStatus.COMPLETED
+                            result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
+                            if len(result_str) > 2000:
+                                result_str = result_str[:2000] + f"\n... [truncated]"
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": tc.id,
+                                "content": result_str
+                            })
+                            retried = True
+                        except Exception:
+                            pass
+                    
+                    if not retried:
+                        step.status = StepStatus.FAILED
+                        step.error = str(e)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": f"Error: {str(e)}",
+                            "is_error": True
+                        })
                 
                 if self.on_step:
                     await self.on_step(step)

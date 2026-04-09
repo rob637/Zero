@@ -1512,15 +1512,17 @@ class KnowledgePrimitive(Primitive):
             
             facts = []
             for item in results:
-                if hasattr(item, 'content'):
+                # recall() returns List[Tuple[Fact, float]]
+                fact = item[0] if isinstance(item, tuple) else item
+                if hasattr(fact, 'content'):
                     facts.append({
-                        "content": item.content,
-                        "category": item.category.value if hasattr(item.category, 'value') else str(item.category),
-                        "entity": item.primary_entity,
-                        "created": item.created_at if hasattr(item, 'created_at') else None,
+                        "content": fact.content,
+                        "category": fact.category.value if hasattr(fact.category, 'value') else str(fact.category),
+                        "entity": fact.primary_entity,
+                        "created": fact.created_at if hasattr(fact, 'created_at') else None,
                     })
-                elif isinstance(item, dict):
-                    facts.append(item)
+                elif isinstance(fact, dict):
+                    facts.append(fact)
             
             return StepResult(True, data={"results": facts[:limit]})
         
@@ -1663,7 +1665,8 @@ class PatternsPrimitive(Primitive):
                 expected = await self._patterns.whats_expected_now(window_minutes=window)
                 if not expected:
                     return StepResult(True, data={"expected": [], "message": "No expected patterns right now."})
-                patterns = [{"name": p.name, "description": p.description, "confidence": p.confidence} for p in expected]
+                # whats_expected_now() returns List[Dict] with keys: pattern, description, confidence
+                patterns = [{"name": p.get("pattern", ""), "description": p.get("description", ""), "confidence": p.get("confidence", 0)} for p in expected]
                 return StepResult(True, data={"expected": patterns})
             
             elif operation == "get_patterns":
