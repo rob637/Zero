@@ -1930,6 +1930,174 @@ class NewsPrimitive(Primitive):
 
 
 # ============================================================
+#  NOTION PRIMITIVE
+# ============================================================
+
+class NotionPrimitive(Primitive):
+    """Notion — pages, databases, content blocks, and search.
+    
+    Uses the Notion API via NotionConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "NOTION"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "search": "Search across all Notion pages and databases. Can filter by type (page/database).",
+            "get_page": "Get a page's properties and metadata by ID",
+            "get_page_content": "Get the content blocks (text, lists, headings) of a page",
+            "create_page": "Create a new page under a parent page or database. Supports markdown-like content.",
+            "update_page": "Update a page's properties",
+            "append_content": "Add text content to the bottom of an existing page",
+            "archive_page": "Archive (soft-delete) a page",
+            "list_databases": "List all databases shared with the integration",
+            "get_database": "Get a database's schema and metadata",
+            "query_database": "Query a database with optional filters and sorting",
+            "create_database": "Create a new inline database in a page",
+            "add_comment": "Add a comment to a page",
+            "get_comments": "Get all comments on a page",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "search": {
+                "query": {"type": "str", "required": False, "description": "Search text (empty = recent pages)"},
+                "filter_type": {"type": "str", "required": False, "description": "'page' or 'database'"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 10)"},
+            },
+            "get_page": {
+                "page_id": {"type": "str", "required": True, "description": "Page ID"},
+            },
+            "get_page_content": {
+                "page_id": {"type": "str", "required": True, "description": "Page ID"},
+            },
+            "create_page": {
+                "parent_id": {"type": "str", "required": True, "description": "Parent page ID or database ID"},
+                "title": {"type": "str", "required": True, "description": "Page title"},
+                "content": {"type": "str", "required": False, "description": "Page body content (markdown-like)"},
+                "parent_type": {"type": "str", "required": False, "description": "'page' or 'database' (default: page)"},
+            },
+            "update_page": {
+                "page_id": {"type": "str", "required": True, "description": "Page ID"},
+                "properties": {"type": "dict", "required": True, "description": "Properties to update (Notion format)"},
+            },
+            "append_content": {
+                "page_id": {"type": "str", "required": True, "description": "Page ID"},
+                "content": {"type": "str", "required": True, "description": "Text to append"},
+            },
+            "archive_page": {
+                "page_id": {"type": "str", "required": True, "description": "Page ID to archive"},
+            },
+            "list_databases": {
+                "limit": {"type": "int", "required": False, "description": "Max results (default 10)"},
+            },
+            "get_database": {
+                "database_id": {"type": "str", "required": True, "description": "Database ID"},
+            },
+            "query_database": {
+                "database_id": {"type": "str", "required": True, "description": "Database ID"},
+                "filter": {"type": "dict", "required": False, "description": "Notion filter object"},
+                "sorts": {"type": "list", "required": False, "description": "Sort objects [{property, direction}]"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "create_database": {
+                "parent_page_id": {"type": "str", "required": True, "description": "Parent page ID"},
+                "title": {"type": "str", "required": True, "description": "Database title"},
+                "properties": {"type": "dict", "required": True, "description": "Property schema"},
+            },
+            "add_comment": {
+                "page_id": {"type": "str", "required": True, "description": "Page ID"},
+                "text": {"type": "str", "required": True, "description": "Comment text"},
+            },
+            "get_comments": {
+                "page_id": {"type": "str", "required": True, "description": "Page ID"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "search":
+                results = await self._connector.search(
+                    query=params.get("query", ""),
+                    filter_type=params.get("filter_type"),
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data={"count": len(results), "results": results})
+            
+            elif operation == "get_page":
+                result = await self._connector.get_page(params["page_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "get_page_content":
+                blocks = await self._connector.get_page_content(params["page_id"])
+                return StepResult(True, data={"blocks": blocks})
+            
+            elif operation == "create_page":
+                result = await self._connector.create_page(
+                    parent_id=params["parent_id"],
+                    title=params["title"],
+                    content=params.get("content"),
+                    parent_type=params.get("parent_type", "page"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "update_page":
+                result = await self._connector.update_page(params["page_id"], params["properties"])
+                return StepResult(True, data=result)
+            
+            elif operation == "append_content":
+                blocks = await self._connector.append_content(params["page_id"], params["content"])
+                return StepResult(True, data={"appended_blocks": len(blocks)})
+            
+            elif operation == "archive_page":
+                result = await self._connector.archive_page(params["page_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "list_databases":
+                results = await self._connector.list_databases(limit=int(params.get("limit", 10)))
+                return StepResult(True, data={"count": len(results), "databases": results})
+            
+            elif operation == "get_database":
+                result = await self._connector.get_database(params["database_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "query_database":
+                results = await self._connector.query_database(
+                    database_id=params["database_id"],
+                    filter_obj=params.get("filter"),
+                    sorts=params.get("sorts"),
+                    limit=int(params.get("limit", 20)),
+                )
+                return StepResult(True, data={"count": len(results), "results": results})
+            
+            elif operation == "create_database":
+                result = await self._connector.create_database(
+                    parent_page_id=params["parent_page_id"],
+                    title=params["title"],
+                    properties=params["properties"],
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "add_comment":
+                result = await self._connector.add_comment(params["page_id"], params["text"])
+                return StepResult(True, data=result)
+            
+            elif operation == "get_comments":
+                comments = await self._connector.get_comments(params["page_id"])
+                return StepResult(True, data={"count": len(comments), "comments": comments})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -6328,6 +6496,11 @@ class Apex:
         news_connector = c.get("news")
         if news_connector:
             self._primitives["NEWS"] = NewsPrimitive(news_connector)
+        
+        # Notion — wire Notion connector
+        notion_connector = c.get("notion")
+        if notion_connector:
+            self._primitives["NOTION"] = NotionPrimitive(notion_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

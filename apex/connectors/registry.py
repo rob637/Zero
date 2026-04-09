@@ -612,6 +612,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .notion import NotionConnector
+            self.register(ConnectorMetadata(
+                name="notion",
+                display_name="Notion",
+                provider="notion",
+                primitives=["NOTES", "DATABASE", "WIKI"],
+                scopes=[],
+                connector_class=NotionConnector,
+                description="Pages, databases, content blocks, comments, and search in Notion",
+                icon="notion",
+                setup_url="https://www.notion.so/my-integrations",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

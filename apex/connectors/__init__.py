@@ -226,6 +226,8 @@ __all__ = [
     # News
     'NewsConnector',
     'Article',
+    # Notion
+    'NotionConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

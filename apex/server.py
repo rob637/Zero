@@ -218,6 +218,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "web_search": "web_search",
         "weather": "weather",
         "news": "news",
+        "notion": "notion",
     }
     
     # Check which providers have valid credentials
@@ -240,6 +241,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "twilio": "TWILIO_ACCOUNT_SID",
         "weather": "OPENWEATHERMAP_API_KEY",
         "news": "NEWSAPI_KEY",
+        "notion": "NOTION_API_KEY",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):
