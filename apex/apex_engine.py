@@ -1893,6 +1893,7 @@ class CalendarPrimitive(Primitive):
             },
             "search": {
                 "query": {"type": "str", "required": True, "description": "Search term"},
+                "calendar_id": {"type": "str", "required": False, "description": "Calendar ID or name to search within"},
             },
             "list_calendars": {},
             "delete": {
@@ -2067,7 +2068,10 @@ class CalendarPrimitive(Primitive):
             elif operation == "search":
                 if self._list_func:
                     # Use connector's query param for search
-                    result = await self._list_func(query=params.get("query", ""))
+                    search_kwargs = {"query": params.get("query", "")}
+                    if params.get("calendar_id"):
+                        search_kwargs["calendar_id"] = await self._resolve_calendar_id(params["calendar_id"])
+                    result = await self._list_func(**search_kwargs)
                     if result and hasattr(result[0], 'to_dict'):
                         result = [e.to_dict() for e in result]
                     return StepResult(True, data=result)
