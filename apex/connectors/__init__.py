@@ -154,6 +154,9 @@ from .zoom import ZoomConnector
 # LinkedIn
 from .linkedin import LinkedInConnector
 
+# Reddit
+from .reddit import RedditConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -253,6 +256,8 @@ __all__ = [
     'ZoomConnector',
     # LinkedIn
     'LinkedInConnector',
+    # Reddit
+    'RedditConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

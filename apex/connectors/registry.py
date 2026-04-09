@@ -714,6 +714,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .reddit import RedditConnector
+            self.register(ConnectorMetadata(
+                name="reddit",
+                display_name="Reddit",
+                provider="reddit",
+                primitives=["SOCIAL", "FORUM"],
+                scopes=[],
+                connector_class=RedditConnector,
+                description="Posts, comments, subreddits, search, and saved content via Reddit",
+                icon="reddit",
+                setup_url="https://www.reddit.com/prefs/apps",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

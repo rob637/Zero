@@ -2825,6 +2825,148 @@ class LinkedInPrimitive(Primitive):
 
 
 # ============================================================
+#  REDDIT PRIMITIVE
+# ============================================================
+
+class RedditPrimitive(Primitive):
+    """Reddit — posts, comments, subreddits, and search.
+    
+    Uses the Reddit OAuth API via RedditConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "REDDIT"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "me": "Get the current Reddit user's profile and karma",
+            "get_subreddit": "Get subreddit info (subscribers, description, etc.)",
+            "get_posts": "Get posts from a subreddit (hot, new, top, rising)",
+            "get_post": "Get a single post with top comments",
+            "search": "Search for posts across Reddit or within a subreddit",
+            "submit_post": "Submit a new text or link post to a subreddit",
+            "add_comment": "Add a comment to a post or reply to a comment",
+            "get_user_posts": "Get a user's submitted posts",
+            "get_saved": "Get the user's saved posts and comments",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "me": {},
+            "get_subreddit": {
+                "name": {"type": "str", "required": True, "description": "Subreddit name (without /r/)"},
+            },
+            "get_posts": {
+                "subreddit": {"type": "str", "required": True, "description": "Subreddit name"},
+                "sort": {"type": "str", "required": False, "description": "'hot', 'new', 'top', 'rising', 'controversial'"},
+                "time_filter": {"type": "str", "required": False, "description": "For top/controversial: 'hour','day','week','month','year','all'"},
+                "limit": {"type": "int", "required": False, "description": "Max posts (default 25)"},
+            },
+            "get_post": {
+                "subreddit": {"type": "str", "required": True, "description": "Subreddit name"},
+                "post_id": {"type": "str", "required": True, "description": "Post ID"},
+                "comment_limit": {"type": "int", "required": False, "description": "Max top-level comments (default 10)"},
+            },
+            "search": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "subreddit": {"type": "str", "required": False, "description": "Limit to subreddit"},
+                "sort": {"type": "str", "required": False, "description": "'relevance', 'hot', 'top', 'new', 'comments'"},
+                "time_filter": {"type": "str", "required": False, "description": "'hour','day','week','month','year','all'"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 25)"},
+            },
+            "submit_post": {
+                "subreddit": {"type": "str", "required": True, "description": "Target subreddit"},
+                "title": {"type": "str", "required": True, "description": "Post title"},
+                "text": {"type": "str", "required": False, "description": "Self-post body text"},
+                "url": {"type": "str", "required": False, "description": "URL for link post"},
+            },
+            "add_comment": {
+                "parent_fullname": {"type": "str", "required": True, "description": "Parent full name (e.g. t3_abc123)"},
+                "text": {"type": "str", "required": True, "description": "Comment body (markdown)"},
+            },
+            "get_user_posts": {
+                "username": {"type": "str", "required": False, "description": "Reddit username (default: current user)"},
+                "limit": {"type": "int", "required": False, "description": "Max posts (default 25)"},
+            },
+            "get_saved": {
+                "limit": {"type": "int", "required": False, "description": "Max items (default 25)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "me":
+                result = await self._connector.me()
+                return StepResult(True, data=result)
+            
+            elif operation == "get_subreddit":
+                result = await self._connector.get_subreddit(params["name"])
+                return StepResult(True, data=result)
+            
+            elif operation == "get_posts":
+                results = await self._connector.get_posts(
+                    subreddit=params["subreddit"],
+                    sort=params.get("sort", "hot"),
+                    time_filter=params.get("time_filter", "day"),
+                    limit=int(params.get("limit", 25)),
+                )
+                return StepResult(True, data={"count": len(results), "posts": results})
+            
+            elif operation == "get_post":
+                result = await self._connector.get_post(
+                    subreddit=params["subreddit"],
+                    post_id=params["post_id"],
+                    comment_limit=int(params.get("comment_limit", 10)),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "search":
+                results = await self._connector.search(
+                    query=params["query"],
+                    subreddit=params.get("subreddit"),
+                    sort=params.get("sort", "relevance"),
+                    time_filter=params.get("time_filter", "all"),
+                    limit=int(params.get("limit", 25)),
+                )
+                return StepResult(True, data={"count": len(results), "posts": results})
+            
+            elif operation == "submit_post":
+                result = await self._connector.submit_post(
+                    subreddit=params["subreddit"],
+                    title=params["title"],
+                    text=params.get("text"),
+                    url=params.get("url"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "add_comment":
+                result = await self._connector.add_comment(params["parent_fullname"], params["text"])
+                return StepResult(True, data=result)
+            
+            elif operation == "get_user_posts":
+                results = await self._connector.get_user_posts(
+                    username=params.get("username"),
+                    limit=int(params.get("limit", 25)),
+                )
+                return StepResult(True, data={"count": len(results), "posts": results})
+            
+            elif operation == "get_saved":
+                results = await self._connector.get_saved(
+                    limit=int(params.get("limit", 25)),
+                )
+                return StepResult(True, data={"count": len(results), "items": results})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -7253,6 +7395,11 @@ class Apex:
         linkedin_connector = c.get("linkedin")
         if linkedin_connector:
             self._primitives["LINKEDIN"] = LinkedInPrimitive(linkedin_connector)
+        
+        # Reddit — wire Reddit connector
+        reddit_connector = c.get("reddit")
+        if reddit_connector:
+            self._primitives["REDDIT"] = RedditPrimitive(reddit_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

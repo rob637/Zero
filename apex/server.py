@@ -224,6 +224,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "airtable": "airtable",
         "zoom": "zoom",
         "linkedin": "linkedin",
+        "reddit": "reddit",
     }
     
     # Check which providers have valid credentials
@@ -252,6 +253,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "airtable": "AIRTABLE_API_KEY",
         "zoom": "ZOOM_API_KEY",
         "linkedin": "LINKEDIN_ACCESS_TOKEN",
+        "reddit": "REDDIT_CLIENT_ID",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):
