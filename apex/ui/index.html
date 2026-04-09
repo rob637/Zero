@@ -2915,7 +2915,6 @@
             suggestions = suggestions.filter(s => s.id !== id);
             renderAlerts();
         }
-        }
         
         async function acknowledgeAlert(id) {
             await fetch(`${API}/intelligence/alerts/${id}/acknowledge`, { method: 'POST' });
