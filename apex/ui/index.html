@@ -2087,6 +2087,7 @@
                         addMessage(event.data.response, 'assistant');
                     }
                     loadSessions();  // Refresh sidebar with saved session
+                    fetchAlerts();   // Refresh alerts after intelligence learns
                     break;
 
                 case 'error':
@@ -2358,8 +2359,80 @@
             `;
         }
 
+        function renderStepPreview(tool, params) {
+            // Rich previews for common action types
+            const p = params || {};
+            
+            // Email preview
+            if (tool.includes('gmail') && (tool.includes('send') || tool.includes('draft') || tool.includes('reply'))) {
+                return `
+                    <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #4285F4;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">📧 EMAIL PREVIEW</div>
+                        ${p.to ? `<div style="font-size: 0.8rem; margin-bottom: 4px;"><strong>To:</strong> ${escapeHtml(String(p.to))}</div>` : ''}
+                        ${p.cc ? `<div style="font-size: 0.8rem; margin-bottom: 4px;"><strong>Cc:</strong> ${escapeHtml(String(p.cc))}</div>` : ''}
+                        ${p.subject ? `<div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">${escapeHtml(String(p.subject))}</div>` : ''}
+                        ${p.body ? `<div style="font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap; max-height: 200px; overflow-y: auto; line-height: 1.5;">${escapeHtml(String(p.body))}</div>` : ''}
+                    </div>`;
+            }
+            
+            // Calendar event preview
+            if (tool.includes('calendar') && (tool.includes('create') || tool.includes('add') || tool.includes('schedule'))) {
+                return `
+                    <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #34A853;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">📅 CALENDAR EVENT</div>
+                        ${p.title || p.summary ? `<div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">${escapeHtml(String(p.title || p.summary))}</div>` : ''}
+                        ${p.start || p.start_time ? `<div style="font-size: 0.8rem; margin-bottom: 3px;">🕐 <strong>Start:</strong> ${escapeHtml(String(p.start || p.start_time))}</div>` : ''}
+                        ${p.end || p.end_time ? `<div style="font-size: 0.8rem; margin-bottom: 3px;">🕐 <strong>End:</strong> ${escapeHtml(String(p.end || p.end_time))}</div>` : ''}
+                        ${p.duration ? `<div style="font-size: 0.8rem; margin-bottom: 3px;">⏱ <strong>Duration:</strong> ${escapeHtml(String(p.duration))}</div>` : ''}
+                        ${p.location ? `<div style="font-size: 0.8rem; margin-bottom: 3px;">📍 ${escapeHtml(String(p.location))}</div>` : ''}
+                        ${p.attendees ? `<div style="font-size: 0.8rem; margin-bottom: 3px;">👥 ${escapeHtml(String(p.attendees))}</div>` : ''}
+                        ${p.description ? `<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">${escapeHtml(String(p.description).substring(0, 200))}</div>` : ''}
+                    </div>`;
+            }
+            
+            // Task creation preview
+            if (tool.includes('task') && (tool.includes('create') || tool.includes('add'))) {
+                return `
+                    <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #FBBC04;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">✅ NEW TASK</div>
+                        ${p.title || p.name ? `<div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(String(p.title || p.name))}</div>` : ''}
+                        ${p.due || p.due_date ? `<div style="font-size: 0.8rem;">📅 Due: ${escapeHtml(String(p.due || p.due_date))}</div>` : ''}
+                        ${p.priority ? `<div style="font-size: 0.8rem;">🔴 Priority: ${escapeHtml(String(p.priority))}</div>` : ''}
+                        ${p.description || p.notes ? `<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">${escapeHtml(String(p.description || p.notes).substring(0, 150))}</div>` : ''}
+                    </div>`;
+            }
+            
+            // File operation preview
+            if (tool.includes('drive') || tool.includes('file') || tool.includes('document')) {
+                return `
+                    <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #EA4335;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">📁 FILE OPERATION</div>
+                        ${p.name || p.filename || p.title ? `<div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">${escapeHtml(String(p.name || p.filename || p.title))}</div>` : ''}
+                        ${p.content ? `<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px; max-height: 150px; overflow-y: auto;">${escapeHtml(String(p.content).substring(0, 300))}</div>` : ''}
+                    </div>`;
+            }
+            
+            // Message/notification preview (Slack, Teams, SMS, etc.)
+            if (tool.includes('slack') || tool.includes('teams') || tool.includes('sms') || tool.includes('discord')) {
+                const platform = tool.includes('slack') ? 'Slack' : tool.includes('teams') ? 'Teams' : tool.includes('sms') ? 'SMS' : 'Discord';
+                return `
+                    <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #611f69;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">💬 ${platform.toUpperCase()} MESSAGE</div>
+                        ${p.channel ? `<div style="font-size: 0.8rem; margin-bottom: 4px;"><strong>#${escapeHtml(String(p.channel))}</strong></div>` : ''}
+                        ${p.to || p.recipient ? `<div style="font-size: 0.8rem; margin-bottom: 4px;"><strong>To:</strong> ${escapeHtml(String(p.to || p.recipient))}</div>` : ''}
+                        ${p.message || p.text || p.body ? `<div style="font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">${escapeHtml(String(p.message || p.text || p.body).substring(0, 300))}</div>` : ''}
+                    </div>`;
+            }
+            
+            // Default: show raw params nicely
+            return null;
+        }
+        
         function renderApprovalRequest(step) {
-            // Format params for display
+            // Try to render a rich preview
+            const preview = renderStepPreview(step.tool, step.params);
+            
+            // Format params for display (fallback or supplemental)
             const paramsHtml = Object.entries(step.params || {}).map(([k, v]) => {
                 const valStr = typeof v === 'string' ? v : JSON.stringify(v);
                 return `<div style="margin-bottom: 4px;">
@@ -2379,13 +2452,13 @@
                         </span>
                     </div>
                     
-                    <div style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                        <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
+                    ${preview || ''}
+                    
+                    <div style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px; ${preview ? 'font-size: 0.75rem;' : ''}">
+                        <div style="font-size: ${preview ? '0.8rem' : '0.9rem'}; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
                             ${escapeHtml(step.tool)}
                         </div>
-                        <div style="font-size: 0.8rem;">
-                            ${paramsHtml}
-                        </div>
+                        ${preview ? `<details style="cursor: pointer;"><summary style="font-size: 0.75rem; color: var(--text-muted);">Raw parameters</summary><div style="margin-top: 8px; font-size: 0.8rem;">${paramsHtml}</div></details>` : `<div style="font-size: 0.8rem;">${paramsHtml}</div>`}
                     </div>
                     
                     <div style="display: flex; align-items: center; gap: 12px; justify-content: center; flex-wrap: wrap;">
@@ -3041,21 +3114,25 @@
                 const res = await fetch(`${API}/intelligence/alerts`);
                 const data = await res.json();
                 alerts = data.alerts || [];
+                suggestions = data.suggestions || [];
                 renderAlerts();
             } catch(e) {
                 console.log('Alerts not available');
             }
         }
         
+        let suggestions = [];
+        
         function renderAlerts() {
             const list = document.getElementById('alertsList');
             const countEl = document.getElementById('alertsCount');
             const btn = document.getElementById('alertsBtn');
             
-            countEl.textContent = alerts.length;
-            btn.classList.toggle('has-notification', alerts.length > 0);
+            const totalCount = alerts.length + suggestions.length;
+            countEl.textContent = totalCount;
+            btn.classList.toggle('has-notification', totalCount > 0);
             
-            if (alerts.length === 0) {
+            if (totalCount === 0) {
                 list.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">🔕</div>
@@ -3073,23 +3150,71 @@
                 task_overdue: '❗',
                 review_requested: '👀',
                 issue_assigned: '🎯',
-                anomaly: '⚠️'
+                anomaly: '⚠️',
+                MEETING_PREP: '📋',
+                EMAIL_FOLLOWUP: '✉️',
+                TASK_REMINDER: '✅',
+                PATTERN_BASED: '🔄',
+                ANOMALY_ALERT: '⚠️',
+                CONTENT_DIGEST: '📰',
+                SCHEDULE_CONFLICT: '⚡',
+                ACTION_REQUIRED: '🔔',
             };
             
-            list.innerHTML = alerts.map(a => `
-                <div class="alert-card" data-id="${a.id}">
+            let html = '';
+            
+            // Render monitor alerts
+            html += alerts.map(a => `
+                <div class="alert-card" data-id="${escapeHtml(a.id)}">
                     <div class="alert-card-header">
                         <span class="alert-icon">${typeIcons[a.type] || '💡'}</span>
-                        <span class="alert-title priority-${a.priority}">${a.title}</span>
+                        <span class="alert-title priority-${escapeHtml(a.priority)}">${escapeHtml(a.title)}</span>
                     </div>
-                    <div class="alert-message">${a.message}</div>
-                    <div class="alert-source">${a.source_service || ''}</div>
+                    <div class="alert-message">${escapeHtml(a.message)}</div>
+                    <div class="alert-source">${escapeHtml(a.source_service || '')}</div>
                     <div class="alert-actions">
-                        <button class="alert-btn alert-btn-primary" onclick="acknowledgeAlert('${a.id}')">Got it</button>
-                        <button class="alert-btn alert-btn-secondary" onclick="dismissAlert('${a.id}')">Dismiss</button>
+                        <button class="alert-btn alert-btn-primary" onclick="acknowledgeAlert('${escapeHtml(a.id)}')">Got it</button>
+                        <button class="alert-btn alert-btn-secondary" onclick="dismissAlert('${escapeHtml(a.id)}')">Dismiss</button>
                     </div>
                 </div>
             `).join('');
+            
+            // Render intelligence suggestions
+            html += suggestions.map(s => `
+                <div class="alert-card" data-id="${escapeHtml(s.id)}" style="border-left: 3px solid var(--accent-primary);">
+                    <div class="alert-card-header">
+                        <span class="alert-icon">${typeIcons[s.category] || '💡'}</span>
+                        <span class="alert-title">${escapeHtml(s.title)}</span>
+                    </div>
+                    <div class="alert-message">${escapeHtml(s.description)}</div>
+                    ${s.reasoning ? `<div class="alert-source">${escapeHtml(s.reasoning)}</div>` : ''}
+                    <div class="alert-actions">
+                        ${s.actions?.length ? `<button class="alert-btn alert-btn-primary" onclick="actOnSuggestion('${escapeHtml(s.id)}', '${escapeHtml(s.actions?.[0]?.label || 'Do it')}')">${escapeHtml(s.actions?.[0]?.label || 'Do it')}</button>` : ''}
+                        <button class="alert-btn alert-btn-secondary" onclick="dismissSuggestion('${escapeHtml(s.id)}')">Dismiss</button>
+                    </div>
+                </div>
+            `).join('');
+            
+            list.innerHTML = html;
+        }
+        
+        async function actOnSuggestion(id, actionLabel) {
+            // Send the suggestion action as a chat message
+            const suggestion = suggestions.find(s => s.id === id);
+            if (suggestion) {
+                sendMessage(suggestion.title);
+            }
+            suggestions = suggestions.filter(s => s.id !== id);
+            renderAlerts();
+        }
+        
+        async function dismissSuggestion(id) {
+            try {
+                await fetch(`${API}/intelligence/alerts/${id}/dismiss`, { method: 'POST' });
+            } catch(e) {}
+            suggestions = suggestions.filter(s => s.id !== id);
+            renderAlerts();
+        }
         }
         
         async function acknowledgeAlert(id) {
@@ -3873,7 +3998,7 @@
         }, 1000);
         
         // Periodic refresh
-        setInterval(fetchAlerts, 60 * 1000);
+        setInterval(fetchAlerts, 30 * 1000);  // Every 30s for responsiveness
         setInterval(loadProviders, 60 * 1000);
         setInterval(loadSessions, 30 * 1000);
     </script>

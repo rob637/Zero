@@ -60,6 +60,7 @@ from src.control import (
 from intelligence.proactive_monitor import ProactiveMonitor
 from intelligence.cross_service import CrossServiceIntelligence
 from intelligence.semantic_memory import SemanticMemory
+from intelligence import get_intelligence_hub, IntelligenceHub
 from connectors.devtools import UnifiedDevTools
 
 # Connector Registry Infrastructure
@@ -2309,7 +2310,7 @@ async def select_primitives_for_request(message: str, all_primitives: dict) -> d
     return all_primitives
 
 
-def get_session_agent(force_new: bool = False) -> Optional[ReActAgent]:
+async def get_session_agent(force_new: bool = False) -> Optional[ReActAgent]:
     """
     Get or create a session-persistent ReAct agent.
     
@@ -2357,6 +2358,34 @@ This week:
         d = now + timedelta(days=i)
         date_context += f"  {d.strftime('%A %b %d')}: {d.strftime('%Y-%m-%d')}\n"
     
+    # Gather intelligence context for system prompt
+    intel_section = ""
+    try:
+        hub = get_intelligence_hub()
+        parts = []
+        
+        # Get learned preferences
+        prefs = await hub.get_preferences()
+        if prefs:
+            pref_lines = [f"- {p.key}: {p.value} (confidence: {p.confidence:.0%})" for p in prefs[:8]]
+            parts.append("LEARNED USER PREFERENCES:\n" + "\n".join(pref_lines))
+        
+        # Get detected patterns
+        patterns = await hub.get_patterns(min_confidence=0.5)
+        if patterns:
+            pat_lines = [f"- {p.name}: {p.description}" for p in patterns[:5]]
+            parts.append("DETECTED PATTERNS:\n" + "\n".join(pat_lines))
+        
+        # Get memory stats
+        stats = hub._memory.get_stats()
+        if stats.get("total_facts", 0) > 0:
+            parts.append(f"MEMORY: {stats['total_facts']} facts remembered about {stats.get('total_entities', 0)} entities")
+        
+        if parts:
+            intel_section = "\n\n" + "\n\n".join(parts) + "\n"
+    except Exception as e:
+        print(f"[INTEL] System prompt enrichment failed (non-fatal): {e}")
+    
     system_prompt = f"""You are Ziggy, an AI assistant that helps users get things done.
 
 {date_context}
@@ -2365,7 +2394,7 @@ You have access to the user's email, calendar, files, tasks, and other services.
 Use tools to accomplish what the user asks. You can call multiple tools in parallel when the calls are independent.
 
 Be efficient — don't repeat searches with slight variations. If a search returns no results, broaden the query or try a different approach rather than retrying similar queries.
-
+{intel_section}
 CONVERSATION CONTEXT:
 - You have full memory of this conversation session
 - References like "the first one", "send it", "the information above" refer to earlier in THIS conversation
@@ -2397,7 +2426,7 @@ async def react_chat(req: ReactRequest):
     """
     global _react_state, _session_messages, _session_agent
     
-    agent = get_session_agent()
+    agent = await get_session_agent()
     if not agent:
         return JSONResponse({
             "error": "No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
@@ -2488,7 +2517,7 @@ async def react_chat_stream(req: ReactRequest):
     if not _session_id:
         _session_id = session_store.new_session_id()
 
-    agent = get_session_agent()
+    agent = await get_session_agent()
     if not agent:
         async def err():
             yield f"data: {json.dumps({'event': 'error', 'message': 'No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.'})}\n\n"
@@ -2517,17 +2546,60 @@ Remember: References like "the first one", "send it to him", "the information ab
     else:
         full_message = req.message
 
+    # Gather intelligence context before running agent
+    intel_context = ""
+    try:
+        hub = get_intelligence_hub()
+        intel_parts = []
+
+        # Recall relevant facts from semantic memory
+        recalled = await hub.recall(req.message, limit=5, min_relevance=0.3)
+        if recalled:
+            facts_text = "\n".join(f"- {f.content}" for f in recalled[:5])
+            intel_parts.append(f"[MEMORY - Things I remember]\n{facts_text}")
+
+        # Check what patterns are expected now
+        expected = await hub.whats_expected_now()
+        if expected:
+            patterns_text = "\n".join(f"- {p.name}: {p.description}" for p in expected[:3])
+            intel_parts.append(f"[PATTERNS - What usually happens now]\n{patterns_text}")
+
+        # Get proactive suggestions
+        suggestions = await hub.get_suggestions(max_suggestions=3)
+        if suggestions:
+            sugg_text = "\n".join(f"- {s.title}: {s.description}" for s in suggestions[:3])
+            intel_parts.append(f"[SUGGESTIONS]\n{sugg_text}")
+
+        if intel_parts:
+            intel_context = "\n\n".join(intel_parts) + "\n\n"
+            print(f"[INTEL] Injected {len(intel_parts)} intelligence sections")
+    except Exception as e:
+        print(f"[INTEL] Context gathering failed (non-fatal): {e}")
+
+    # Prepend intelligence context to message
+    if intel_context:
+        full_message = f"[INTELLIGENCE CONTEXT - Use this to provide better, more personalized responses]\n{intel_context}[USER MESSAGE]\n{full_message}"
+
     # Event queue for SSE
     queue = asyncio.Queue()
 
     async def on_step(step: Step):
-        """Push step events to SSE queue."""
+        """Push step events to SSE queue and record observations."""
         data = step_to_dict(step)
         data["id"] = step.tool_call.id  # Unique ID for matching start/complete
         if step.status == StepStatus.RUNNING:
             await queue.put({"event": "tool_start", "step": data})
         elif step.status == StepStatus.COMPLETED:
             await queue.put({"event": "tool_complete", "step": data})
+            # Record observation for intelligence learning
+            try:
+                await hub.observe(step.tool_call.name, {
+                    "params": step.tool_call.params,
+                    "result_preview": str(step.result)[:200] if step.result else None,
+                    "user_message": req.message[:200],
+                })
+            except Exception:
+                pass  # Non-fatal
         elif step.status == StepStatus.FAILED:
             await queue.put({"event": "tool_failed", "step": data})
         elif step.status == StepStatus.PENDING_APPROVAL:
@@ -2575,6 +2647,18 @@ Remember: References like "the first one", "send it to him", "the information ab
 
             # Auto-save session
             _auto_save_session()
+
+            # Intelligence: Remember facts from this interaction
+            try:
+                completed_tools = [s.tool_call.name for s in state.steps if s.status == StepStatus.COMPLETED]
+                if completed_tools:
+                    await hub.on_event("task_completed", {
+                        "user_message": req.message,
+                        "tools_used": completed_tools,
+                        "success": state.is_complete,
+                    })
+            except Exception:
+                pass  # Non-fatal
 
             # Log
             for s in state.steps:
@@ -2626,7 +2710,7 @@ async def react_approve(req: ReactApproveRequest):
     """
     global _react_state, _session_messages
     
-    agent = get_session_agent()
+    agent = await get_session_agent()
     if not agent or not _react_state:
         return JSONResponse({
             "error": "No pending action",
@@ -2672,7 +2756,7 @@ async def react_approve_stream(req: ReactApproveRequest):
     import json
     global _react_state, _session_messages
 
-    agent = get_session_agent()
+    agent = await get_session_agent()
     if not agent or not _react_state:
         async def err():
             yield f"data: {json.dumps({'event': 'error', 'message': 'No pending action'})}\n\n"
@@ -3440,13 +3524,23 @@ async def list_workflow_templates():
 
 @app.get("/intelligence/alerts")
 async def get_alerts():
-    """Get proactive alerts from the monitoring system."""
+    """Get proactive alerts and suggestions from the intelligence layer."""
     monitor = get_proactive_monitor()
     alerts = monitor.get_pending_alerts()
     
+    # Also get intelligence suggestions
+    suggestions = []
+    try:
+        hub = get_intelligence_hub()
+        raw_suggestions = await hub.get_suggestions(max_suggestions=5)
+        suggestions = [s.to_dict() for s in raw_suggestions] if raw_suggestions else []
+    except Exception:
+        pass
+    
     return JSONResponse({
         "alerts": [a.to_dict() for a in alerts],
-        "count": len(alerts),
+        "suggestions": suggestions,
+        "count": len(alerts) + len(suggestions),
         "stats": monitor.get_stats(),
     })
 
@@ -3620,6 +3714,45 @@ async def monitor_status():
         "paused": monitor._state.value == "paused",
         "stats": monitor.get_stats(),
         "connected_services": list(monitor._service_adapters.keys()),
+    })
+
+
+@app.get("/intelligence/stats")
+async def intelligence_stats():
+    """Get comprehensive intelligence layer statistics."""
+    hub = get_intelligence_hub()
+    return JSONResponse(hub.get_stats())
+
+
+@app.get("/intelligence/memory")
+async def intelligence_memory(query: str = "", entity: str = ""):
+    """Query semantic memory."""
+    hub = get_intelligence_hub()
+    if entity:
+        facts = await hub.recall_about(entity)
+        return JSONResponse({
+            "entity": entity,
+            "facts": [f.to_dict() for f in facts] if facts else [],
+        })
+    elif query:
+        facts = await hub.recall(query, limit=10)
+        return JSONResponse({
+            "query": query,
+            "facts": [f.to_dict() for f in facts] if facts else [],
+        })
+    else:
+        stats = hub._memory.get_stats()
+        return JSONResponse({"stats": stats})
+
+
+@app.get("/intelligence/patterns")
+async def intelligence_patterns():
+    """Get detected behavioral patterns."""
+    hub = get_intelligence_hub()
+    patterns = await hub.get_patterns()
+    return JSONResponse({
+        "patterns": [p.to_dict() for p in patterns] if patterns else [],
+        "count": len(patterns) if patterns else 0,
     })
 
 
