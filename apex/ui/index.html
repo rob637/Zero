@@ -145,7 +145,7 @@
         .sidebar-collapsible-content {
             overflow: hidden;
             transition: max-height 0.3s ease, opacity 0.2s ease;
-            max-height: 500px;
+            max-height: 1000px;
             opacity: 1;
         }
         .sidebar-collapsible-content.collapsed {
@@ -2392,9 +2392,9 @@
         .sidebar-actions-header {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-end;
             padding: 0 8px;
-            margin-bottom: 6px;
+            margin-bottom: 2px;
         }
         .sidebar-actions-header .sidebar-section-title {
             margin-bottom: 0;
@@ -2587,12 +2587,20 @@
             </div>
         </div>
         
-        <div class="sidebar-actions-section" id="sidebarActions">
-            <!-- Rendered by JS from localStorage / defaults -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title collapsible" onclick="toggleSection('actions')">
+                <span>Quick Actions</span>
+                <span class="chevron" id="actionsChevron">▼</span>
+            </div>
+            <div class="sidebar-collapsible-content" id="actionsCollapsible">
+                <div class="sidebar-actions-section" id="sidebarActions">
+                    <!-- Rendered by JS from localStorage / defaults -->
+                </div>
+            </div>
         </div>
         
         <div class="sidebar-section">
-            <div class="sidebar-section-title collapsible" onclick="toggleProviders()">
+            <div class="sidebar-section-title collapsible" onclick="toggleSection('providers')">
                 <span>Providers <span class="section-badge" id="providersBadge"></span></span>
                 <span class="chevron collapsed" id="providersChevron">▼</span>
             </div>
@@ -2608,9 +2616,14 @@
         </div>
         
         <div class="sidebar-section session-list">
-            <div class="sidebar-section-title">Recent Sessions</div>
-            <div id="sessionsList">
-                <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.75rem;">No sessions yet</div>
+            <div class="sidebar-section-title collapsible" onclick="toggleSection('sessions')">
+                <span>Recent Sessions</span>
+                <span class="chevron collapsed" id="sessionsChevron">▼</span>
+            </div>
+            <div class="sidebar-collapsible-content collapsed" id="sessionsCollapsible">
+                <div id="sessionsList">
+                    <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.75rem;">No sessions yet</div>
+                </div>
             </div>
         </div>
         </div><!-- end sidebar-scroll -->
@@ -2775,7 +2788,6 @@
             const editing = _quickActionsEditing;
 
             let html = `<div class="sidebar-actions-header">
-                <div class="sidebar-section-title">Quick Actions</div>
                 <button class="sidebar-actions-edit-btn" onclick="toggleActionsEdit()" title="${editing ? 'Done' : 'Customize'}">${editing ? '✓ Done' : '✏️'}</button>
             </div>`;
 
@@ -4452,13 +4464,17 @@
             twitter: '🐦',
         };
 
-        function toggleProviders() {
-            const content = document.getElementById('providersCollapsible');
-            const chevron = document.getElementById('providersChevron');
+        function toggleSection(section) {
+            const content = document.getElementById(section + 'Collapsible');
+            const chevron = document.getElementById(section + 'Chevron');
             if (content && chevron) {
                 content.classList.toggle('collapsed');
                 chevron.classList.toggle('collapsed');
             }
+        }
+
+        function toggleProviders() {
+            toggleSection('providers');
         }
         
         async function loadProviders() {
