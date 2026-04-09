@@ -9,7 +9,10 @@
     <title>Ziggy</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <style>
         :root {
             --bg-primary: #0a0a0f;
@@ -452,6 +455,88 @@
             padding: 10px 16px;
             border-radius: 8px;
         }
+
+        /* Markdown content in assistant messages */
+        .message.assistant .md-content h1,
+        .message.assistant .md-content h2,
+        .message.assistant .md-content h3 {
+            margin: 12px 0 6px;
+            color: var(--text-primary);
+        }
+        .message.assistant .md-content h1 { font-size: 1.15rem; }
+        .message.assistant .md-content h2 { font-size: 1.05rem; }
+        .message.assistant .md-content h3 { font-size: 0.95rem; }
+        .message.assistant .md-content h1:first-child,
+        .message.assistant .md-content h2:first-child,
+        .message.assistant .md-content h3:first-child { margin-top: 0; }
+        .message.assistant .md-content p {
+            margin: 6px 0;
+        }
+        .message.assistant .md-content p:first-child { margin-top: 0; }
+        .message.assistant .md-content p:last-child { margin-bottom: 0; }
+        .message.assistant .md-content ul,
+        .message.assistant .md-content ol {
+            margin: 6px 0;
+            padding-left: 20px;
+        }
+        .message.assistant .md-content li {
+            margin: 3px 0;
+        }
+        .message.assistant .md-content code {
+            background: rgba(0,0,0,0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+        }
+        .message.assistant .md-content pre {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 12px 16px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+        .message.assistant .md-content pre code {
+            background: none;
+            padding: 0;
+            font-size: 0.82rem;
+            line-height: 1.5;
+        }
+        .message.assistant .md-content blockquote {
+            border-left: 3px solid var(--accent-primary);
+            margin: 8px 0;
+            padding: 4px 12px;
+            color: var(--text-secondary);
+        }
+        .message.assistant .md-content a {
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+        .message.assistant .md-content a:hover {
+            text-decoration: underline;
+        }
+        .message.assistant .md-content table {
+            border-collapse: collapse;
+            margin: 8px 0;
+            width: 100%;
+            font-size: 0.85rem;
+        }
+        .message.assistant .md-content th,
+        .message.assistant .md-content td {
+            border: 1px solid var(--border-light);
+            padding: 6px 10px;
+            text-align: left;
+        }
+        .message.assistant .md-content th {
+            background: rgba(0,0,0,0.2);
+            font-weight: 600;
+        }
+        .message.assistant .md-content hr {
+            border: none;
+            border-top: 1px solid var(--border-subtle);
+            margin: 12px 0;
+        }
         
         /* Typing indicator */
         .typing {
@@ -680,6 +765,11 @@
             outline: none;
             font-family: inherit;
             transition: all 0.2s;
+            resize: none;
+            min-height: 48px;
+            max-height: 200px;
+            line-height: 1.5;
+            overflow-y: auto;
         }
         .input-field:focus {
             border-color: var(--accent-primary);
@@ -1546,11 +1636,37 @@
         @media (max-width: 1024px) {
             .sidebar { width: 220px; }
             .alerts-panel { width: 280px; }
+            .message { max-width: 85%; }
         }
         
         @media (max-width: 768px) {
-            .sidebar { display: none; }
+            .sidebar {
+                position: fixed;
+                left: -260px;
+                top: 0;
+                bottom: 0;
+                z-index: 100;
+                width: 260px;
+                transition: left 0.3s ease;
+            }
+            .sidebar.open { left: 0; }
+            .sidebar-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.5);
+                z-index: 99;
+            }
+            .sidebar-overlay.open { display: block; }
             .alerts-panel { display: none; }
+            .message { max-width: 92%; font-size: 0.85rem; }
+            .welcome h1 { font-size: 1.4rem; }
+            .welcome-actions { flex-direction: column; }
+            .welcome-action { width: 100%; }
+            .mobile-menu-btn { display: flex !important; }
+            .input-container { gap: 8px; }
+            .send-btn { padding: 14px 16px; }
+            .send-btn span:last-child { display: none; }
         }
     </style>
 </head>
@@ -1606,9 +1722,15 @@
         </div>
     </aside>
 
+    <!-- Mobile sidebar overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
     <!-- Main Content -->
     <main class="main-content">
         <div class="top-bar">
+            <button class="icon-btn mobile-menu-btn" onclick="toggleSidebar()" style="display:none;" title="Menu">
+                ☰
+            </button>
             <span class="top-bar-title">Ziggy</span>
             <span class="top-bar-status" id="statusIndicator">
                 <span class="status-dot connected"></span>
@@ -1630,6 +1752,32 @@
                     <div class="welcome-orb"></div>
                     <h1>Hey! I'm Ziggy</h1>
                     <p>Your AI that connects all your services and gets things done.</p>
+                    <div class="welcome-actions">
+                        <div class="welcome-action" onclick="sendMessage('What\'s on my calendar today?')">
+                            <span class="welcome-action-icon">📅</span>
+                            <span>Today's schedule</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Check my email for anything important')">
+                            <span class="welcome-action-icon">📧</span>
+                            <span>Check email</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('What tasks do I have pending?')">
+                            <span class="welcome-action-icon">✅</span>
+                            <span>My tasks</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing')">
+                            <span class="welcome-action-icon">☀️</span>
+                            <span>Morning briefing</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Search my files for recent documents')">
+                            <span class="welcome-action-icon">📁</span>
+                            <span>Recent files</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('What\'s the weather today?')">
+                            <span class="welcome-action-icon">🌤️</span>
+                            <span>Weather</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -1651,9 +1799,9 @@
 
         <footer class="input-area">
             <div class="input-container">
-                <input type="text" class="input-field" id="input" 
-                       placeholder="Ask me anything..." 
-                       onkeypress="if(event.key==='Enter')sendMessage()">
+                <textarea class="input-field" id="input" rows="1"
+                       placeholder="Ask me anything..."
+                       onkeydown="handleInputKeydown(event)"></textarea>
                 <button class="send-btn" onclick="sendMessage()" id="sendBtn">
                     Send
                     <span>→</span>
@@ -1671,6 +1819,40 @@
         let alertsPanelOpen = false;
         let alerts = [];
         let currentEditContext = null;  // For inline editing
+
+        // ============================================
+        // Markdown Rendering
+        // ============================================
+
+        // Configure marked for safe rendering
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    try { return hljs.highlight(code, { language: lang }).value; }
+                    catch (e) {}
+                }
+                try { return hljs.highlightAuto(code).value; }
+                catch (e) {}
+                return code;
+            }
+        });
+
+        function renderMarkdown(text) {
+            if (!text) return '';
+            // Handle escaped \n sequences from JSON
+            const cleaned = text.replace(/\\n/g, '\n');
+            try {
+                return marked.parse(cleaned);
+            } catch (e) {
+                // Fallback to basic formatting
+                return cleaned
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\n/g, '<br>');
+            }
+        }
 
         // ============================================
         // UI State
@@ -1693,6 +1875,11 @@
             window.location.href = '/setup';
         }
 
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('open');
+            document.getElementById('sidebarOverlay').classList.toggle('open');
+        }
+
         // ============================================
         // Messages
         // ============================================
@@ -1704,12 +1891,18 @@
             const chat = document.getElementById('chat');
             const msg = document.createElement('div');
             msg.className = `message ${type}`;
-            // Handle both actual newlines and escaped \n sequences
-            const processed = text
-                .replace(/\\n/g, '\n')  // Convert escaped \n to real newlines
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\n/g, '<br>');
-            msg.innerHTML = processed + extra;
+            
+            if (type === 'assistant' && text) {
+                // Render markdown for assistant messages
+                const mdDiv = document.createElement('div');
+                mdDiv.className = 'md-content';
+                mdDiv.innerHTML = renderMarkdown(text) + extra;
+                msg.appendChild(mdDiv);
+            } else {
+                msg.textContent = text;
+                if (extra) msg.innerHTML = msg.innerHTML + extra;
+            }
+            
             chat.appendChild(msg);
             chat.scrollTop = chat.scrollHeight;
             return msg;
@@ -1735,12 +1928,26 @@
 
         let currentMsgElement = null;  // Track the message being updated
 
+        function handleInputKeydown(e) {
+            const input = document.getElementById('input');
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+            // Auto-resize textarea
+            requestAnimationFrame(() => {
+                input.style.height = 'auto';
+                input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+            });
+        }
+
         async function sendMessage(text) {
             const input = document.getElementById('input');
             const message = text || input.value.trim();
             if (!message) return;
 
             input.value = '';
+            input.style.height = 'auto';
             addMessage(message, 'user');
             setThinking(true);
 
@@ -2012,7 +2219,33 @@
                 <div class="welcome" id="welcome">
                     <div class="welcome-orb"></div>
                     <h1>Hey! I'm Ziggy</h1>
-                    <p>Your AI that gets things done. Just ask:</p>
+                    <p>Your AI that connects all your services and gets things done.</p>
+                    <div class="welcome-actions">
+                        <div class="welcome-action" onclick="sendMessage('What\\'s on my calendar today?')">
+                            <span class="welcome-action-icon">📅</span>
+                            <span>Today's schedule</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Check my email for anything important')">
+                            <span class="welcome-action-icon">📧</span>
+                            <span>Check email</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('What tasks do I have pending?')">
+                            <span class="welcome-action-icon">✅</span>
+                            <span>My tasks</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing')">
+                            <span class="welcome-action-icon">☀️</span>
+                            <span>Morning briefing</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Search my files for recent documents')">
+                            <span class="welcome-action-icon">📁</span>
+                            <span>Recent files</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('What\\'s the weather today?')">
+                            <span class="welcome-action-icon">🌤️</span>
+                            <span>Weather</span>
+                        </div>
+                    </div>
                 </div>
             `;
             
