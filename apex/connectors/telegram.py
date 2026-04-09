@@ -29,6 +29,11 @@ class TelegramConnector:
         self.bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
         self.connected = bool(self.bot_token)
 
+    async def connect(self) -> bool:
+        """Validate Telegram bot token."""
+        self.connected = bool(self.bot_token)
+        return self.connected
+
     @property
     def _api(self) -> str:
         return f"{BASE_URL}/bot{self.bot_token}"

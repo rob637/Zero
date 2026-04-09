@@ -35,6 +35,11 @@ class TrelloConnector:
         self.token = token or os.environ.get("TRELLO_TOKEN", "")
         self.connected = bool(self.api_key and self.token)
 
+    async def connect(self) -> bool:
+        """Validate Trello API credentials."""
+        self.connected = bool(self.api_key and self.token)
+        return self.connected
+
     def _auth(self) -> Dict[str, str]:
         return {"key": self.api_key, "token": self.token}
 

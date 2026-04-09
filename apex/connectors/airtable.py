@@ -30,6 +30,11 @@ class AirtableConnector:
         self.api_key = api_key or os.environ.get("AIRTABLE_API_KEY", "")
         self.connected = bool(self.api_key)
 
+    async def connect(self) -> bool:
+        """Validate Airtable API credentials."""
+        self.connected = bool(self.api_key)
+        return self.connected
+
     def _headers(self) -> Dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",

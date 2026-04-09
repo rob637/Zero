@@ -30,6 +30,12 @@ class DesktopNotifyConnector:
 
     def __init__(self):
         self._system = platform.system().lower()
+        self.connected = True
+
+    async def connect(self) -> bool:
+        """Desktop notifications are always available."""
+        self.connected = True
+        return True
 
     async def send(
         self,

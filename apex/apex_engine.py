@@ -2270,7 +2270,7 @@ class WeatherPrimitive(Primitive):
     Uses OpenWeatherMap via the WeatherConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -2304,6 +2304,8 @@ class WeatherPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Weather is not configured. Connect an OpenWeatherMap API key in Settings to use weather features.")
         try:
             if operation == "current":
                 location = params.get("location", "")
@@ -2351,7 +2353,7 @@ class NewsPrimitive(Primitive):
     Uses NewsAPI via the NewsConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -2389,6 +2391,8 @@ class NewsPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="News is not configured. Connect a NewsAPI key in Settings to use news features.")
         try:
             if operation == "headlines":
                 articles = await self._connector.top_headlines(
@@ -2447,7 +2451,7 @@ class NotionPrimitive(Primitive):
     Uses the Notion API via NotionConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -2528,6 +2532,8 @@ class NotionPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Notion is not configured. Connect Notion in Settings to use Notion features.")
         try:
             if operation == "search":
                 results = await self._connector.search(
@@ -2615,7 +2621,7 @@ class LinearPrimitive(Primitive):
     Uses the Linear GraphQL API via LinearConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -2686,6 +2692,8 @@ class LinearPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Linear is not configured. Connect Linear in Settings to use Linear features.")
         try:
             if operation == "list_issues":
                 results = await self._connector.list_issues(
@@ -2773,7 +2781,7 @@ class TrelloPrimitive(Primitive):
     Uses the Trello REST API via TrelloConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -2870,6 +2878,8 @@ class TrelloPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Trello is not configured. Connect Trello in Settings to use Trello features.")
         try:
             if operation == "list_boards":
                 results = await self._connector.list_boards(
@@ -2979,7 +2989,7 @@ class AirtablePrimitive(Primitive):
     Uses the Airtable REST API via AirtableConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -3043,6 +3053,8 @@ class AirtablePrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Airtable is not configured. Connect Airtable in Settings to use Airtable features.")
         try:
             if operation == "list_bases":
                 results = await self._connector.list_bases()
@@ -3120,7 +3132,7 @@ class ZoomPrimitive(Primitive):
     Uses the Zoom REST API via ZoomConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -3178,6 +3190,8 @@ class ZoomPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Zoom is not configured. Connect Zoom in Settings to use Zoom features.")
         try:
             if operation == "me":
                 result = await self._connector.me()
@@ -3247,7 +3261,7 @@ class LinkedInPrimitive(Primitive):
     Uses the LinkedIn REST API via LinkedInConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -3290,6 +3304,8 @@ class LinkedInPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="LinkedIn is not configured. Connect LinkedIn in Settings to use LinkedIn features.")
         try:
             if operation == "me":
                 result = await self._connector.me()
@@ -3342,7 +3358,7 @@ class RedditPrimitive(Primitive):
     Uses the Reddit OAuth API via RedditConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -3406,6 +3422,8 @@ class RedditPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Reddit is not configured. Connect Reddit in Settings to use Reddit features.")
         try:
             if operation == "me":
                 result = await self._connector.me()
@@ -3484,7 +3502,7 @@ class TelegramPrimitive(Primitive):
     Uses the Telegram Bot API via TelegramConnector.
     """
     
-    def __init__(self, connector: Any):
+    def __init__(self, connector: Any = None):
         self._connector = connector
     
     @property
@@ -3562,6 +3580,8 @@ class TelegramPrimitive(Primitive):
         }
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._connector:
+            return StepResult(False, error="Telegram is not configured. Connect a Telegram bot token in Settings to use Telegram features.")
         try:
             if operation == "me":
                 result = await self._connector.me()
@@ -3649,7 +3669,7 @@ class HubSpotPrimitive(Primitive):
     Uses HubSpot CRM API v3 via HubSpotConnector.
     """
 
-    def __init__(self, connector):
+    def __init__(self, connector=None):
         self._c = connector
         self._connector = connector
 
@@ -3692,6 +3712,8 @@ class HubSpotPrimitive(Primitive):
         }
 
     async def execute(self, operation: str, params: dict) -> StepResult:
+        if not self._c:
+            return StepResult(False, error="HubSpot is not configured. Connect HubSpot in Settings to use HubSpot CRM features.")
         op = operation.lower().strip()
         try:
             if op == "list_contacts":
@@ -3901,8 +3923,9 @@ class StripePrimitive(Primitive):
     Uses Stripe REST API via StripeConnector.
     """
 
-    def __init__(self, connector):
+    def __init__(self, connector=None):
         self._c = connector
+        self._connector = connector
 
     @property
     def name(self) -> str:
@@ -3936,6 +3959,8 @@ class StripePrimitive(Primitive):
         }
 
     async def execute(self, operation: str, params: dict) -> StepResult:
+        if not self._c:
+            return StepResult(False, error="Stripe is not configured. Connect Stripe in Settings to use Stripe features.")
         op = operation.lower().strip()
         try:
             if op == "list_customers":
@@ -8177,64 +8202,40 @@ class Apex:
         self._primitives["WEB"] = WebPrimitive(self._llm_complete, search_provider=c.get("web_search"))
         
         # Weather — wire OpenWeatherMap connector
-        weather_connector = c.get("weather")
-        if weather_connector:
-            self._primitives["WEATHER"] = WeatherPrimitive(weather_connector)
+        self._primitives["WEATHER"] = WeatherPrimitive(c.get("weather"))
         
         # News — wire NewsAPI connector
-        news_connector = c.get("news")
-        if news_connector:
-            self._primitives["NEWS"] = NewsPrimitive(news_connector)
+        self._primitives["NEWS"] = NewsPrimitive(c.get("news"))
         
         # Notion — wire Notion connector
-        notion_connector = c.get("notion")
-        if notion_connector:
-            self._primitives["NOTION"] = NotionPrimitive(notion_connector)
+        self._primitives["NOTION"] = NotionPrimitive(c.get("notion"))
         
         # Linear — wire Linear connector
-        linear_connector = c.get("linear")
-        if linear_connector:
-            self._primitives["LINEAR"] = LinearPrimitive(linear_connector)
+        self._primitives["LINEAR"] = LinearPrimitive(c.get("linear"))
         
         # Trello — wire Trello connector
-        trello_connector = c.get("trello")
-        if trello_connector:
-            self._primitives["TRELLO"] = TrelloPrimitive(trello_connector)
+        self._primitives["TRELLO"] = TrelloPrimitive(c.get("trello"))
         
         # Airtable — wire Airtable connector
-        airtable_connector = c.get("airtable")
-        if airtable_connector:
-            self._primitives["AIRTABLE"] = AirtablePrimitive(airtable_connector)
+        self._primitives["AIRTABLE"] = AirtablePrimitive(c.get("airtable"))
         
         # Zoom — wire Zoom connector
-        zoom_connector = c.get("zoom")
-        if zoom_connector:
-            self._primitives["ZOOM"] = ZoomPrimitive(zoom_connector)
+        self._primitives["ZOOM"] = ZoomPrimitive(c.get("zoom"))
         
         # LinkedIn — wire LinkedIn connector
-        linkedin_connector = c.get("linkedin")
-        if linkedin_connector:
-            self._primitives["LINKEDIN"] = LinkedInPrimitive(linkedin_connector)
+        self._primitives["LINKEDIN"] = LinkedInPrimitive(c.get("linkedin"))
         
         # Reddit — wire Reddit connector
-        reddit_connector = c.get("reddit")
-        if reddit_connector:
-            self._primitives["REDDIT"] = RedditPrimitive(reddit_connector)
+        self._primitives["REDDIT"] = RedditPrimitive(c.get("reddit"))
         
         # Telegram — wire Telegram connector
-        telegram_connector = c.get("telegram")
-        if telegram_connector:
-            self._primitives["TELEGRAM"] = TelegramPrimitive(telegram_connector)
+        self._primitives["TELEGRAM"] = TelegramPrimitive(c.get("telegram"))
         
         # HubSpot — wire HubSpot connector
-        hubspot_connector = c.get("hubspot")
-        if hubspot_connector:
-            self._primitives["HUBSPOT"] = HubSpotPrimitive(hubspot_connector)
+        self._primitives["HUBSPOT"] = HubSpotPrimitive(c.get("hubspot"))
         
         # Stripe — wire Stripe connector
-        stripe_connector = c.get("stripe")
-        if stripe_connector:
-            self._primitives["STRIPE"] = StripePrimitive(stripe_connector)
+        self._primitives["STRIPE"] = StripePrimitive(c.get("stripe"))
         
         # Notify — wire DesktopNotify connector
         notify_send = None

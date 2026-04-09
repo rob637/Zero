@@ -20,6 +20,11 @@ class StripeConnector:
         self.secret_key = secret_key
         self.connected = bool(secret_key)
 
+    async def connect(self) -> bool:
+        """Validate Stripe API credentials."""
+        self.connected = bool(self.secret_key)
+        return self.connected
+
     # ── helpers ──────────────────────────────────────────────
 
     def _auth(self) -> tuple[str, str]:

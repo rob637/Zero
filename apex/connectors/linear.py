@@ -30,6 +30,11 @@ class LinearConnector:
         self.api_key = api_key or os.environ.get("LINEAR_API_KEY", "")
         self.connected = bool(self.api_key)
 
+    async def connect(self) -> bool:
+        """Validate Linear API credentials."""
+        self.connected = bool(self.api_key)
+        return self.connected
+
     async def _graphql(self, query: str, variables: Optional[Dict] = None) -> Dict:
         """Execute a GraphQL query."""
         import httpx

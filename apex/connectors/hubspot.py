@@ -20,6 +20,11 @@ class HubSpotConnector:
         self.access_token = access_token
         self.connected = bool(access_token)
 
+    async def connect(self) -> bool:
+        """Validate HubSpot API credentials."""
+        self.connected = bool(self.access_token)
+        return self.connected
+
     # ── helpers ──────────────────────────────────────────────
 
     def _headers(self) -> dict[str, str]:

@@ -32,6 +32,11 @@ class LinkedInConnector:
         self.connected = bool(self.access_token)
         self._person_urn = ""
 
+    async def connect(self) -> bool:
+        """Validate LinkedIn API credentials."""
+        self.connected = bool(self.access_token)
+        return self.connected
+
     def _headers(self, version: str = "202304") -> Dict[str, str]:
         return {
             "Authorization": f"Bearer {self.access_token}",

@@ -118,6 +118,11 @@ class WeatherConnector:
         self.api_key = api_key or os.environ.get("OPENWEATHERMAP_API_KEY", "")
         self.connected = bool(self.api_key)
 
+    async def connect(self) -> bool:
+        """Validate weather API credentials."""
+        self.connected = bool(self.api_key)
+        return self.connected
+
     async def _get(self, endpoint: str, params: Dict[str, Any]) -> Dict:
         """Make API request."""
         import httpx

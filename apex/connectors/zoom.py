@@ -47,6 +47,11 @@ class ZoomConnector:
         self._token_expires = 0
         self.connected = bool(self.api_key) or bool(self.account_id and self.client_id and self.client_secret)
 
+    async def connect(self) -> bool:
+        """Validate Zoom API credentials."""
+        self.connected = bool(self.api_key) or bool(self.account_id and self.client_id and self.client_secret)
+        return self.connected
+
     async def _get_token(self) -> str:
         """Get or refresh OAuth access token."""
         if self.api_key:
