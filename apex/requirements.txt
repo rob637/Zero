@@ -11,6 +11,7 @@ send2trash>=1.8.0
 # Document Processing
 pypdf>=3.0.0
 python-docx>=0.8.11
+Pillow>=10.0.0             # Image metadata (EXIF/GPS) reading
 
 # Google API for Gmail/Calendar/Drive/Contacts
 google-auth>=2.25.0
