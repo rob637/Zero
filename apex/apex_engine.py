@@ -2967,6 +2967,175 @@ class RedditPrimitive(Primitive):
 
 
 # ============================================================
+#  TELEGRAM PRIMITIVE
+# ============================================================
+
+class TelegramPrimitive(Primitive):
+    """Telegram — send messages, photos, documents, manage chats.
+    
+    Uses the Telegram Bot API via TelegramConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "TELEGRAM"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "me": "Get the bot's profile info",
+            "send_message": "Send a text message to a chat (supports Markdown/HTML)",
+            "edit_message": "Edit a previously sent message",
+            "delete_message": "Delete a message",
+            "forward_message": "Forward a message to another chat",
+            "send_photo": "Send a photo by URL with optional caption",
+            "send_document": "Send a document/file by URL with optional caption",
+            "get_chat": "Get chat info (title, type, description)",
+            "get_member_count": "Get number of members in a chat",
+            "get_updates": "Get recent incoming messages and updates",
+            "pin_message": "Pin a message in a chat",
+            "unpin_message": "Unpin a message or all pinned messages",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "me": {},
+            "send_message": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID or @channel_username"},
+                "text": {"type": "str", "required": True, "description": "Message text (Markdown/HTML)"},
+                "parse_mode": {"type": "str", "required": False, "description": "'Markdown', 'MarkdownV2', or 'HTML'"},
+                "disable_notification": {"type": "bool", "required": False, "description": "Send silently"},
+                "reply_to_message_id": {"type": "int", "required": False, "description": "Reply to message ID"},
+            },
+            "edit_message": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID"},
+                "message_id": {"type": "int", "required": True, "description": "Message ID to edit"},
+                "text": {"type": "str", "required": True, "description": "New text"},
+                "parse_mode": {"type": "str", "required": False, "description": "'Markdown', 'MarkdownV2', or 'HTML'"},
+            },
+            "delete_message": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID"},
+                "message_id": {"type": "int", "required": True, "description": "Message ID"},
+            },
+            "forward_message": {
+                "chat_id": {"type": "str", "required": True, "description": "Target chat ID"},
+                "from_chat_id": {"type": "str", "required": True, "description": "Source chat ID"},
+                "message_id": {"type": "int", "required": True, "description": "Message ID to forward"},
+            },
+            "send_photo": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID"},
+                "photo_url": {"type": "str", "required": True, "description": "Photo URL"},
+                "caption": {"type": "str", "required": False, "description": "Photo caption"},
+            },
+            "send_document": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID"},
+                "document_url": {"type": "str", "required": True, "description": "Document URL"},
+                "caption": {"type": "str", "required": False, "description": "Document caption"},
+            },
+            "get_chat": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID or @username"},
+            },
+            "get_member_count": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID"},
+            },
+            "get_updates": {
+                "limit": {"type": "int", "required": False, "description": "Max updates (default 10)"},
+            },
+            "pin_message": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID"},
+                "message_id": {"type": "int", "required": True, "description": "Message ID to pin"},
+            },
+            "unpin_message": {
+                "chat_id": {"type": "str", "required": True, "description": "Chat ID"},
+                "message_id": {"type": "int", "required": False, "description": "Specific message to unpin (omit to unpin all)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "me":
+                result = await self._connector.me()
+                return StepResult(True, data=result)
+            
+            elif operation == "send_message":
+                result = await self._connector.send_message(
+                    chat_id=params["chat_id"],
+                    text=params["text"],
+                    parse_mode=params.get("parse_mode", "Markdown"),
+                    disable_notification=bool(params.get("disable_notification", False)),
+                    reply_to_message_id=int(params["reply_to_message_id"]) if params.get("reply_to_message_id") else None,
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "edit_message":
+                result = await self._connector.edit_message(
+                    chat_id=params["chat_id"],
+                    message_id=int(params["message_id"]),
+                    text=params["text"],
+                    parse_mode=params.get("parse_mode", "Markdown"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "delete_message":
+                await self._connector.delete_message(params["chat_id"], int(params["message_id"]))
+                return StepResult(True, data={"deleted": True})
+            
+            elif operation == "forward_message":
+                result = await self._connector.forward_message(
+                    chat_id=params["chat_id"],
+                    from_chat_id=params["from_chat_id"],
+                    message_id=int(params["message_id"]),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "send_photo":
+                result = await self._connector.send_photo(
+                    chat_id=params["chat_id"],
+                    photo_url=params["photo_url"],
+                    caption=params.get("caption"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "send_document":
+                result = await self._connector.send_document(
+                    chat_id=params["chat_id"],
+                    document_url=params["document_url"],
+                    caption=params.get("caption"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "get_chat":
+                result = await self._connector.get_chat(params["chat_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "get_member_count":
+                count = await self._connector.get_chat_member_count(params["chat_id"])
+                return StepResult(True, data={"member_count": count})
+            
+            elif operation == "get_updates":
+                results = await self._connector.get_updates(
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data={"count": len(results), "updates": results})
+            
+            elif operation == "pin_message":
+                await self._connector.pin_message(params["chat_id"], int(params["message_id"]))
+                return StepResult(True, data={"pinned": True})
+            
+            elif operation == "unpin_message":
+                msg_id = int(params["message_id"]) if params.get("message_id") else None
+                await self._connector.unpin_message(params["chat_id"], msg_id)
+                return StepResult(True, data={"unpinned": True})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -7400,6 +7569,11 @@ class Apex:
         reddit_connector = c.get("reddit")
         if reddit_connector:
             self._primitives["REDDIT"] = RedditPrimitive(reddit_connector)
+        
+        # Telegram — wire Telegram connector
+        telegram_connector = c.get("telegram")
+        if telegram_connector:
+            self._primitives["TELEGRAM"] = TelegramPrimitive(telegram_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

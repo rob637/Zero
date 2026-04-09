@@ -731,6 +731,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .telegram import TelegramConnector
+            self.register(ConnectorMetadata(
+                name="telegram",
+                display_name="Telegram",
+                provider="telegram",
+                primitives=["MESSAGING", "CHAT"],
+                scopes=[],
+                connector_class=TelegramConnector,
+                description="Messages, photos, documents, chat info, and updates via Telegram Bot API",
+                icon="telegram",
+                setup_url="https://t.me/BotFather",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

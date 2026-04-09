@@ -225,6 +225,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "zoom": "zoom",
         "linkedin": "linkedin",
         "reddit": "reddit",
+        "telegram": "telegram",
     }
     
     # Check which providers have valid credentials
@@ -254,6 +255,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "zoom": "ZOOM_API_KEY",
         "linkedin": "LINKEDIN_ACCESS_TOKEN",
         "reddit": "REDDIT_CLIENT_ID",
+        "telegram": "TELEGRAM_BOT_TOKEN",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):

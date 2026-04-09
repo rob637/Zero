@@ -157,6 +157,9 @@ from .linkedin import LinkedInConnector
 # Reddit
 from .reddit import RedditConnector
 
+# Telegram
+from .telegram import TelegramConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -258,6 +261,8 @@ __all__ = [
     'LinkedInConnector',
     # Reddit
     'RedditConnector',
+    # Telegram
+    'TelegramConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow
