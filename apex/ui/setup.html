@@ -572,7 +572,6 @@
             zoom: '📹',
             hubspot: '🟠',
             reddit: '🔴',
-            linkedin: '🔗',
             weather: '🌤️',
             news: '📰',
             web_search: '🔍',
@@ -580,6 +579,7 @@
             airtable: '📊',
             stripe: '💳',
             trello: '📋',
+            jira: '🔷',
         };
         
         // Token configuration per provider
@@ -669,6 +669,36 @@
                 help: 'Get API Key from <a href="https://trello.com/power-ups/admin" target="_blank" style="color: var(--accent-primary);">Trello Power-Up Admin</a>, then generate a Token',
                 placeholder: 'Your Trello API key',
             },
+            notion: {
+                label: 'Integration Secret',
+                help: 'Create integration at <a href="https://www.notion.so/my-integrations" target="_blank" style="color: var(--accent-primary);">Notion → My Integrations</a>, then copy the secret',
+                placeholder: 'secret_...',
+            },
+            hubspot: {
+                label: 'Private App Token',
+                help: 'Create a Private App at <a href="https://app.hubspot.com/private-apps/" target="_blank" style="color: var(--accent-primary);">HubSpot → Settings → Private Apps</a>',
+                placeholder: 'pat-...',
+            },
+            atlassian: {
+                label: 'API Token',
+                help: 'Get from <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color: var(--accent-primary);">Atlassian → Security → API Tokens</a>',
+                placeholder: 'Your Atlassian API token',
+            },
+            jira: {
+                label: 'API Token',
+                help: 'Get from <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color: var(--accent-primary);">Atlassian → Security → API Tokens</a>',
+                placeholder: 'Your Jira API token',
+            },
+            reddit: {
+                label: 'Script App Credentials',
+                help: 'Create a "script" app at <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color: var(--accent-primary);">Reddit → Preferences → Apps</a>',
+                placeholder: 'Your Reddit client secret',
+            },
+            zoom: {
+                label: 'Server-to-Server App Secret',
+                help: 'Create at <a href="https://marketplace.zoom.us/develop/create" target="_blank" style="color: var(--accent-primary);">Zoom Marketplace → Build App</a> (Server-to-Server OAuth)',
+                placeholder: 'Your Zoom account credentials',
+            },
         };
         
         // Listen for OAuth popup callback
@@ -684,13 +714,13 @@
 
         // Categorize services by setup difficulty
         const setupDifficulty = {
-            // One-Click: OAuth with pre-configured credentials (env vars)
-            oneClick: ['google', 'discord', 'microsoft', 'slack', 'github', 'spotify', 'dropbox', 'todoist', 'notion', 'hubspot', 'atlassian', 'zoom', 'reddit', 'linkedin', 'twitter'],
+            // One-Click: Shared OAuth (users just sign in)
+            oneClick: ['google', 'discord', 'microsoft', 'slack', 'github', 'spotify', 'dropbox', 'todoist'],
             
-            // API Key: Just paste a token
-            apiKey: ['weather', 'news', 'web_search', 'telegram', 'linear', 'airtable', 'smartthings', 'stripe', 'twilio', 'trello'],
+            // API Key: User pastes their own token
+            apiKey: ['notion', 'hubspot', 'atlassian', 'jira', 'reddit', 'zoom', 'weather', 'news', 'web_search', 'telegram', 'linear', 'airtable', 'smartthings', 'stripe', 'twilio', 'trello'],
             
-            // Developer Setup: Complex multi-step setup
+            // Developer Setup: Not practical for multi-user
             devSetup: []
         };
 
@@ -809,7 +839,7 @@
             tokenForm.style.display = 'none';
             connectBtn.textContent = 'Connect';
             
-            if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify' || provider === 'dropbox' || provider === 'todoist' || provider === 'notion' || provider === 'hubspot' || provider === 'atlassian' || provider === 'zoom' || provider === 'reddit' || provider === 'linkedin' || provider === 'twitter') {
+            if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify' || provider === 'dropbox' || provider === 'todoist') {
                 // OAuth providers - will open popup
                 const providerNames = {
                     'google': 'Google',
@@ -820,13 +850,6 @@
                     'spotify': 'Spotify',
                     'dropbox': 'Dropbox',
                     'todoist': 'Todoist',
-                    'notion': 'Notion',
-                    'hubspot': 'HubSpot',
-                    'atlassian': 'Atlassian',
-                    'zoom': 'Zoom',
-                    'reddit': 'Reddit',
-                    'linkedin': 'LinkedIn',
-                    'twitter': 'Twitter/X',
                 };
                 desc.innerHTML = `
                     <p>Connect your ${providerNames[provider]} account to use ${name} with Ziggy.</p>
@@ -879,7 +902,7 @@
             try {
                 const { id, name, provider } = currentService;
                 
-                if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify' || provider === 'dropbox' || provider === 'todoist' || provider === 'notion' || provider === 'hubspot' || provider === 'atlassian' || provider === 'zoom' || provider === 'reddit' || provider === 'linkedin' || provider === 'twitter') {
+                if (provider === 'google' || provider === 'microsoft' || provider === 'discord' || provider === 'slack' || provider === 'github' || provider === 'spotify' || provider === 'dropbox' || provider === 'todoist') {
                     // OAuth flow - open popup
                     // Map service ID to scope name
                     const scopeMap = {
@@ -900,13 +923,6 @@
                         'spotify': 'playback',
                         'dropbox': 'files',
                         'todoist': 'all',
-                        'notion': 'all',
-                        'hubspot': 'all',
-                        'jira': 'jira',
-                        'zoom': 'all',
-                        'reddit': 'all',
-                        'linkedin': 'all',
-                        'twitter': 'all',
                     };
                     const scopeParam = scopeMap[id] || id;
                     const res = await fetch(`${API}/oauth/start/${provider}?scopes=${scopeParam}`);
