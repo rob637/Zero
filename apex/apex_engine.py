@@ -6996,64 +6996,248 @@ class SocialPrimitive(Primitive):
     
     def get_available_operations(self) -> Dict[str, str]:
         return {
-            "post": "Create a social media post",
-            "feed": "Get your feed",
-            "search": "Search posts",
-            "like": "Like a post",
-            "comment": "Comment on a post",
-            "share": "Share/repost",
+            "post": "Create a social media post or tweet",
+            "delete_post": "Delete a post or tweet",
+            "feed": "Get your feed or timeline",
+            "search": "Search posts or tweets",
+            "like": "Like a post or tweet",
+            "unlike": "Unlike a post or tweet",
+            "repost": "Retweet or repost",
+            "undo_repost": "Undo a retweet or repost",
+            "comment": "Comment on or reply to a post",
             "profile": "Get user profile",
-            "notifications": "Get notifications",
+            "followers": "Get followers list",
+            "following": "Get following list",
+            "follow": "Follow a user",
+            "unfollow": "Unfollow a user",
+            "bookmarks": "Get bookmarked posts",
+            "bookmark": "Bookmark a post",
+            "user_posts": "Get posts by a specific user",
         }
     
     def get_param_schema(self) -> Dict[str, Any]:
         return {
-            "post": {"content": {"type": "str", "description": "Post content"}, "media": {"type": "list", "description": "Media attachments (optional)"}},
-            "feed": {"limit": {"type": "int", "description": "Max posts", "default": 20}},
-            "search": {"query": {"type": "str", "description": "Search query"}},
-            "like": {"post_id": {"type": "str", "description": "Post ID"}},
-            "comment": {"post_id": {"type": "str", "description": "Post ID"}, "text": {"type": "str", "description": "Comment text"}},
-            "share": {"post_id": {"type": "str", "description": "Post ID"}},
-            "profile": {"user_id": {"type": "str", "description": "User ID (optional, defaults to self)"}},
-            "notifications": {},
+            "post": {
+                "content": {"type": "str", "required": True, "description": "Post/tweet content"},
+                "reply_to": {"type": "str", "required": False, "description": "Post ID to reply to"},
+                "provider": {"type": "str", "required": False, "description": "Provider: twitter, linkedin"},
+            },
+            "delete_post": {
+                "post_id": {"type": "str", "required": True, "description": "Post/tweet ID to delete"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "feed": {
+                "limit": {"type": "int", "required": False, "description": "Max posts (default 20)"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "search": {
+                "query": {"type": "str", "required": True, "description": "Search query"},
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "like": {
+                "post_id": {"type": "str", "required": True, "description": "Post/tweet ID to like"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "unlike": {
+                "post_id": {"type": "str", "required": True, "description": "Post/tweet ID to unlike"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "repost": {
+                "post_id": {"type": "str", "required": True, "description": "Post/tweet ID to retweet/repost"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "undo_repost": {
+                "post_id": {"type": "str", "required": True, "description": "Post/tweet ID to undo retweet"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "comment": {
+                "post_id": {"type": "str", "required": True, "description": "Post ID to reply to"},
+                "text": {"type": "str", "required": True, "description": "Reply/comment text"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "profile": {
+                "username": {"type": "str", "required": False, "description": "Username (defaults to self)"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "followers": {
+                "username": {"type": "str", "required": False, "description": "Username (defaults to self)"},
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "following": {
+                "username": {"type": "str", "required": False, "description": "Username (defaults to self)"},
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "follow": {
+                "user_id": {"type": "str", "required": True, "description": "User ID to follow"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "unfollow": {
+                "user_id": {"type": "str", "required": True, "description": "User ID to unfollow"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "bookmarks": {
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "bookmark": {
+                "post_id": {"type": "str", "required": True, "description": "Post/tweet ID to bookmark"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
+            "user_posts": {
+                "username": {"type": "str", "required": False, "description": "Username"},
+                "user_id": {"type": "str", "required": False, "description": "User ID"},
+                "limit": {"type": "int", "required": False, "description": "Max results"},
+                "provider": {"type": "str", "required": False, "description": "Provider name"},
+            },
         }
+    
+    def _get_provider(self, name: Optional[str] = None) -> Optional[Any]:
+        if name and name in self._providers:
+            return self._providers[name]
+        if self._providers:
+            return next(iter(self._providers.values()))
+        return None
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
-            for name, provider in self._providers.items():
-                if operation == "post" and hasattr(provider, "create_post"):
-                    result = await provider.create_post(params.get("content"), params.get("media"))
-                    return StepResult(True, data={"posted": True, "post": result, "provider": name})
-                elif operation == "feed" and hasattr(provider, "get_feed"):
-                    result = await provider.get_feed(params.get("limit", 20))
-                    return StepResult(True, data={"posts": result, "provider": name})
-                elif operation == "search" and hasattr(provider, "search_posts"):
-                    result = await provider.search_posts(params.get("query"))
-                    return StepResult(True, data={"posts": result, "provider": name})
+            provider = self._get_provider(params.get("provider"))
             
-            # Local fallback
             if operation == "post":
                 content = params.get("content", "")
+                reply_to = params.get("reply_to")
+                if provider and hasattr(provider, "post_tweet"):
+                    result = await provider.post_tweet(text=content, reply_to=reply_to)
+                    return StepResult(True, data=result)
+                elif provider and hasattr(provider, "create_post"):
+                    result = await provider.create_post(content)
+                    return StepResult(True, data=result)
                 post = {"id": f"post_{int(datetime.now().timestamp())}", "content": content, "timestamp": datetime.now().isoformat()}
                 self._local_posts.append(post)
                 return StepResult(True, data={"posted": True, "post": post, "provider": "local"})
             
+            elif operation == "delete_post":
+                if provider and hasattr(provider, "delete_tweet"):
+                    result = await provider.delete_tweet(params["post_id"])
+                    return StepResult(True, data={"deleted": result})
+                elif provider and hasattr(provider, "delete_post"):
+                    result = await provider.delete_post(params["post_id"])
+                    return StepResult(True, data={"deleted": result})
+                return StepResult(False, error="Delete not supported")
+            
             elif operation == "feed":
-                return StepResult(True, data={"posts": self._local_posts, "provider": "local"})
+                limit = params.get("limit", 20)
+                if provider and hasattr(provider, "get_user_tweets"):
+                    me = await provider.get_me() if hasattr(provider, "get_me") else None
+                    if me:
+                        result = await provider.get_user_tweets(user_id=me.id if hasattr(me, 'id') else str(me), max_results=limit)
+                        return StepResult(True, data=result)
+                return StepResult(True, data={"posts": self._local_posts[-limit:], "provider": "local"})
             
             elif operation == "search":
-                query = params.get("query", "").lower()
-                results = [p for p in self._local_posts if query in p.get("content", "").lower()]
+                query = params.get("query", "")
+                limit = params.get("limit", 20)
+                if provider and hasattr(provider, "search"):
+                    result = await provider.search(query=query, max_results=limit)
+                    return StepResult(True, data=result)
+                results = [p for p in self._local_posts if query.lower() in p.get("content", "").lower()]
                 return StepResult(True, data={"posts": results, "provider": "local"})
             
-            elif operation in ("like", "comment", "share"):
-                return StepResult(True, data={"success": True, "provider": "local"})
+            elif operation == "like":
+                if provider and hasattr(provider, "like_tweet"):
+                    result = await provider.like_tweet(params["post_id"])
+                    return StepResult(True, data={"liked": result})
+                return StepResult(True, data={"liked": True, "provider": "local"})
+            
+            elif operation == "unlike":
+                if provider and hasattr(provider, "unlike_tweet"):
+                    result = await provider.unlike_tweet(params["post_id"])
+                    return StepResult(True, data={"unliked": result})
+                return StepResult(True, data={"unliked": True, "provider": "local"})
+            
+            elif operation == "repost":
+                if provider and hasattr(provider, "retweet"):
+                    result = await provider.retweet(params["post_id"])
+                    return StepResult(True, data={"reposted": result})
+                return StepResult(True, data={"reposted": True, "provider": "local"})
+            
+            elif operation == "undo_repost":
+                if provider and hasattr(provider, "undo_retweet"):
+                    result = await provider.undo_retweet(params["post_id"])
+                    return StepResult(True, data={"undone": result})
+                return StepResult(True, data={"undone": True, "provider": "local"})
+            
+            elif operation == "comment":
+                if provider and hasattr(provider, "post_tweet"):
+                    result = await provider.post_tweet(text=params["text"], reply_to=params["post_id"])
+                    return StepResult(True, data=result)
+                return StepResult(True, data={"commented": True, "provider": "local"})
             
             elif operation == "profile":
+                username = params.get("username")
+                if provider:
+                    if username and hasattr(provider, "get_user"):
+                        result = await provider.get_user(username=username)
+                        return StepResult(True, data=result)
+                    elif hasattr(provider, "get_me"):
+                        result = await provider.get_me()
+                        return StepResult(True, data=result)
                 return StepResult(True, data={"profile": {"name": "Local User"}, "provider": "local"})
             
-            elif operation == "notifications":
-                return StepResult(True, data={"notifications": [], "provider": "local"})
+            elif operation == "followers":
+                if provider and hasattr(provider, "get_followers"):
+                    user_id = params.get("user_id")
+                    if not user_id and hasattr(provider, "get_me"):
+                        me = await provider.get_me()
+                        user_id = me.id if hasattr(me, 'id') else str(me)
+                    result = await provider.get_followers(user_id=user_id, max_results=params.get("limit", 20))
+                    return StepResult(True, data=result)
+                return StepResult(True, data={"followers": [], "provider": "local"})
+            
+            elif operation == "following":
+                if provider and hasattr(provider, "get_following"):
+                    user_id = params.get("user_id")
+                    if not user_id and hasattr(provider, "get_me"):
+                        me = await provider.get_me()
+                        user_id = me.id if hasattr(me, 'id') else str(me)
+                    result = await provider.get_following(user_id=user_id, max_results=params.get("limit", 20))
+                    return StepResult(True, data=result)
+                return StepResult(True, data={"following": [], "provider": "local"})
+            
+            elif operation == "follow":
+                if provider and hasattr(provider, "follow_user"):
+                    result = await provider.follow_user(params["user_id"])
+                    return StepResult(True, data={"followed": result})
+                return StepResult(True, data={"followed": True, "provider": "local"})
+            
+            elif operation == "unfollow":
+                if provider and hasattr(provider, "unfollow_user"):
+                    result = await provider.unfollow_user(params["user_id"])
+                    return StepResult(True, data={"unfollowed": result})
+                return StepResult(True, data={"unfollowed": True, "provider": "local"})
+            
+            elif operation == "bookmarks":
+                if provider and hasattr(provider, "get_bookmarks"):
+                    result = await provider.get_bookmarks(max_results=params.get("limit", 20))
+                    return StepResult(True, data=result)
+                return StepResult(True, data={"bookmarks": [], "provider": "local"})
+            
+            elif operation == "bookmark":
+                if provider and hasattr(provider, "bookmark_tweet"):
+                    result = await provider.bookmark_tweet(params["post_id"])
+                    return StepResult(True, data={"bookmarked": result})
+                return StepResult(True, data={"bookmarked": True, "provider": "local"})
+            
+            elif operation == "user_posts":
+                if provider and hasattr(provider, "get_user_tweets"):
+                    result = await provider.get_user_tweets(
+                        user_id=params.get("user_id"),
+                        max_results=params.get("limit", 20),
+                    )
+                    return StepResult(True, data=result)
+                return StepResult(True, data={"posts": [], "provider": "local"})
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
