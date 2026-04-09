@@ -349,6 +349,54 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .microsoft_excel import ExcelConnector
+            self.register(ConnectorMetadata(
+                name="microsoft_excel",
+                display_name="Microsoft Excel Online",
+                provider="microsoft",
+                primitives=["SPREADSHEET"],
+                scopes=["files.readwrite"],
+                connector_class=ExcelConnector,
+                description="Read, write, and manage Excel workbooks via Graph API",
+                icon="excel",
+                setup_url="https://portal.azure.com/",
+            ))
+        except ImportError:
+            pass
+        
+        try:
+            from .microsoft_powerpoint import PowerPointConnector
+            self.register(ConnectorMetadata(
+                name="microsoft_powerpoint",
+                display_name="Microsoft PowerPoint Online",
+                provider="microsoft",
+                primitives=["PRESENTATION"],
+                scopes=["files.readwrite"],
+                connector_class=PowerPointConnector,
+                description="Create and manage PowerPoint presentations via Graph API",
+                icon="powerpoint",
+                setup_url="https://portal.azure.com/",
+            ))
+        except ImportError:
+            pass
+        
+        try:
+            from .microsoft_contacts import MicrosoftContactsConnector
+            self.register(ConnectorMetadata(
+                name="microsoft_contacts",
+                display_name="Microsoft Contacts",
+                provider="microsoft",
+                primitives=["CONTACTS"],
+                scopes=["contacts.readwrite"],
+                connector_class=MicrosoftContactsConnector,
+                description="Manage Microsoft 365 contacts",
+                icon="contacts",
+                setup_url="https://portal.azure.com/",
+            ))
+        except ImportError:
+            pass
     
     def _register_other_connectors(self):
         """Register other connectors (Slack, GitHub, etc.)."""

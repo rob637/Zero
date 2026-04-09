@@ -67,6 +67,9 @@ from .outlook import OutlookConnector, OutlookEmail
 from .outlook_calendar import OutlookCalendarConnector, CalendarEvent as OutlookCalendarEvent
 from .onedrive import OneDriveConnector, DriveItem
 from .microsoft_todo import MicrosoftTodoConnector, TodoTask, TodoList
+from .microsoft_excel import ExcelConnector, Workbook, Worksheet
+from .microsoft_powerpoint import PowerPointConnector, Presentation as PowerPointPresentation
+from .microsoft_contacts import MicrosoftContactsConnector, MicrosoftContact
 
 # Unified services
 from .unified import (
