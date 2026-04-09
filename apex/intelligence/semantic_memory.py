@@ -200,7 +200,7 @@ class SemanticMemory:
         facts_file = self._storage_path / "facts.json"
         entities_file = self._storage_path / "entities.json"
         
-        if facts_file.exists():
+        if facts_file.exists() and facts_file.stat().st_size > 2:
             try:
                 with open(facts_file) as f:
                     data = json.load(f)
@@ -212,7 +212,7 @@ class SemanticMemory:
             except Exception as e:
                 logger.error(f"Failed to load facts: {e}")
         
-        if entities_file.exists():
+        if entities_file.exists() and entities_file.stat().st_size > 2:
             try:
                 with open(entities_file) as f:
                     data = json.load(f)

@@ -263,21 +263,16 @@ class CalendarConnector:
         else:
             calendar_ids = ['primary']
         
-        # Format time bounds once (same for all calendars)
-        if not time_min.tzinfo and self._calendar_timezone and ZoneInfo:
-            try:
-                tz = ZoneInfo(self._calendar_timezone)
-                t_min = time_min.replace(tzinfo=tz).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
-                t_max = time_max.replace(tzinfo=tz).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
-            except Exception:
-                t_min = time_min.isoformat() + 'Z'
-                t_max = time_max.isoformat() + 'Z'
-        elif time_min.tzinfo:
+        # Format time bounds — let the Google API handle timezone conversion
+        # by passing timeZone parameter instead of converting to UTC ourselves.
+        # This avoids ZoneInfo/tzdata dependency issues on Windows.
+        if time_min.tzinfo:
             t_min = time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
             t_max = time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
         else:
-            t_min = time_min.isoformat() + 'Z'
-            t_max = time_max.isoformat() + 'Z'
+            # Naive datetimes — treat as local time in the calendar's timezone
+            t_min = time_min.strftime('%Y-%m-%dT%H:%M:%S')
+            t_max = time_max.strftime('%Y-%m-%dT%H:%M:%S')
 
         errors = []
 
@@ -292,6 +287,9 @@ class CalendarConnector:
                     orderBy='startTime',
                     q=query,
                 )
+                # If times are naive (no 'Z' suffix), tell Google API the timezone
+                if self._calendar_timezone and not t_min.endswith('Z'):
+                    list_kwargs['timeZone'] = self._calendar_timezone
                 print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={self._calendar_timezone})")
                 request = self._service.events().list(**list_kwargs)
                 result = await asyncio.to_thread(request.execute)
