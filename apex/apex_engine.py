@@ -31,12 +31,17 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 from abc import ABC, abstractmethod
 
-# LLM client
-try:
-    import litellm
-    HAS_LITELLM = True
-except ImportError:
-    HAS_LITELLM = False
+# LLM client (lazy-loaded for fast startup)
+_litellm = None
+def _get_litellm():
+    global _litellm
+    if _litellm is None:
+        try:
+            import litellm
+            _litellm = litellm
+        except ImportError:
+            pass
+    return _litellm
 
 # Safety rails
 try:
@@ -8975,9 +8980,10 @@ class Apex:
                 redactions_applied=redaction_count,
             )
         
-        if HAS_LITELLM:
+        _ll = _get_litellm()
+        if _ll:
             response = await asyncio.to_thread(
-                litellm.completion,
+                _ll.completion,
                 model=self._model,
                 messages=[{"role": "user", "content": send_prompt}],
                 api_key=self._api_key,

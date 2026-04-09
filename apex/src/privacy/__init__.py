@@ -23,7 +23,18 @@ from .redaction import RedactionEngine, redaction_engine, PIIType
 from .secure_llm import SecureLLMClient, wrap_client_secure, create_secure_client_from_env
 from .sensitive_marker import SensitiveMarker, SensitivityLevel, sensitive_marker
 from .context_minimizer import ContextMinimizer, MinimalContext, ExtractionMode, context_minimizer
-from .local_vector_db import LocalVectorDB, SearchResult, SearchResults, local_vector_db
+# Lazy import - chromadb is heavy (~1.4s)
+def __getattr__(name):
+    if name in ('LocalVectorDB', 'SearchResult', 'SearchResults', 'local_vector_db'):
+        from .local_vector_db import LocalVectorDB, SearchResult, SearchResults, local_vector_db
+        globals().update({
+            'LocalVectorDB': LocalVectorDB,
+            'SearchResult': SearchResult,
+            'SearchResults': SearchResults,
+            'local_vector_db': local_vector_db,
+        })
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     'AuditLogger',

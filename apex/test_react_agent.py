@@ -45,12 +45,18 @@ class MockLLMClient:
         return response
 
 
+class MockUsage:
+    """Mock usage info."""
+    input_tokens = 0
+    output_tokens = 0
+
 class MockResponse:
     """Mock Anthropic API response."""
     
     def __init__(self, stop_reason, content):
         self.stop_reason = stop_reason
         self.content = content
+        self.usage = MockUsage()
 
 
 class MockToolUse:
