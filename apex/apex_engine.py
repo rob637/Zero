@@ -26,7 +26,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 from abc import ABC, abstractmethod
@@ -1993,7 +1993,18 @@ class CalendarPrimitive(Primitive):
             
             elif operation == "list":
                 if self._list_func:
-                    result = await self._list_func(**params)
+                    # Map primitive params to connector params
+                    api_params = {}
+                    if params.get("start_date"):
+                        api_params["time_min"] = datetime.fromisoformat(params["start_date"])
+                    if params.get("end_date"):
+                        api_params["time_max"] = datetime.fromisoformat(params["end_date"]) + timedelta(days=1)
+                    if params.get("limit"):
+                        api_params["max_results"] = params["limit"]
+                    result = await self._list_func(**api_params)
+                    # Convert CalendarEvent objects to dicts
+                    if result and hasattr(result[0], 'to_dict'):
+                        result = [e.to_dict() for e in result]
                     return StepResult(True, data=result)
                 
                 start = params.get("start_date", datetime.now().strftime("%Y-%m-%d"))
@@ -2010,6 +2021,13 @@ class CalendarPrimitive(Primitive):
                 return StepResult(True, data=filtered[:limit])
             
             elif operation == "search":
+                if self._list_func:
+                    # Use connector's query param for search
+                    result = await self._list_func(query=params.get("query", ""))
+                    if result and hasattr(result[0], 'to_dict'):
+                        result = [e.to_dict() for e in result]
+                    return StepResult(True, data=result)
+                
                 query = params.get("query", "").lower()
                 matches = [
                     e for e in self._events
