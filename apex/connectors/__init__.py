@@ -148,6 +148,9 @@ from .trello import TrelloConnector
 # Airtable
 from .airtable import AirtableConnector
 
+# Zoom
+from .zoom import ZoomConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -243,6 +246,8 @@ __all__ = [
     'TrelloConnector',
     # Airtable
     'AirtableConnector',
+    # Zoom
+    'ZoomConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

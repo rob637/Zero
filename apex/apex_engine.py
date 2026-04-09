@@ -2603,6 +2603,133 @@ class AirtablePrimitive(Primitive):
 
 
 # ============================================================
+#  ZOOM PRIMITIVE
+# ============================================================
+
+class ZoomPrimitive(Primitive):
+    """Zoom — meetings, recordings, participants, and user profile.
+    
+    Uses the Zoom REST API via ZoomConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "ZOOM"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "me": "Get the current Zoom user's profile",
+            "list_meetings": "List meetings (scheduled, live, upcoming, or past)",
+            "get_meeting": "Get full meeting details including join URL and settings",
+            "create_meeting": "Schedule a new meeting with topic, time, duration, and settings",
+            "update_meeting": "Update a meeting's topic, time, duration, or agenda",
+            "delete_meeting": "Delete/cancel a meeting",
+            "get_participants": "Get participants from a past meeting",
+            "list_recordings": "List cloud recordings with download links",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "me": {},
+            "list_meetings": {
+                "type": {"type": "str", "required": False, "description": "'scheduled', 'live', 'upcoming', or 'previous_meetings'"},
+                "page_size": {"type": "int", "required": False, "description": "Results per page (default 30, max 300)"},
+            },
+            "get_meeting": {
+                "meeting_id": {"type": "str", "required": True, "description": "Meeting ID"},
+            },
+            "create_meeting": {
+                "topic": {"type": "str", "required": True, "description": "Meeting title"},
+                "start_time": {"type": "str", "required": False, "description": "Start time ISO 8601 (e.g. 2026-04-15T10:00:00Z)"},
+                "duration": {"type": "int", "required": False, "description": "Duration in minutes (default 60)"},
+                "timezone": {"type": "str", "required": False, "description": "Timezone (e.g. America/New_York)"},
+                "agenda": {"type": "str", "required": False, "description": "Meeting description/agenda"},
+                "password": {"type": "str", "required": False, "description": "Meeting password"},
+                "waiting_room": {"type": "bool", "required": False, "description": "Enable waiting room"},
+            },
+            "update_meeting": {
+                "meeting_id": {"type": "str", "required": True, "description": "Meeting ID"},
+                "topic": {"type": "str", "required": False, "description": "New topic"},
+                "start_time": {"type": "str", "required": False, "description": "New start time (ISO 8601)"},
+                "duration": {"type": "int", "required": False, "description": "New duration in minutes"},
+                "agenda": {"type": "str", "required": False, "description": "New agenda"},
+            },
+            "delete_meeting": {
+                "meeting_id": {"type": "str", "required": True, "description": "Meeting ID"},
+            },
+            "get_participants": {
+                "meeting_id": {"type": "str", "required": True, "description": "Past meeting UUID"},
+            },
+            "list_recordings": {
+                "from_date": {"type": "str", "required": False, "description": "Start date (YYYY-MM-DD)"},
+                "to_date": {"type": "str", "required": False, "description": "End date (YYYY-MM-DD)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "me":
+                result = await self._connector.me()
+                return StepResult(True, data=result)
+            
+            elif operation == "list_meetings":
+                results = await self._connector.list_meetings(
+                    type=params.get("type", "scheduled"),
+                    page_size=int(params.get("page_size", 30)),
+                )
+                return StepResult(True, data={"count": len(results), "meetings": results})
+            
+            elif operation == "get_meeting":
+                result = await self._connector.get_meeting(params["meeting_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "create_meeting":
+                result = await self._connector.create_meeting(
+                    topic=params["topic"],
+                    start_time=params.get("start_time"),
+                    duration=int(params.get("duration", 60)),
+                    timezone=params.get("timezone"),
+                    agenda=params.get("agenda"),
+                    password=params.get("password"),
+                    waiting_room=bool(params.get("waiting_room", False)),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "update_meeting":
+                await self._connector.update_meeting(
+                    meeting_id=params["meeting_id"],
+                    topic=params.get("topic"),
+                    start_time=params.get("start_time"),
+                    duration=int(params["duration"]) if params.get("duration") else None,
+                    agenda=params.get("agenda"),
+                )
+                return StepResult(True, data={"updated": True})
+            
+            elif operation == "delete_meeting":
+                await self._connector.delete_meeting(params["meeting_id"])
+                return StepResult(True, data={"deleted": True})
+            
+            elif operation == "get_participants":
+                results = await self._connector.get_meeting_participants(params["meeting_id"])
+                return StepResult(True, data={"count": len(results), "participants": results})
+            
+            elif operation == "list_recordings":
+                results = await self._connector.list_recordings(
+                    from_date=params.get("from_date"),
+                    to_date=params.get("to_date"),
+                )
+                return StepResult(True, data={"count": len(results), "recordings": results})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -7021,6 +7148,11 @@ class Apex:
         airtable_connector = c.get("airtable")
         if airtable_connector:
             self._primitives["AIRTABLE"] = AirtablePrimitive(airtable_connector)
+        
+        # Zoom — wire Zoom connector
+        zoom_connector = c.get("zoom")
+        if zoom_connector:
+            self._primitives["ZOOM"] = ZoomPrimitive(zoom_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

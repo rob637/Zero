@@ -680,6 +680,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .zoom import ZoomConnector
+            self.register(ConnectorMetadata(
+                name="zoom",
+                display_name="Zoom",
+                provider="zoom",
+                primitives=["MEETING", "CALENDAR"],
+                scopes=[],
+                connector_class=ZoomConnector,
+                description="Meetings, recordings, participants, and user profile via Zoom",
+                icon="zoom",
+                setup_url="https://marketplace.zoom.us/",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration
