@@ -536,6 +536,10 @@ async def get_services():
         for provider in store.list_providers():
             if store.has_valid(provider):
                 status_map[provider] = True
+                # Map provider-level credentials to individual service connectors
+                if provider == "microsoft":
+                    for svc in ["outlook", "outlook_calendar", "onedrive", "microsoft_todo", "onenote", "teams"]:
+                        status_map[svc] = True
     except Exception:
         pass
     
