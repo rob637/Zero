@@ -223,6 +223,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "trello": "trello",
         "airtable": "airtable",
         "zoom": "zoom",
+        "linkedin": "linkedin",
     }
     
     # Check which providers have valid credentials
@@ -250,6 +251,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "trello": "TRELLO_API_KEY",
         "airtable": "AIRTABLE_API_KEY",
         "zoom": "ZOOM_API_KEY",
+        "linkedin": "LINKEDIN_ACCESS_TOKEN",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):

@@ -697,6 +697,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .linkedin import LinkedInConnector
+            self.register(ConnectorMetadata(
+                name="linkedin",
+                display_name="LinkedIn",
+                provider="linkedin",
+                primitives=["SOCIAL", "NETWORK"],
+                scopes=[],
+                connector_class=LinkedInConnector,
+                description="Profile, posts, shares, and organization search via LinkedIn",
+                icon="linkedin",
+                setup_url="https://www.linkedin.com/developers/apps",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

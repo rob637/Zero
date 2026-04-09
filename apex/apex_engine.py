@@ -2730,6 +2730,101 @@ class ZoomPrimitive(Primitive):
 
 
 # ============================================================
+#  LINKEDIN PRIMITIVE
+# ============================================================
+
+class LinkedInPrimitive(Primitive):
+    """LinkedIn — profile, posts, shares, and organization search.
+    
+    Uses the LinkedIn REST API via LinkedInConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "LINKEDIN"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "me": "Get the current LinkedIn user's profile",
+            "create_post": "Create a text or article post on LinkedIn",
+            "get_posts": "Get the current user's recent posts",
+            "delete_post": "Delete a post",
+            "get_organization": "Get company/organization details by ID",
+            "search_companies": "Search for companies by keywords",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "me": {},
+            "create_post": {
+                "text": {"type": "str", "required": True, "description": "Post text content"},
+                "visibility": {"type": "str", "required": False, "description": "'PUBLIC' or 'CONNECTIONS' (default: PUBLIC)"},
+                "article_url": {"type": "str", "required": False, "description": "URL to share as an article"},
+                "article_title": {"type": "str", "required": False, "description": "Title for the article link"},
+                "article_description": {"type": "str", "required": False, "description": "Description for the article link"},
+            },
+            "get_posts": {
+                "limit": {"type": "int", "required": False, "description": "Max posts (default 10)"},
+            },
+            "delete_post": {
+                "post_urn": {"type": "str", "required": True, "description": "Post URN (e.g. urn:li:ugcPost:123456)"},
+            },
+            "get_organization": {
+                "org_id": {"type": "str", "required": True, "description": "Organization ID (numeric)"},
+            },
+            "search_companies": {
+                "keywords": {"type": "str", "required": True, "description": "Search keywords"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 10)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "me":
+                result = await self._connector.me()
+                return StepResult(True, data=result)
+            
+            elif operation == "create_post":
+                result = await self._connector.create_post(
+                    text=params["text"],
+                    visibility=params.get("visibility", "PUBLIC"),
+                    article_url=params.get("article_url"),
+                    article_title=params.get("article_title"),
+                    article_description=params.get("article_description"),
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "get_posts":
+                results = await self._connector.get_posts(
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data={"count": len(results), "posts": results})
+            
+            elif operation == "delete_post":
+                await self._connector.delete_post(params["post_urn"])
+                return StepResult(True, data={"deleted": True})
+            
+            elif operation == "get_organization":
+                result = await self._connector.get_organization(params["org_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "search_companies":
+                results = await self._connector.search_companies(
+                    keywords=params["keywords"],
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data={"count": len(results), "companies": results})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -7153,6 +7248,11 @@ class Apex:
         zoom_connector = c.get("zoom")
         if zoom_connector:
             self._primitives["ZOOM"] = ZoomPrimitive(zoom_connector)
+        
+        # LinkedIn — wire LinkedIn connector
+        linkedin_connector = c.get("linkedin")
+        if linkedin_connector:
+            self._primitives["LINKEDIN"] = LinkedInPrimitive(linkedin_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

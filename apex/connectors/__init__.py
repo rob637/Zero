@@ -151,6 +151,9 @@ from .airtable import AirtableConnector
 # Zoom
 from .zoom import ZoomConnector
 
+# LinkedIn
+from .linkedin import LinkedInConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -248,6 +251,8 @@ __all__ = [
     'AirtableConnector',
     # Zoom
     'ZoomConnector',
+    # LinkedIn
+    'LinkedInConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow
