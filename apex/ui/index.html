@@ -2371,6 +2371,185 @@
             font-weight: 600;
         }
         .welcome-section-label:first-child { margin-top: 0; }
+
+        /* Sidebar Quick Actions */
+        .sidebar-actions-section {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .sidebar-actions-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 8px;
+            margin-bottom: 6px;
+        }
+        .sidebar-actions-header .sidebar-section-title {
+            margin-bottom: 0;
+            padding: 0;
+        }
+        .sidebar-actions-edit-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+        .sidebar-actions-edit-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .sidebar-action-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 7px 10px;
+            border: none;
+            background: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-align: left;
+        }
+        .sidebar-action-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .sidebar-action-btn .action-icon {
+            font-size: 1rem;
+            width: 22px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .sidebar-action-btn .action-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .sidebar-action-group-label {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            padding: 8px 10px 2px;
+            font-weight: 600;
+        }
+        .sidebar-action-group-label:first-child {
+            padding-top: 0;
+        }
+        /* Edit mode */
+        .sidebar-action-btn.editing {
+            position: relative;
+        }
+        .sidebar-action-btn.editing .action-delete {
+            display: flex;
+        }
+        .action-delete {
+            display: none;
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+        .action-delete:hover {
+            color: var(--error);
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .sidebar-actions-add {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px dashed var(--border-light);
+            background: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+            transition: all 0.15s;
+        }
+        .sidebar-actions-add:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+            background: rgba(139, 92, 246, 0.05);
+        }
+        .sidebar-actions-reset {
+            display: block;
+            width: 100%;
+            text-align: center;
+            padding: 4px 0;
+            margin-top: 4px;
+            border: none;
+            background: none;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        .sidebar-actions-reset:hover {
+            color: var(--accent-primary);
+        }
+        /* Add/Edit action form */
+        .action-edit-form {
+            padding: 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            margin-top: 6px;
+        }
+        .action-edit-form input,
+        .action-edit-form textarea {
+            width: 100%;
+            padding: 6px 8px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.78rem;
+            font-family: inherit;
+            margin-bottom: 6px;
+            box-sizing: border-box;
+        }
+        .action-edit-form textarea {
+            resize: vertical;
+            min-height: 50px;
+        }
+        .action-edit-form input:focus,
+        .action-edit-form textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        .action-edit-form-btns {
+            display: flex;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+        .action-edit-form-btns button {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            cursor: pointer;
+            border: 1px solid var(--border-light);
+            background: var(--bg-hover);
+            color: var(--text-secondary);
+        }
+        .action-edit-form-btns button.save {
+            background: var(--accent-primary);
+            border-color: var(--accent-primary);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -2393,6 +2572,10 @@
                 <span class="sidebar-item-icon">🏠</span>
                 <span>Home</span>
             </div>
+        </div>
+        
+        <div class="sidebar-actions-section" id="sidebarActions">
+            <!-- Rendered by JS from localStorage / defaults -->
         </div>
         
         <div class="sidebar-section">
@@ -2469,42 +2652,7 @@
                     <div class="welcome-orb"></div>
                     <h1>Hey! I'm Ziggy</h1>
                     <p>Your AI that connects all your services and gets things done.</p>
-                    <div class="welcome-actions">
-                        <div class="welcome-section-label">Quick Actions</div>
-                        <div class="welcome-action" onclick="sendMessage('What\'s on my calendar today?')">
-                            <span class="welcome-action-icon">📅</span>
-                            <span>Today's schedule</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Check my email for anything important')">
-                            <span class="welcome-action-icon">📧</span>
-                            <span>Check email</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('What tasks do I have pending?')">
-                            <span class="welcome-action-icon">✅</span>
-                            <span>My tasks</span>
-                        </div>
-                        <div class="welcome-section-label">Cross-Service Intelligence</div>
-                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing — check my calendar, email, and tasks for today and give me a summary')">
-                            <span class="welcome-action-icon">☀️</span>
-                            <span>Morning Brief</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Look at my calendar for today. If I have any meetings coming up, find the attendees in my contacts and pull any recent emails from them so I can prepare')">
-                            <span class="welcome-action-icon">🎯</span>
-                            <span>Meeting Prep</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Check my email for anything that needs a reply. Draft responses in Slack or email as appropriate')">
-                            <span class="welcome-action-icon">⚡</span>
-                            <span>Smart Send</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Look through my recent photos and files from the last week. Create a summary of what I was up to — like a travel recap or weekly review')">
-                            <span class="welcome-action-icon">🗺️</span>
-                            <span>Travel Recap</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Be my life assistant — check what I have today, remind me of overdue tasks, tell me the weather, and suggest what music to play while I work')">
-                            <span class="welcome-action-icon">🧠</span>
-                            <span>Life Automate</span>
-                        </div>
-                    </div>
+                    <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">Use the <strong>Quick Actions</strong> in the sidebar to get started, or just type below.</p>
 
                     <!-- First-run setup (hidden until checkFirstRun detects no API key) -->
                     <div class="setup-card" id="setupCard" style="display: none;">
@@ -2576,6 +2724,162 @@
         let alertsPanelOpen = false;
         let alerts = [];
         let currentEditContext = null;  // For inline editing
+
+        // ============================================
+        // Sidebar Quick Actions (customizable)
+        // ============================================
+
+        const DEFAULT_QUICK_ACTIONS = [
+            { id: 'schedule', icon: '📅', label: "Today's schedule", prompt: "What's on my calendar today?", group: 'quick' },
+            { id: 'email', icon: '📧', label: 'Check email', prompt: 'Check my email for anything important', group: 'quick' },
+            { id: 'tasks', icon: '✅', label: 'My tasks', prompt: 'What tasks do I have pending?', group: 'quick' },
+            { id: 'brief', icon: '☀️', label: 'Morning Brief', prompt: 'Give me a morning briefing — check my calendar, email, and tasks for today and give me a summary', group: 'cross' },
+            { id: 'meetprep', icon: '🎯', label: 'Meeting Prep', prompt: 'Look at my calendar for today. If I have any meetings coming up, find the attendees in my contacts and pull any recent emails from them so I can prepare', group: 'cross' },
+            { id: 'smartsend', icon: '⚡', label: 'Smart Send', prompt: 'Check my email for anything that needs a reply. Draft responses in Slack or email as appropriate', group: 'cross' },
+            { id: 'travel', icon: '🗺️', label: 'Travel Recap', prompt: 'Look through my recent photos and files from the last week. Create a summary of what I was up to — like a travel recap or weekly review', group: 'cross' },
+            { id: 'life', icon: '🧠', label: 'Life Automate', prompt: 'Be my life assistant — check what I have today, remind me of overdue tasks, tell me the weather, and suggest what music to play while I work', group: 'cross' },
+        ];
+
+        let _quickActionsEditing = false;
+
+        function getQuickActions() {
+            try {
+                const saved = localStorage.getItem('ziggy_quick_actions');
+                if (saved) return JSON.parse(saved);
+            } catch (e) {}
+            return [...DEFAULT_QUICK_ACTIONS];
+        }
+
+        function saveQuickActions(actions) {
+            localStorage.setItem('ziggy_quick_actions', JSON.stringify(actions));
+        }
+
+        function renderSidebarActions() {
+            const container = document.getElementById('sidebarActions');
+            if (!container) return;
+            const actions = getQuickActions();
+            const editing = _quickActionsEditing;
+
+            let html = `<div class="sidebar-actions-header">
+                <div class="sidebar-section-title">Quick Actions</div>
+                <button class="sidebar-actions-edit-btn" onclick="toggleActionsEdit()" title="${editing ? 'Done' : 'Customize'}">${editing ? '✓ Done' : '✏️'}</button>
+            </div>`;
+
+            const quickActions = actions.filter(a => a.group === 'quick');
+            const crossActions = actions.filter(a => a.group === 'cross');
+
+            if (quickActions.length > 0) {
+                quickActions.forEach(a => { html += renderSidebarActionBtn(a, editing); });
+            }
+
+            if (crossActions.length > 0) {
+                html += `<div class="sidebar-action-group-label">Cross-Service</div>`;
+                crossActions.forEach(a => { html += renderSidebarActionBtn(a, editing); });
+            }
+
+            if (editing) {
+                html += `<button class="sidebar-actions-add" onclick="showAddActionForm()">＋ Add action</button>`;
+                html += `<button class="sidebar-actions-reset" onclick="resetQuickActions()">Reset to defaults</button>`;
+            }
+
+            html += `<div id="actionEditFormContainer"></div>`;
+            container.innerHTML = html;
+        }
+
+        function renderSidebarActionBtn(action, editing) {
+            const cls = editing ? ' editing' : '';
+            const deleteBtn = editing ? `<button class="action-delete" onclick="event.stopPropagation(); deleteAction('${action.id}')">✕</button>` : '';
+            return `<button class="sidebar-action-btn${cls}" onclick="${editing ? `editAction('${action.id}')` : `sendMessage(\`${action.prompt.replace(/`/g, '\\`')}\`)`}" title="${editing ? 'Click to edit' : action.prompt.substring(0, 80)}">
+                <span class="action-icon">${action.icon}</span>
+                <span class="action-label">${action.label}</span>
+                ${deleteBtn}
+            </button>`;
+        }
+
+        function toggleActionsEdit() {
+            _quickActionsEditing = !_quickActionsEditing;
+            renderSidebarActions();
+        }
+
+        function deleteAction(id) {
+            const actions = getQuickActions().filter(a => a.id !== id);
+            saveQuickActions(actions);
+            renderSidebarActions();
+        }
+
+        function resetQuickActions() {
+            localStorage.removeItem('ziggy_quick_actions');
+            renderSidebarActions();
+        }
+
+        function editAction(id) {
+            const actions = getQuickActions();
+            const action = actions.find(a => a.id === id);
+            if (!action) return;
+            showActionForm(action);
+        }
+
+        function showAddActionForm() {
+            showActionForm(null);
+        }
+
+        function showActionForm(action) {
+            const container = document.getElementById('actionEditFormContainer');
+            if (!container) return;
+            const isNew = !action;
+            const icon = action ? action.icon : '⭐';
+            const label = action ? action.label : '';
+            const prompt = action ? action.prompt : '';
+            const group = action ? action.group : 'quick';
+            const id = action ? action.id : '';
+
+            container.innerHTML = `<div class="action-edit-form">
+                <input type="text" id="actionFormIcon" value="${icon}" placeholder="Emoji icon" maxlength="4" style="width: 50px; text-align: center; display: inline-block;">
+                <input type="text" id="actionFormLabel" value="${label.replace(/"/g, '&quot;')}" placeholder="Button label">
+                <textarea id="actionFormPrompt" placeholder="What should Ziggy do?">${prompt.replace(/</g, '&lt;')}</textarea>
+                <div style="margin-bottom: 6px;">
+                    <label style="font-size: 0.72rem; color: var(--text-muted); cursor: pointer;">
+                        <input type="radio" name="actionGroup" value="quick" ${group === 'quick' ? 'checked' : ''}> Quick
+                    </label>
+                    <label style="font-size: 0.72rem; color: var(--text-muted); cursor: pointer; margin-left: 8px;">
+                        <input type="radio" name="actionGroup" value="cross" ${group === 'cross' ? 'checked' : ''}> Cross-Service
+                    </label>
+                </div>
+                <div class="action-edit-form-btns">
+                    <button onclick="closeActionForm()">Cancel</button>
+                    <button class="save" onclick="saveActionForm('${id}')">${isNew ? 'Add' : 'Save'}</button>
+                </div>
+            </div>`;
+        }
+
+        function closeActionForm() {
+            const container = document.getElementById('actionEditFormContainer');
+            if (container) container.innerHTML = '';
+        }
+
+        function saveActionForm(existingId) {
+            const icon = document.getElementById('actionFormIcon').value.trim() || '⭐';
+            const label = document.getElementById('actionFormLabel').value.trim();
+            const prompt = document.getElementById('actionFormPrompt').value.trim();
+            const group = document.querySelector('input[name="actionGroup"]:checked')?.value || 'quick';
+
+            if (!label || !prompt) return;
+
+            const actions = getQuickActions();
+            if (existingId) {
+                const idx = actions.findIndex(a => a.id === existingId);
+                if (idx >= 0) {
+                    actions[idx] = { ...actions[idx], icon, label, prompt, group };
+                }
+            } else {
+                const id = 'custom_' + Date.now();
+                actions.push({ id, icon, label, prompt, group });
+            }
+
+            saveQuickActions(actions);
+            closeActionForm();
+            renderSidebarActions();
+        }
 
         // ============================================
         // Markdown Rendering
@@ -3517,42 +3821,7 @@
                     <div class="welcome-orb"></div>
                     <h1>Hey! I'm Ziggy</h1>
                     <p>Your AI that connects all your services and gets things done.</p>
-                    <div class="welcome-actions">
-                        <div class="welcome-section-label">Quick Actions</div>
-                        <div class="welcome-action" onclick="sendMessage('What\\'s on my calendar today?')">
-                            <span class="welcome-action-icon">📅</span>
-                            <span>Today's schedule</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Check my email for anything important')">
-                            <span class="welcome-action-icon">📧</span>
-                            <span>Check email</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('What tasks do I have pending?')">
-                            <span class="welcome-action-icon">✅</span>
-                            <span>My tasks</span>
-                        </div>
-                        <div class="welcome-section-label">Cross-Service Intelligence</div>
-                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing — check my calendar, email, and tasks for today and give me a summary')">
-                            <span class="welcome-action-icon">☀️</span>
-                            <span>Morning Brief</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Look at my calendar for today. If I have any meetings coming up, find the attendees in my contacts and pull any recent emails from them so I can prepare')">
-                            <span class="welcome-action-icon">🎯</span>
-                            <span>Meeting Prep</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Check my email for anything that needs a reply. Draft responses in Slack or email as appropriate')">
-                            <span class="welcome-action-icon">⚡</span>
-                            <span>Smart Send</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Look through my recent photos and files from the last week. Create a summary of what I was up to — like a travel recap or weekly review')">
-                            <span class="welcome-action-icon">🗺️</span>
-                            <span>Travel Recap</span>
-                        </div>
-                        <div class="welcome-action" onclick="sendMessage('Be my life assistant — check what I have today, remind me of overdue tasks, tell me the weather, and suggest what music to play while I work')">
-                            <span class="welcome-action-icon">🧠</span>
-                            <span>Life Automate</span>
-                        </div>
-                    </div>
+                    <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">Use the <strong>Quick Actions</strong> in the sidebar to get started, or just type below.</p>
                 </div>
             `;
             
@@ -4968,13 +5237,11 @@
                 const data = await res.json();
                 
                 if (data.needs_setup) {
-                    // Show setup card, hide suggestion chips
+                    // Show setup card
                     document.getElementById('setupCard').style.display = '';
-                    document.querySelector('.welcome-actions').style.display = 'none';
                 } else {
                     // All good — show normal welcome
                     document.getElementById('setupCard').style.display = 'none';
-                    document.querySelector('.welcome-actions').style.display = '';
                 }
             } catch (e) {
                 // Server not reachable — don't block, just show normal UI
@@ -5032,10 +5299,9 @@
                 status.className = 'setup-status success';
                 status.textContent = '✓ API key saved! Ziggy is ready.';
                 
-                // Transition: hide setup, show suggestion chips
+                // Transition: hide setup
                 setTimeout(() => {
                     document.getElementById('setupCard').style.display = 'none';
-                    document.querySelector('.welcome-actions').style.display = '';
                 }, 1200);
                 
             } catch (e) {
@@ -5048,7 +5314,6 @@
         
         function skipSetup() {
             document.getElementById('setupCard').style.display = 'none';
-            document.querySelector('.welcome-actions').style.display = '';
         }
 
         // ============================================
@@ -5063,6 +5328,7 @@
             fetchAlerts();
             loadProviders();
             loadSessions();
+            renderSidebarActions();
         }, 500);
         
         // Periodic refresh
