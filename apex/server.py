@@ -887,7 +887,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
                 ]
                 scope_str = "%20".join(microsoft_scopes)
                 
-                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
+                redirect_uri = "http://localhost:8000/oauth/callback"
                 auth_url = (
                     f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
                     f"?client_id={client_id}"
@@ -1345,7 +1345,7 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
                             "client_secret": client_secret,
                             "grant_type": "authorization_code",
                             "code": code,
-                            "redirect_uri": "http://127.0.0.1:8000/oauth/callback",
+                            "redirect_uri": "http://localhost:8000/oauth/callback",
                         },
                         headers={"Content-Type": "application/x-www-form-urlencoded"},
                     )
