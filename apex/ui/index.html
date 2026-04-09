@@ -2134,7 +2134,243 @@
             .input-container { gap: 8px; }
             .send-btn { padding: 14px 16px; }
             .send-btn span:last-child { display: none; }
+            .canvas-cards { flex-direction: column; }
+            .canvas-card { min-width: unset; }
         }
+
+        /* ============================================ */
+        /* Living Canvas — Rich Result Cards */
+        /* ============================================ */
+        .canvas-cards {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+        .canvas-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 14px;
+            overflow: hidden;
+            flex: 1;
+            min-width: 280px;
+            max-width: 100%;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            animation: cardSlideUp 0.35s ease-out both;
+        }
+        .canvas-card:hover {
+            border-color: rgba(139, 92, 246, 0.35);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }
+        @keyframes cardSlideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .canvas-card-header {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .canvas-card-header .card-icon {
+            font-size: 1.1rem;
+        }
+        .canvas-card-body {
+            padding: 14px 16px;
+            font-size: 0.85rem;
+            line-height: 1.55;
+        }
+
+        /* Calendar cards */
+        .canvas-card.calendar .canvas-card-header {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0.04));
+            color: #818cf8;
+        }
+        .calendar-event {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .calendar-event:last-child { border-bottom: none; }
+        .cal-time {
+            min-width: 60px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #818cf8;
+            padding-top: 1px;
+        }
+        .cal-details {
+            flex: 1;
+        }
+        .cal-title {
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+        .cal-location {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Email cards */
+        .canvas-card.email .canvas-card-header {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.03));
+            color: #f87171;
+        }
+        .email-item {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .email-item:last-child { border-bottom: none; }
+        .email-from {
+            font-weight: 500;
+            color: var(--text-primary);
+            font-size: 0.82rem;
+        }
+        .email-subject {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            margin-top: 2px;
+        }
+        .email-snippet {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 3px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .email-meta {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Task cards */
+        .canvas-card.tasks .canvas-card-header {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.03));
+            color: #34d399;
+        }
+        .task-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .task-item:last-child { border-bottom: none; }
+        .task-check {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--border-light);
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .task-item.done .task-check {
+            background: var(--success);
+            border-color: var(--success);
+        }
+        .task-content {
+            font-size: 0.82rem;
+            color: var(--text-primary);
+        }
+        .task-due {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Weather card */
+        .canvas-card.weather .canvas-card-header {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(251, 191, 36, 0.03));
+            color: #fbbf24;
+        }
+        .weather-main {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 0;
+        }
+        .weather-temp {
+            font-size: 2.2rem;
+            font-weight: 300;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+        .weather-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        .weather-detail {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Music card */
+        .canvas-card.music .canvas-card-header {
+            background: linear-gradient(135deg, rgba(30, 215, 96, 0.12), rgba(30, 215, 96, 0.03));
+            color: #1ed760;
+        }
+
+        /* Files card */
+        .canvas-card.files .canvas-card-header {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.03));
+            color: #60a5fa;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .file-item:last-child { border-bottom: none; }
+        .file-icon {
+            font-size: 1.2rem;
+        }
+        .file-name {
+            font-weight: 500;
+            font-size: 0.82rem;
+            color: var(--text-primary);
+        }
+        .file-meta {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        /* Contacts card */
+        .canvas-card.contacts .canvas-card-header {
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(168, 85, 247, 0.03));
+            color: #c084fc;
+        }
+
+        /* Generic/info card */
+        .canvas-card.info .canvas-card-header {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.03));
+            color: #a78bfa;
+        }
+
+        /* Welcome action categories */
+        .welcome-section-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-top: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .welcome-section-label:first-child { margin-top: 0; }
     </style>
 </head>
 <body>
@@ -2234,6 +2470,7 @@
                     <h1>Hey! I'm Ziggy</h1>
                     <p>Your AI that connects all your services and gets things done.</p>
                     <div class="welcome-actions">
+                        <div class="welcome-section-label">Quick Actions</div>
                         <div class="welcome-action" onclick="sendMessage('What\'s on my calendar today?')">
                             <span class="welcome-action-icon">📅</span>
                             <span>Today's schedule</span>
@@ -2246,17 +2483,26 @@
                             <span class="welcome-action-icon">✅</span>
                             <span>My tasks</span>
                         </div>
-                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing')">
+                        <div class="welcome-section-label">Cross-Service Intelligence</div>
+                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing — check my calendar, email, and tasks for today and give me a summary')">
                             <span class="welcome-action-icon">☀️</span>
-                            <span>Morning briefing</span>
+                            <span>Morning Brief</span>
                         </div>
-                        <div class="welcome-action" onclick="sendMessage('Search my files for recent documents')">
-                            <span class="welcome-action-icon">📁</span>
-                            <span>Recent files</span>
+                        <div class="welcome-action" onclick="sendMessage('Look at my calendar for today. If I have any meetings coming up, find the attendees in my contacts and pull any recent emails from them so I can prepare')">
+                            <span class="welcome-action-icon">🎯</span>
+                            <span>Meeting Prep</span>
                         </div>
-                        <div class="welcome-action" onclick="sendMessage('What\'s the weather today?')">
-                            <span class="welcome-action-icon">🌤️</span>
-                            <span>Weather</span>
+                        <div class="welcome-action" onclick="sendMessage('Check my email for anything that needs a reply. Draft responses in Slack or email as appropriate')">
+                            <span class="welcome-action-icon">⚡</span>
+                            <span>Smart Send</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Look through my recent photos and files from the last week. Create a summary of what I was up to — like a travel recap or weekly review')">
+                            <span class="welcome-action-icon">🗺️</span>
+                            <span>Travel Recap</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Be my life assistant — check what I have today, remind me of overdue tasks, tell me the weather, and suggest what music to play while I work')">
+                            <span class="welcome-action-icon">🧠</span>
+                            <span>Life Automate</span>
                         </div>
                     </div>
 
@@ -2741,6 +2987,266 @@
             return toolParts.some(p => hintParts.some(h => p.length > 2 && h.length > 2 && (p.includes(h) || h.includes(p))));
         }
 
+        // ============================================
+        // Living Canvas — Rich Result Cards
+        // ============================================
+
+        function classifyTool(toolName) {
+            if (!toolName) return null;
+            const t = toolName.toLowerCase();
+            if (t.includes('calendar') || t.includes('schedule') || t.includes('event')) return 'calendar';
+            if (t.includes('email') || t.includes('gmail') || t.includes('mail') || t.includes('outlook') && !t.includes('calendar')) return 'email';
+            if (t.includes('task') || t.includes('todo')) return 'tasks';
+            if (t.includes('weather')) return 'weather';
+            if (t.includes('spotify') || t.includes('music') || t.includes('play')) return 'music';
+            if (t.includes('file') || t.includes('drive') || t.includes('document') || t.includes('search_files')) return 'files';
+            if (t.includes('contact')) return 'contacts';
+            if (t.includes('slack') || t.includes('discord') || t.includes('teams') || t.includes('message')) return 'messaging';
+            if (t.includes('news')) return 'news';
+            if (t.includes('photo') || t.includes('image')) return 'photos';
+            return null;
+        }
+
+        function escapeCardHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function formatTime(dt) {
+            if (!dt) return '';
+            try {
+                const d = new Date(dt);
+                if (isNaN(d)) return String(dt).slice(11, 16) || dt;
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch { return dt; }
+        }
+
+        function renderCalendarCard(items) {
+            if (!items || !items.length) return '';
+            const events = items.slice(0, 8);
+            const rows = events.map(e => {
+                const title = e.title || e.summary || e.subject || 'Untitled';
+                const start = formatTime(e.start || e.start_time || e.dateTime);
+                const end = formatTime(e.end || e.end_time);
+                const loc = e.location || '';
+                return `<div class="calendar-event">
+                    <div class="cal-time">${escapeCardHtml(start)}${end ? ' – ' + escapeCardHtml(end) : ''}</div>
+                    <div class="cal-details">
+                        <div class="cal-title">${escapeCardHtml(title)}</div>
+                        ${loc ? `<div class="cal-location">📍 ${escapeCardHtml(loc)}</div>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+            return `<div class="canvas-card calendar">
+                <div class="canvas-card-header"><span class="card-icon">📅</span>Calendar</div>
+                <div class="canvas-card-body">${rows}</div>
+            </div>`;
+        }
+
+        function renderEmailCard(items) {
+            if (!items || !items.length) return '';
+            const emails = items.slice(0, 6);
+            const rows = emails.map(e => {
+                const from = e.from || e.sender || e.from_name || '';
+                const subject = e.subject || e.title || 'No subject';
+                const snippet = e.snippet || e.preview || e.body_preview || '';
+                const date = e.date || e.received || e.received_at || '';
+                return `<div class="email-item">
+                    <div class="email-from">${escapeCardHtml(from)}</div>
+                    <div class="email-subject">${escapeCardHtml(subject)}</div>
+                    ${snippet ? `<div class="email-snippet">${escapeCardHtml(snippet)}</div>` : ''}
+                    ${date ? `<div class="email-meta">${escapeCardHtml(typeof date === 'string' ? date.slice(0, 16).replace('T', ' ') : date)}</div>` : ''}
+                </div>`;
+            }).join('');
+            return `<div class="canvas-card email">
+                <div class="canvas-card-header"><span class="card-icon">📧</span>Email</div>
+                <div class="canvas-card-body">${rows}</div>
+            </div>`;
+        }
+
+        function renderTasksCard(items) {
+            if (!items || !items.length) return '';
+            const tasks = items.slice(0, 8);
+            const rows = tasks.map(t => {
+                const title = t.title || t.content || t.name || 'Untitled';
+                const done = t.is_completed || t.status === 'completed' || t.status === 'done';
+                const due = t.due || t.due_date || t.due_string || '';
+                return `<div class="task-item ${done ? 'done' : ''}">
+                    <div class="task-check"></div>
+                    <div>
+                        <div class="task-content">${escapeCardHtml(title)}</div>
+                        ${due ? `<div class="task-due">Due: ${escapeCardHtml(due)}</div>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+            return `<div class="canvas-card tasks">
+                <div class="canvas-card-header"><span class="card-icon">✅</span>Tasks</div>
+                <div class="canvas-card-body">${rows}</div>
+            </div>`;
+        }
+
+        function renderWeatherCard(data) {
+            if (!data) return '';
+            // Handle various weather result shapes
+            const temp = data.temperature || data.temp || data.current?.temp || '';
+            const desc = data.description || data.conditions || data.current?.description || data.weather || '';
+            const humidity = data.humidity || data.current?.humidity || '';
+            const wind = data.wind_speed || data.wind || data.current?.wind_speed || '';
+            const location = data.location || data.city || data.name || '';
+            const icon = desc.toLowerCase().includes('sun') || desc.toLowerCase().includes('clear') ? '☀️'
+                : desc.toLowerCase().includes('cloud') ? '☁️'
+                : desc.toLowerCase().includes('rain') ? '🌧️'
+                : desc.toLowerCase().includes('snow') ? '❄️' : '🌤️';
+            return `<div class="canvas-card weather">
+                <div class="canvas-card-header"><span class="card-icon">🌤️</span>Weather${location ? ' — ' + escapeCardHtml(location) : ''}</div>
+                <div class="canvas-card-body">
+                    <div class="weather-main">
+                        <div style="font-size: 2rem;">${icon}</div>
+                        <div>
+                            ${temp ? `<div class="weather-temp">${escapeCardHtml(String(temp))}°</div>` : ''}
+                            ${desc ? `<div class="weather-desc">${escapeCardHtml(desc)}</div>` : ''}
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 16px; margin-top: 6px;">
+                        ${humidity ? `<div class="weather-detail">💧 ${escapeCardHtml(String(humidity))}%</div>` : ''}
+                        ${wind ? `<div class="weather-detail">💨 ${escapeCardHtml(String(wind))}</div>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function renderMusicCard(data) {
+            if (!data) return '';
+            const track = data.track || data.name || data.title || '';
+            const artist = data.artist || data.artists || '';
+            const status = data.status || data.action || 'playing';
+            return `<div class="canvas-card music">
+                <div class="canvas-card-header"><span class="card-icon">🎵</span>Now Playing</div>
+                <div class="canvas-card-body">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="font-size: 2rem;">🎶</div>
+                        <div>
+                            <div style="font-weight: 600; color: var(--text-primary);">${escapeCardHtml(track)}</div>
+                            ${artist ? `<div style="color: var(--text-muted); font-size: 0.8rem;">${escapeCardHtml(artist)}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function renderFilesCard(items) {
+            if (!items || !items.length) return '';
+            const files = items.slice(0, 6);
+            const fileTypeIcon = (name) => {
+                const n = (name || '').toLowerCase();
+                if (n.endsWith('.pdf')) return '📄';
+                if (n.endsWith('.doc') || n.endsWith('.docx')) return '📝';
+                if (n.endsWith('.xls') || n.endsWith('.xlsx') || n.endsWith('.csv')) return '📊';
+                if (n.endsWith('.ppt') || n.endsWith('.pptx')) return '📑';
+                if (n.endsWith('.jpg') || n.endsWith('.png') || n.endsWith('.gif')) return '🖼️';
+                if (n.endsWith('.mp4') || n.endsWith('.mov')) return '🎬';
+                return '📁';
+            };
+            const rows = files.map(f => {
+                const name = f.name || f.title || f.filename || 'Unknown';
+                const modified = f.modified || f.modifiedTime || f.updated || '';
+                return `<div class="file-item">
+                    <span class="file-icon">${fileTypeIcon(name)}</span>
+                    <div>
+                        <div class="file-name">${escapeCardHtml(name)}</div>
+                        ${modified ? `<div class="file-meta">${escapeCardHtml(typeof modified === 'string' ? modified.slice(0, 10) : modified)}</div>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+            return `<div class="canvas-card files">
+                <div class="canvas-card-header"><span class="card-icon">📁</span>Files</div>
+                <div class="canvas-card-body">${rows}</div>
+            </div>`;
+        }
+
+        function renderGenericCard(toolName, data) {
+            // Show a nice summary for unclassified tool results
+            const label = formatToolName(toolName);
+            let body = '';
+            if (typeof data === 'string') {
+                body = `<div style="color: var(--text-secondary); font-size: 0.82rem;">${escapeCardHtml(data.slice(0, 300))}</div>`;
+            } else if (Array.isArray(data)) {
+                body = `<div style="color: var(--text-muted); font-size: 0.78rem;">${data.length} result${data.length !== 1 ? 's' : ''} returned</div>`;
+            } else if (data && typeof data === 'object') {
+                const keys = Object.keys(data).slice(0, 4);
+                body = keys.map(k => {
+                    const v = typeof data[k] === 'string' ? data[k].slice(0, 80) : JSON.stringify(data[k]).slice(0, 80);
+                    return `<div style="margin: 3px 0; font-size: 0.8rem;"><span style="color: var(--text-muted);">${escapeCardHtml(k)}:</span> <span style="color: var(--text-secondary);">${escapeCardHtml(v)}</span></div>`;
+                }).join('');
+            }
+            if (!body) return '';
+            return `<div class="canvas-card info">
+                <div class="canvas-card-header"><span class="card-icon">${getServiceEmoji(toolName)}</span>${escapeCardHtml(label)}</div>
+                <div class="canvas-card-body">${body}</div>
+            </div>`;
+        }
+
+        function renderCanvasCards(steps) {
+            if (!steps || !steps.length) return '';
+            const cards = [];
+            const rendered = new Set(); // avoid duplicate card types
+
+            for (const step of steps) {
+                if (step.status !== 'completed' && step.status !== 'success') continue;
+                const result = step.result;
+                if (!result) continue;
+
+                const type = classifyTool(step.tool);
+                // For list-type results, get the array
+                const items = Array.isArray(result) ? result
+                    : (result.data && Array.isArray(result.data)) ? result.data
+                    : (result.items && Array.isArray(result.items)) ? result.items
+                    : (result.events && Array.isArray(result.events)) ? result.events
+                    : (result.emails && Array.isArray(result.emails)) ? result.emails
+                    : (result.messages && Array.isArray(result.messages)) ? result.messages
+                    : (result.tasks && Array.isArray(result.tasks)) ? result.tasks
+                    : (result.files && Array.isArray(result.files)) ? result.files
+                    : null;
+
+                const key = type || step.tool;
+                if (rendered.has(key)) continue;
+
+                let card = '';
+                switch (type) {
+                    case 'calendar':
+                        card = renderCalendarCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        break;
+                    case 'email':
+                        card = renderEmailCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        break;
+                    case 'tasks':
+                        card = renderTasksCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        break;
+                    case 'weather':
+                        card = renderWeatherCard(Array.isArray(result) ? result[0] : result);
+                        break;
+                    case 'music':
+                        card = renderMusicCard(Array.isArray(result) ? result[0] : result);
+                        break;
+                    case 'files':
+                    case 'photos':
+                        card = renderFilesCard(items || (result && !Array.isArray(result) ? [result] : null));
+                        break;
+                    default:
+                        // Skip generic cards, main response covers them
+                        break;
+                }
+
+                if (card) {
+                    rendered.add(key);
+                    cards.push(card);
+                }
+            }
+
+            if (!cards.length) return '';
+            return `<div class="canvas-cards">${cards.join('')}</div>`;
+        }
+
         function handleStreamEvent(event, activityEl) {
             const chat = document.getElementById('chat');
 
@@ -2798,7 +3304,9 @@
                         _blueprintSteps = null;
                     }
                     if (event.data?.response) {
-                        addMessage(event.data.response, 'assistant');
+                        // Living Canvas: render rich cards from tool results
+                        const canvasHtml = renderCanvasCards(event.data.steps || []);
+                        addMessage(event.data.response, 'assistant', canvasHtml);
                     }
                     loadSessions();
                     fetchAlerts();
@@ -2966,6 +3474,7 @@
                     <h1>Hey! I'm Ziggy</h1>
                     <p>Your AI that connects all your services and gets things done.</p>
                     <div class="welcome-actions">
+                        <div class="welcome-section-label">Quick Actions</div>
                         <div class="welcome-action" onclick="sendMessage('What\\'s on my calendar today?')">
                             <span class="welcome-action-icon">📅</span>
                             <span>Today's schedule</span>
@@ -2978,17 +3487,26 @@
                             <span class="welcome-action-icon">✅</span>
                             <span>My tasks</span>
                         </div>
-                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing')">
+                        <div class="welcome-section-label">Cross-Service Intelligence</div>
+                        <div class="welcome-action" onclick="sendMessage('Give me a morning briefing — check my calendar, email, and tasks for today and give me a summary')">
                             <span class="welcome-action-icon">☀️</span>
-                            <span>Morning briefing</span>
+                            <span>Morning Brief</span>
                         </div>
-                        <div class="welcome-action" onclick="sendMessage('Search my files for recent documents')">
-                            <span class="welcome-action-icon">📁</span>
-                            <span>Recent files</span>
+                        <div class="welcome-action" onclick="sendMessage('Look at my calendar for today. If I have any meetings coming up, find the attendees in my contacts and pull any recent emails from them so I can prepare')">
+                            <span class="welcome-action-icon">🎯</span>
+                            <span>Meeting Prep</span>
                         </div>
-                        <div class="welcome-action" onclick="sendMessage('What\\'s the weather today?')">
-                            <span class="welcome-action-icon">🌤️</span>
-                            <span>Weather</span>
+                        <div class="welcome-action" onclick="sendMessage('Check my email for anything that needs a reply. Draft responses in Slack or email as appropriate')">
+                            <span class="welcome-action-icon">⚡</span>
+                            <span>Smart Send</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Look through my recent photos and files from the last week. Create a summary of what I was up to — like a travel recap or weekly review')">
+                            <span class="welcome-action-icon">🗺️</span>
+                            <span>Travel Recap</span>
+                        </div>
+                        <div class="welcome-action" onclick="sendMessage('Be my life assistant — check what I have today, remind me of overdue tasks, tell me the weather, and suggest what music to play while I work')">
+                            <span class="welcome-action-icon">🧠</span>
+                            <span>Life Automate</span>
                         </div>
                     </div>
                 </div>
@@ -3033,7 +3551,8 @@
                 if (html) {
                     addMessage('', 'assistant', html);
                 }
-                addMessage(data.response, 'assistant');
+                const canvasHtml = renderCanvasCards(data.steps || []);
+                addMessage(data.response, 'assistant', canvasHtml);
             } else if (html) {
                 addMessage('', 'assistant', html);
             }
