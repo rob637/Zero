@@ -2290,7 +2290,8 @@ This week:
         # Get learned preferences
         prefs = await hub.get_preferences()
         if prefs:
-            pref_lines = [f"- {p.key}: {p.value} (confidence: {p.confidence:.0%})" for p in prefs[:8]]
+            pref_items = list(prefs.values())[:8] if isinstance(prefs, dict) else list(prefs)[:8]
+            pref_lines = [f"- {p.key}: {p.value} (confidence: {p.confidence:.0%})" for p in pref_items]
             parts.append("LEARNED USER PREFERENCES:\n" + "\n".join(pref_lines))
         
         # Get detected patterns
@@ -2327,6 +2328,8 @@ IMPORTANT BEHAVIORS:
 - When you find multiple matches, ask user which one they want
 - When information is missing, ask before guessing
 - Be conversational - explain what you're doing
+- LEARN: When you discover something useful about the user — their preferences, important people, which services/calendars/playlists they care about, how they like things done — use KNOWLEDGE.remember to store it. You have a persistent memory. Use it so you get better over time.
+- When a service has multiple accounts/calendars/folders, ask the user which ones they care about, remember their answer, and use it going forward.
 
 When complete, summarize what was done."""
     
