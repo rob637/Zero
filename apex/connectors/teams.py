@@ -86,14 +86,26 @@ class TeamsConnector:
         self._http = None
 
     async def connect(self):
-        """Initialize HTTP client. Tries MicrosoftAuth if no token."""
+        """Initialize HTTP client. Tries credential store, then MicrosoftAuth if no token."""
         if not self._token:
+            # Try credential store first (server OAuth flow)
+            try:
+                from .credentials import get_credential_store
+                store = get_credential_store()
+                store_token = store.get_token("microsoft")
+                if store_token:
+                    self._token = store_token
+            except Exception:
+                pass
+        
+        if not self._token:
+            # Try MSAL auth
             try:
                 from .microsoft_auth import MicrosoftAuth
                 auth = MicrosoftAuth()
-                token_data = await asyncio.to_thread(auth.get_token)
-                if token_data:
-                    self._token = token_data.get("access_token", "")
+                token = await auth.get_token()
+                if token:
+                    self._token = token
             except Exception as e:
                 logger.warning(f"Microsoft auth failed: {e}")
 
