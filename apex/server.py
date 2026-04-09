@@ -144,6 +144,8 @@ def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     # When rebuilding engine, also reset the react agent so it picks up new tools
     if force_rebuild:
         _react_agent = None
+        global _connectors_initialized
+        _connectors_initialized = False
     
     api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -292,6 +294,25 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
     
     return connectors
 
+
+async def _connect_engine_connectors(engine: TelicEngine):
+    """Connect all connectors that have an async connect() method.
+    
+    Called once after engine init from an async context.
+    Connectors that are already connected or fail to connect are skipped.
+    """
+    for key, connector in list(engine._connectors.items()):
+        if hasattr(connector, 'connect') and hasattr(connector, 'connected'):
+            if not connector.connected:
+                try:
+                    await connector.connect()
+                    if connector.connected:
+                        print(f"[ENGINE] Connected: {key}")
+                except Exception as e:
+                    print(f"[ENGINE] Connect failed for {key}: {e}")
+
+
+_connectors_initialized = False
 
 def get_react_agent() -> Optional[ReActAgent]:
     """Get or create the ReAct agent using Telic primitives."""
@@ -2013,6 +2034,12 @@ async def get_session_agent(force_new: bool = False) -> Optional[ReActAgent]:
     engine = get_telic_engine()
     if not engine:
         return None
+    
+    # Connect any connectors that need async initialization
+    global _connectors_initialized
+    if not _connectors_initialized:
+        await _connect_engine_connectors(engine)
+        _connectors_initialized = True
     
     # Use ALL primitives - let the LLM decide what's relevant
     tools = primitives_to_tools(engine._primitives)
