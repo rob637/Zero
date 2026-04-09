@@ -26,6 +26,8 @@ except ImportError:
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, HTMLResponse
@@ -96,8 +98,14 @@ except ImportError:
     GoogleAuth = None
     CalendarConnector = None
 
+@asynccontextmanager
+async def _lifespan(app):
+    await startup_event()
+    yield
+
+
 # Initialize
-app = FastAPI(title="Telic", description="AI Operating System")
+app = FastAPI(title="Telic", description="AI Operating System", lifespan=_lifespan)
 
 # CORS - restrict to known origins
 _cors_origins = [
@@ -449,7 +457,6 @@ def get_devtools() -> UnifiedDevTools:
     return _devtools
 
 
-@app.on_event("startup")
 async def startup_event():
     """Try to reconnect Google services if tokens exist from previous session."""
     global _google_calendar, _gmail_connector, _google_connected_services

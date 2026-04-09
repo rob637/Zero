@@ -1865,8 +1865,8 @@ class CalendarPrimitive(Primitive):
     def get_operations(self) -> Dict[str, str]:
         return {
             "create": "Create a calendar event (supports birthdays, meetings, reminders, recurring events)",
-            "list": "List events in a date range. By default queries the user's own calendars (not subscriptions). If you don't know which calendars matter to the user, use list_calendars first and ask.",
-            "list_calendars": "List all available calendars (name, id, access level). Use this to discover which calendars the user has, then ask which ones they care about and remember their preference.",
+            "list": "List events in a date range. By default queries ALL of the user's own calendars (not subscriptions) in a single call — no need to call list_calendars first. Only specify calendar_id if the user asks about a specific calendar.",
+            "list_calendars": "List all available calendars (name, id, access level). Only needed if the user explicitly asks about their calendars or you need to look up a calendar_id by name.",
             "search": "Search events by keyword",
             "delete": "Delete an event by ID",
             "availability": "Check free/busy times in a date range",
