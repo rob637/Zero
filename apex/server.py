@@ -272,6 +272,27 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         connected_providers.add("microsoft")
     
     # Instantiate connectors for connected providers
+    # Map connector init parameter names for token injection from credential store
+    _token_param_names = {
+        "spotify": "access_token",
+        "discord": "bot_token",
+        "slack": "token",
+        "github": "token",
+        "todoist": "api_token",
+        "telegram": "bot_token",
+        "notion": "api_key",
+        "linear": "api_key",
+        "trello": "api_key",
+        "hubspot": "access_token",
+        "stripe": "api_key",
+        "dropbox": "access_token",
+        "weather": "api_key",
+        "news": "api_key",
+        "airtable": "api_key",
+        "linkedin": "access_token",
+        "smartthings": "access_token",
+    }
+    
     for metadata in registry.list_connectors():
         engine_key = registry_to_engine.get(metadata.name)
         if not engine_key:
@@ -286,7 +307,14 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
             continue
         
         try:
-            instance = metadata.connector_class()
+            # Try to inject token from credential store
+            kwargs = {}
+            token = store.get_token(metadata.provider)
+            if token:
+                param_name = _token_param_names.get(metadata.provider, "access_token")
+                kwargs[param_name] = token
+            
+            instance = metadata.connector_class(**kwargs)
             connectors[engine_key] = instance
             print(f"[ENGINE] Auto-wired: {metadata.display_name} -> {engine_key}")
         except Exception as e:
@@ -302,12 +330,18 @@ async def _connect_engine_connectors(engine: TelicEngine):
     Connectors that are already connected or fail to connect are skipped.
     """
     for key, connector in list(engine._connectors.items()):
-        if hasattr(connector, 'connect') and hasattr(connector, 'connected'):
-            if not connector.connected:
+        if hasattr(connector, 'connect'):
+            # Check if already connected (supports .connected property or .is_connected() method)
+            is_connected = False
+            if hasattr(connector, 'connected'):
+                is_connected = connector.connected
+            elif hasattr(connector, 'is_connected'):
+                is_connected = connector.is_connected()
+            
+            if not is_connected:
                 try:
                     await connector.connect()
-                    if connector.connected:
-                        print(f"[ENGINE] Connected: {key}")
+                    print(f"[ENGINE] Connected: {key}")
                 except Exception as e:
                     print(f"[ENGINE] Connect failed for {key}: {e}")
 
