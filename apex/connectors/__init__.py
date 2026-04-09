@@ -139,6 +139,9 @@ from .resolver import (
     reset_resolver,
 )
 
+# Linear
+from .linear import LinearConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -228,6 +231,8 @@ __all__ = [
     'Article',
     # Notion
     'NotionConnector',
+    # Linear
+    'LinearConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

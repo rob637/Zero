@@ -629,6 +629,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .linear import LinearConnector
+            self.register(ConnectorMetadata(
+                name="linear",
+                display_name="Linear",
+                provider="linear",
+                primitives=["ISSUE", "PROJECT", "SPRINT"],
+                scopes=[],
+                connector_class=LinearConnector,
+                description="Issue tracking, projects, cycles, and teams via Linear",
+                icon="linear",
+                setup_url="https://linear.app/settings/api",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration

@@ -219,6 +219,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "weather": "weather",
         "news": "news",
         "notion": "notion",
+        "linear": "linear",
     }
     
     # Check which providers have valid credentials
@@ -242,6 +243,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "weather": "OPENWEATHERMAP_API_KEY",
         "news": "NEWSAPI_KEY",
         "notion": "NOTION_API_KEY",
+        "linear": "LINEAR_API_KEY",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):

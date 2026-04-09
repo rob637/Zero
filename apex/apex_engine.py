@@ -2098,6 +2098,164 @@ class NotionPrimitive(Primitive):
 
 
 # ============================================================
+#  LINEAR PRIMITIVE
+# ============================================================
+
+class LinearPrimitive(Primitive):
+    """Linear — issue tracking, projects, cycles, and teams.
+    
+    Uses the Linear GraphQL API via LinearConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "LINEAR"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "list_issues": "List issues with optional filters by team, status, or assignee",
+            "get_issue": "Get a single issue by ID or identifier (e.g. ENG-123)",
+            "create_issue": "Create a new issue in a team with title, description, priority, labels, etc.",
+            "update_issue": "Update an issue's title, description, status, priority, assignee, or due date",
+            "add_comment": "Add a comment to an issue",
+            "search_issues": "Full-text search across all issues",
+            "list_teams": "List all teams with members, statuses, and labels",
+            "list_cycles": "List cycles (sprints) with progress info",
+            "list_projects": "List projects with progress and team info",
+            "me": "Get the current authenticated user and their recent assigned issues",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "list_issues": {
+                "team_key": {"type": "str", "required": False, "description": "Team key to filter (e.g. 'ENG')"},
+                "status": {"type": "str", "required": False, "description": "Status name (e.g. 'In Progress', 'Done', 'Todo')"},
+                "assignee": {"type": "str", "required": False, "description": "Assignee name or 'me' for current user"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "get_issue": {
+                "issue_id": {"type": "str", "required": True, "description": "Issue UUID or identifier like 'ENG-123'"},
+            },
+            "create_issue": {
+                "title": {"type": "str", "required": True, "description": "Issue title"},
+                "team_key": {"type": "str", "required": True, "description": "Team key (e.g. 'ENG'). Use list_teams to find available teams."},
+                "description": {"type": "str", "required": False, "description": "Issue description (supports markdown)"},
+                "priority": {"type": "int", "required": False, "description": "0=No priority, 1=Urgent, 2=High, 3=Medium, 4=Low"},
+                "status": {"type": "str", "required": False, "description": "Status name (e.g. 'Todo', 'In Progress')"},
+                "labels": {"type": "list", "required": False, "description": "List of label names"},
+                "due_date": {"type": "str", "required": False, "description": "Due date (YYYY-MM-DD)"},
+                "estimate": {"type": "int", "required": False, "description": "Story points estimate"},
+            },
+            "update_issue": {
+                "issue_id": {"type": "str", "required": True, "description": "Issue UUID"},
+                "title": {"type": "str", "required": False, "description": "New title"},
+                "description": {"type": "str", "required": False, "description": "New description"},
+                "status": {"type": "str", "required": False, "description": "New status name"},
+                "priority": {"type": "int", "required": False, "description": "New priority (0-4)"},
+                "due_date": {"type": "str", "required": False, "description": "New due date (YYYY-MM-DD)"},
+                "estimate": {"type": "int", "required": False, "description": "New estimate"},
+            },
+            "add_comment": {
+                "issue_id": {"type": "str", "required": True, "description": "Issue UUID"},
+                "body": {"type": "str", "required": True, "description": "Comment text (supports markdown)"},
+            },
+            "search_issues": {
+                "query": {"type": "str", "required": True, "description": "Search text"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+            "list_teams": {},
+            "list_cycles": {
+                "team_key": {"type": "str", "required": False, "description": "Filter by team key"},
+                "limit": {"type": "int", "required": False, "description": "Max results (default 5)"},
+            },
+            "list_projects": {
+                "limit": {"type": "int", "required": False, "description": "Max results (default 10)"},
+            },
+            "me": {},
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "list_issues":
+                results = await self._connector.list_issues(
+                    team_key=params.get("team_key"),
+                    status=params.get("status"),
+                    assignee=params.get("assignee"),
+                    limit=int(params.get("limit", 20)),
+                )
+                return StepResult(True, data={"count": len(results), "issues": results})
+            
+            elif operation == "get_issue":
+                result = await self._connector.get_issue(params["issue_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "create_issue":
+                result = await self._connector.create_issue(
+                    title=params["title"],
+                    team_key=params["team_key"],
+                    description=params.get("description"),
+                    priority=int(params["priority"]) if params.get("priority") is not None else None,
+                    status=params.get("status"),
+                    labels=params.get("labels"),
+                    due_date=params.get("due_date"),
+                    estimate=int(params["estimate"]) if params.get("estimate") is not None else None,
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "update_issue":
+                result = await self._connector.update_issue(
+                    issue_id=params["issue_id"],
+                    title=params.get("title"),
+                    description=params.get("description"),
+                    status=params.get("status"),
+                    priority=int(params["priority"]) if params.get("priority") is not None else None,
+                    due_date=params.get("due_date"),
+                    estimate=int(params["estimate"]) if params.get("estimate") is not None else None,
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "add_comment":
+                result = await self._connector.add_comment(params["issue_id"], params["body"])
+                return StepResult(True, data=result)
+            
+            elif operation == "search_issues":
+                results = await self._connector.search_issues(
+                    query=params["query"],
+                    limit=int(params.get("limit", 20)),
+                )
+                return StepResult(True, data={"count": len(results), "issues": results})
+            
+            elif operation == "list_teams":
+                results = await self._connector.list_teams()
+                return StepResult(True, data={"count": len(results), "teams": results})
+            
+            elif operation == "list_cycles":
+                results = await self._connector.list_cycles(
+                    team_key=params.get("team_key"),
+                    limit=int(params.get("limit", 5)),
+                )
+                return StepResult(True, data={"count": len(results), "cycles": results})
+            
+            elif operation == "list_projects":
+                results = await self._connector.list_projects(
+                    limit=int(params.get("limit", 10)),
+                )
+                return StepResult(True, data={"count": len(results), "projects": results})
+            
+            elif operation == "me":
+                result = await self._connector.me()
+                return StepResult(True, data=result)
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -6501,6 +6659,11 @@ class Apex:
         notion_connector = c.get("notion")
         if notion_connector:
             self._primitives["NOTION"] = NotionPrimitive(notion_connector)
+        
+        # Linear — wire Linear connector
+        linear_connector = c.get("linear")
+        if linear_connector:
+            self._primitives["LINEAR"] = LinearPrimitive(linear_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None
