@@ -282,40 +282,32 @@ class CalendarConnector:
         errors = []
 
         async def _query_calendar(cal_id: str) -> List[CalendarEvent]:
-            list_kwargs = dict(
-                calendarId=cal_id,
-                timeMin=t_min,
-                timeMax=t_max,
-                maxResults=max_results,
-                singleEvents=single_events,
-                orderBy='startTime',
-                q=query,
-            )
-            last_err = None
-            for attempt in range(2):
-                try:
-                    if attempt == 0:
-                        print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={self._calendar_timezone})")
-                    else:
-                        print(f"[CALENDAR] Retrying {cal_id}...")
-                    request = self._service.events().list(**list_kwargs)
-                    result = await asyncio.to_thread(request.execute)
-                    items = result.get('items', [])
-                    print(f"[CALENDAR] {cal_id}: {len(items)} events found")
-                    return [self._parse_event(e) for e in items]
-                except Exception as e:
-                    last_err = e
-                    if attempt == 0 and "SSL" in str(e):
-                        await asyncio.sleep(0.3)
-                        continue
-                    break
-            print(f"[CALENDAR] Skipping calendar {cal_id}: {last_err}")
-            errors.append(f"{cal_id}: {last_err}")
-            return []
+            try:
+                list_kwargs = dict(
+                    calendarId=cal_id,
+                    timeMin=t_min,
+                    timeMax=t_max,
+                    maxResults=max_results,
+                    singleEvents=single_events,
+                    orderBy='startTime',
+                    q=query,
+                )
+                print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={self._calendar_timezone})")
+                request = self._service.events().list(**list_kwargs)
+                result = await asyncio.to_thread(request.execute)
+                items = result.get('items', [])
+                print(f"[CALENDAR] {cal_id}: {len(items)} events found")
+                return [self._parse_event(e) for e in items]
+            except Exception as e:
+                print(f"[CALENDAR] Skipping calendar {cal_id}: {e}")
+                errors.append(f"{cal_id}: {e}")
+                return []
 
-        # Query all calendars in parallel
-        results = await asyncio.gather(*[_query_calendar(cid) for cid in calendar_ids])
-        all_events = [evt for batch in results for evt in batch]
+        # Query calendars sequentially — httplib2 is not thread-safe,
+        # so parallel asyncio.to_thread calls on the same service cause SSL errors.
+        all_events = []
+        for cid in calendar_ids:
+            all_events.extend(await _query_calendar(cid))
         
         # If ALL calendars failed, raise so caller knows it's an error, not an empty day
         if errors and not all_events:
