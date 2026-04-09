@@ -90,8 +90,21 @@
             -webkit-text-fill-color: transparent;
         }
         
+        .sidebar-scroll {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        .sidebar-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .sidebar-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+        }
         .sidebar-section {
-            padding: 16px 12px;
+            padding: 12px 12px;
         }
         
         .sidebar-section-title {
@@ -131,8 +144,8 @@
         }
         .sidebar-collapsible-content {
             overflow: hidden;
-            transition: max-height 0.25s ease, opacity 0.2s ease;
-            max-height: 600px;
+            transition: max-height 0.3s ease, opacity 0.2s ease;
+            max-height: 500px;
             opacity: 1;
         }
         .sidebar-collapsible-content.collapsed {
@@ -191,8 +204,6 @@
         
         /* Session history in sidebar */
         .session-list {
-            flex: 1;
-            overflow-y: auto;
             min-height: 0;
         }
         .session-item {
@@ -2375,6 +2386,7 @@
         /* Sidebar Quick Actions */
         .sidebar-actions-section {
             padding: 8px 12px;
+            border-top: 1px solid var(--border-subtle);
             border-bottom: 1px solid var(--border-subtle);
         }
         .sidebar-actions-header {
@@ -2566,6 +2578,7 @@
             <span class="logo-text">Ziggy</span>
         </div>
         
+        <div class="sidebar-scroll">
         <div class="sidebar-section">
             <div class="sidebar-section-title">Main</div>
             <div class="sidebar-item active">
@@ -2600,6 +2613,7 @@
                 <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.75rem;">No sessions yet</div>
             </div>
         </div>
+        </div><!-- end sidebar-scroll -->
         
         <div class="sidebar-footer">
             <div class="user-card" onclick="openSettings()">
