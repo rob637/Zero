@@ -337,52 +337,7 @@
             margin-bottom: 16px;
         }
 
-        /* Connect All Box */
-        .connect-all-box {
-            background: linear-gradient(135deg, rgba(66, 133, 244, 0.1), rgba(52, 168, 83, 0.1));
-            border: 1px solid rgba(66, 133, 244, 0.3);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-        .connect-all-btn {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px 24px;
-            background: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: #333;
-            cursor: pointer;
-            transition: all 0.2s;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        .connect-all-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-        .connect-all-btn:disabled {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-        .google-icon {
-            display: flex;
-        }
-        .connect-all-desc {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-        }
-        .connect-all-box.all-connected {
-            background: rgba(16, 185, 129, 0.1);
-            border-color: rgba(16, 185, 129, 0.3);
-        }
+
 
         /* Modal */
         .dev-mode-btn {
@@ -516,7 +471,7 @@
             <span class="logo-text">Ziggy</span>
         </a>
         <span class="header-title">Setup & Connections</span>
-        <a href="/" class="back-link">← Back to Chat</a>
+        <a href="/" class="back-link">← Back to Ziggy</a>
     </header>
 
     <div class="container">
@@ -532,22 +487,6 @@
                 <h2 class="section-title">Just Sign In</h2>
             </div>
             <p class="difficulty-desc">Click connect, sign in with your account, done. No setup required.</p>
-            
-            <!-- Connect All Google Button -->
-            <div class="connect-all-box" id="connectAllGoogle">
-                <button class="connect-all-btn" onclick="connectAllGoogle()">
-                    <span class="google-icon">
-                        <svg viewBox="0 0 24 24" width="20" height="20">
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                        </svg>
-                    </span>
-                    Connect All Google Services
-                </button>
-                <span class="connect-all-desc">Gmail, Calendar, Drive, Contacts, Sheets, Slides, Photos — all at once</span>
-            </div>
             
             <div class="capabilities-grid" id="oneClickGrid">
                 <!-- Populated by JS -->
@@ -780,51 +719,7 @@
             }
         }
 
-        async function connectAllGoogle() {
-            const btn = document.querySelector('.connect-all-btn');
-            const originalText = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<span class="google-icon"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span> Connecting...';
-            
-            try {
-                // Request all Google scopes at once
-                const allScopes = 'calendar,gmail,drive,contacts,sheets,slides,photos';
-                const res = await fetch(`${API}/oauth/start/google?scopes=${allScopes}`);
-                const data = await res.json();
-                
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-                
-                // Open popup for OAuth
-                const width = 500;
-                const height = 600;
-                const left = (screen.width - width) / 2;
-                const top = (screen.height - height) / 2;
-                
-                oauthPopup = window.open(
-                    data.auth_url,
-                    'oauth_popup',
-                    `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
-                );
-                
-                btn.innerHTML = '<span class="google-icon"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span> Waiting for authorization...';
-                
-                // Poll for popup close
-                const pollInterval = setInterval(() => {
-                    if (oauthPopup && oauthPopup.closed) {
-                        clearInterval(pollInterval);
-                        btn.innerHTML = originalText;
-                        btn.disabled = false;
-                    }
-                }, 500);
-                
-            } catch (e) {
-                showToast(`Error: ${e.message}`, 'error');
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-            }
-        }
+
 
         function connectService(id, name, provider) {
             currentService = { id, name, provider };
