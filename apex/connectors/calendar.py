@@ -279,6 +279,8 @@ class CalendarConnector:
             t_min = time_min.isoformat() + 'Z'
             t_max = time_max.isoformat() + 'Z'
 
+        errors = []
+
         async def _query_calendar(cal_id: str) -> List[CalendarEvent]:
             try:
                 list_kwargs = dict(
@@ -298,11 +300,16 @@ class CalendarConnector:
                 return [self._parse_event(e) for e in items]
             except Exception as e:
                 print(f"[CALENDAR] Skipping calendar {cal_id}: {e}")
+                errors.append(f"{cal_id}: {e}")
                 return []
 
         # Query all calendars in parallel
         results = await asyncio.gather(*[_query_calendar(cid) for cid in calendar_ids])
         all_events = [evt for batch in results for evt in batch]
+        
+        # If ALL calendars failed, raise so caller knows it's an error, not an empty day
+        if errors and not all_events:
+            raise RuntimeError(f"Could not reach Google Calendar ({len(errors)} calendars failed: {errors[0]})")
         
         # Sort all events by start time
         all_events.sort(key=lambda e: e.start)

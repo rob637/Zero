@@ -1865,7 +1865,8 @@ class CalendarPrimitive(Primitive):
     def get_operations(self) -> Dict[str, str]:
         return {
             "create": "Create a calendar event (supports birthdays, meetings, reminders, recurring events)",
-            "list": "List events in a date range",
+            "list": "List events in a date range. By default queries the user's own calendars (not subscriptions). If you don't know which calendars matter to the user, use list_calendars first and ask.",
+            "list_calendars": "List all available calendars (name, id, access level). Use this to discover which calendars the user has, then ask which ones they care about and remember their preference.",
             "search": "Search events by keyword",
             "delete": "Delete an event by ID",
             "availability": "Check free/busy times in a date range",
@@ -1893,6 +1894,7 @@ class CalendarPrimitive(Primitive):
             "search": {
                 "query": {"type": "str", "required": True, "description": "Search term"},
             },
+            "list_calendars": {},
             "delete": {
                 "id": {"type": "str", "required": True, "description": "Event ID to delete"},
             },
@@ -2055,6 +2057,12 @@ class CalendarPrimitive(Primitive):
                 
                 filtered.sort(key=lambda e: e.get("start", ""))
                 return StepResult(True, data=filtered[:limit])
+            
+            elif operation == "list_calendars":
+                if self._list_calendars_func:
+                    calendars = await self._list_calendars_func()
+                    return StepResult(True, data=calendars)
+                return StepResult(False, error="No calendar provider connected")
             
             elif operation == "search":
                 if self._list_func:
