@@ -419,6 +419,156 @@
             font-size: 1.2rem;
         }
 
+        /* First-run setup card */
+        .setup-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 28px 32px;
+            max-width: 460px;
+            width: 100%;
+            text-align: left;
+            margin-top: 8px;
+        }
+        .setup-card h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+        .setup-card .setup-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 18px;
+            line-height: 1.5;
+        }
+        .setup-card .setup-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .setup-card .step-num {
+            width: 24px;
+            height: 24px;
+            min-width: 24px;
+            border-radius: 50%;
+            background: var(--accent-primary);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .setup-card .step-num.done {
+            background: var(--success);
+        }
+        .setup-card .step-content {
+            flex: 1;
+        }
+        .setup-card .step-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .setup-card .step-hint {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+        .setup-card .step-hint a {
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+        .setup-card .step-hint a:hover {
+            text-decoration: underline;
+        }
+        .setup-provider-btns {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .setup-provider-btn {
+            flex: 1;
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid var(--border-light);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .setup-provider-btn:hover {
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
+        }
+        .setup-provider-btn.selected {
+            border-color: var(--accent-primary);
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--text-primary);
+        }
+        .setup-key-input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border-light);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            outline: none;
+            margin-bottom: 12px;
+        }
+        .setup-key-input:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+        .setup-key-input::placeholder {
+            color: var(--text-muted);
+        }
+        .setup-save-btn {
+            width: 100%;
+            padding: 11px;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .setup-save-btn:hover {
+            opacity: 0.9;
+        }
+        .setup-save-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .setup-status {
+            text-align: center;
+            font-size: 0.85rem;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+        .setup-status.error { color: var(--error); }
+        .setup-status.success { color: var(--success); }
+        .setup-skip {
+            display: block;
+            text-align: center;
+            margin-top: 14px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        .setup-skip:hover {
+            color: var(--text-secondary);
+        }
+
         /* Messages */
         .message {
             max-width: 75%;
@@ -1786,6 +1936,40 @@
                             <span class="welcome-action-icon">🌤️</span>
                             <span>Weather</span>
                         </div>
+                    </div>
+
+                    <!-- First-run setup (hidden until checkFirstRun detects no API key) -->
+                    <div class="setup-card" id="setupCard" style="display: none;">
+                        <h2>🔑 Quick Setup</h2>
+                        <p class="setup-desc">Ziggy needs an AI provider to think. This takes 30 seconds.</p>
+                        
+                        <div class="setup-step">
+                            <div class="step-num" id="setupStep1Num">1</div>
+                            <div class="step-content">
+                                <div class="step-label">Choose your AI provider</div>
+                                <div class="setup-provider-btns">
+                                    <button class="setup-provider-btn" onclick="selectProvider('anthropic')">Anthropic (Claude)</button>
+                                    <button class="setup-provider-btn" onclick="selectProvider('openai')">OpenAI (GPT)</button>
+                                </div>
+                                <div class="step-hint" id="providerHint"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="setup-step">
+                            <div class="step-num">2</div>
+                            <div class="step-content">
+                                <div class="step-label">Paste your API key</div>
+                                <input type="password" class="setup-key-input" id="apiKeyInput" 
+                                       placeholder="sk-..." autocomplete="off" 
+                                       onkeydown="if(event.key==='Enter') submitApiKey()">
+                            </div>
+                        </div>
+                        
+                        <button class="setup-save-btn" id="setupSaveBtn" onclick="submitApiKey()" disabled>
+                            Save & Start Chatting
+                        </button>
+                        <div class="setup-status" id="setupStatus"></div>
+                        <span class="setup-skip" onclick="skipSetup()">I'll set it up later via environment variables</span>
                     </div>
                 </div>
             </div>
@@ -4107,17 +4291,114 @@
         }
 
         // ============================================
+        // First-Run Setup
+        // ============================================
+        
+        let selectedProvider = null;
+        
+        async function checkFirstRun() {
+            try {
+                const res = await fetch(`${API}/api/setup-status`);
+                if (!res.ok) return;
+                const data = await res.json();
+                
+                if (data.needs_setup) {
+                    // Show setup card, hide suggestion chips
+                    document.getElementById('setupCard').style.display = '';
+                    document.querySelector('.welcome-actions').style.display = 'none';
+                } else {
+                    // All good — show normal welcome
+                    document.getElementById('setupCard').style.display = 'none';
+                    document.querySelector('.welcome-actions').style.display = '';
+                }
+            } catch (e) {
+                // Server not reachable — don't block, just show normal UI
+                console.warn('Setup status check failed:', e);
+            }
+        }
+        
+        function selectProvider(provider) {
+            selectedProvider = provider;
+            // Update button states
+            document.querySelectorAll('.setup-provider-btn').forEach(btn => {
+                btn.classList.toggle('selected', btn.textContent.toLowerCase().includes(provider));
+            });
+            // Show hint with link
+            const hints = {
+                anthropic: 'Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>',
+                openai: 'Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>'
+            };
+            document.getElementById('providerHint').innerHTML = hints[provider];
+            // Enable save if key is also filled
+            updateSaveBtn();
+        }
+        
+        function updateSaveBtn() {
+            const key = document.getElementById('apiKeyInput').value.trim();
+            document.getElementById('setupSaveBtn').disabled = !(selectedProvider && key.length >= 10);
+        }
+        
+        // Listen for input on the key field
+        document.getElementById('apiKeyInput')?.addEventListener('input', updateSaveBtn);
+        
+        async function submitApiKey() {
+            const key = document.getElementById('apiKeyInput').value.trim();
+            if (!selectedProvider || key.length < 10) return;
+            
+            const btn = document.getElementById('setupSaveBtn');
+            const status = document.getElementById('setupStatus');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            status.className = 'setup-status';
+            status.textContent = '';
+            
+            try {
+                const res = await fetch(`${API}/api/set-api-key`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: selectedProvider, api_key: key })
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Failed to save key');
+                }
+                
+                status.className = 'setup-status success';
+                status.textContent = '✓ API key saved! Ziggy is ready.';
+                
+                // Transition: hide setup, show suggestion chips
+                setTimeout(() => {
+                    document.getElementById('setupCard').style.display = 'none';
+                    document.querySelector('.welcome-actions').style.display = '';
+                }, 1200);
+                
+            } catch (e) {
+                status.className = 'setup-status error';
+                status.textContent = e.message || 'Failed to save. Try setting the environment variable manually.';
+                btn.disabled = false;
+                btn.textContent = 'Save & Start Chatting';
+            }
+        }
+        
+        function skipSetup() {
+            document.getElementById('setupCard').style.display = 'none';
+            document.querySelector('.welcome-actions').style.display = '';
+        }
+
+        // ============================================
         // Initialization
         // ============================================
         
         document.getElementById('input').focus();
         
-        // Check alerts, load providers, and load sessions on startup
+        // Check first-run status, then load everything
         setTimeout(() => {
+            checkFirstRun();
             fetchAlerts();
             loadProviders();
             loadSessions();
-        }, 1000);
+        }, 500);
         
         // Periodic refresh
         setInterval(fetchAlerts, 30 * 1000);  // Every 30s for responsiveness

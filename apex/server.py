@@ -4859,6 +4859,77 @@ async def health():
     }
 
 
+@app.get("/api/setup-status")
+async def setup_status():
+    """Lightweight first-run check — tells the UI what the user still needs to configure."""
+    has_llm = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    
+    # Which LLM provider is set
+    llm_provider = None
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        llm_provider = "anthropic"
+    elif os.environ.get("OPENAI_API_KEY"):
+        llm_provider = "openai"
+    
+    # Count connected services
+    connected = []
+    try:
+        cred_manager = get_credential_manager()
+        for svc in cred_manager.list_services():
+            if svc.get("has_access_token"):
+                connected.append(svc.get("name"))
+    except Exception:
+        pass
+    
+    return {
+        "ready": has_llm,
+        "llm_configured": has_llm,
+        "llm_provider": llm_provider,
+        "connected_services": connected,
+        "needs_setup": not has_llm,
+    }
+
+
+class ApiKeyRequest(BaseModel):
+    """Request to set an API key."""
+    provider: str  # "anthropic" or "openai"
+    api_key: str
+
+
+@app.post("/api/set-api-key")
+async def set_api_key(req: ApiKeyRequest):
+    """Set the LLM API key at runtime and persist to .env file."""
+    if req.provider not in ("anthropic", "openai"):
+        raise HTTPException(status_code=400, detail="Provider must be 'anthropic' or 'openai'")
+    
+    if not req.api_key or len(req.api_key) < 10:
+        raise HTTPException(status_code=400, detail="Invalid API key")
+    
+    # Set in current process
+    env_var = "ANTHROPIC_API_KEY" if req.provider == "anthropic" else "OPENAI_API_KEY"
+    os.environ[env_var] = req.api_key
+    
+    # Persist to .env file so it survives restarts
+    env_path = Path(__file__).parent / ".env"
+    existing_lines = []
+    if env_path.exists():
+        existing_lines = env_path.read_text().splitlines()
+    
+    # Replace or append
+    found = False
+    for i, line in enumerate(existing_lines):
+        if line.startswith(f"{env_var}="):
+            existing_lines[i] = f"{env_var}={req.api_key}"
+            found = True
+            break
+    if not found:
+        existing_lines.append(f"{env_var}={req.api_key}")
+    
+    env_path.write_text("\n".join(existing_lines) + "\n")
+    
+    return {"success": True, "provider": req.provider, "message": f"{env_var} configured and saved."}
+
+
 # ============================================================================
 # CONNECTOR REGISTRY ENDPOINTS
 # ============================================================================
