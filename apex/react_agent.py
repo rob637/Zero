@@ -103,7 +103,7 @@ class ReActAgent:
     def _default_system_prompt(self) -> str:
         return """You are a helpful AI assistant that can perform actions on the user's behalf.
 
-Use the available tools to accomplish what the user asks. Call tools ONE AT A TIME, observe the result, then decide what to do next.
+Use the available tools to accomplish what the user asks. You can call multiple tools in parallel when the calls are independent of each other.
 
 IMPORTANT BEHAVIORS:
 - If a search returns multiple results, ASK the user which one they want before proceeding
@@ -202,7 +202,7 @@ When you have completed the task, respond with a summary of what was done."""
     
     async def _execute_loop(self) -> AgentState:
         """Main execution loop."""
-        max_iterations = 20  # Safety limit
+        max_iterations = 40  # Safety limit
         
         for _ in range(max_iterations):
             # Call LLM with tools

@@ -315,7 +315,9 @@ This week:
 
 {date_context}
 
-Use the available tools to accomplish what the user asks. Call tools ONE AT A TIME, observe the result, then decide what to do next.
+Use the available tools to accomplish what the user asks. You can call multiple tools in parallel when the calls are independent.
+
+Be efficient — don't repeat searches with slight variations. If a search returns no results, broaden the query or try a different approach.
 
 IMPORTANT BEHAVIORS:
 - If a search returns multiple results, STOP and ask the user which one they want
@@ -2332,7 +2334,9 @@ This week:
 {date_context}
 
 You have access to the user's email, calendar, files, tasks, and other services.
-Use tools to accomplish what the user asks. Call tools ONE AT A TIME, observe results, then decide next steps.
+Use tools to accomplish what the user asks. You can call multiple tools in parallel when the calls are independent.
+
+Be efficient — don't repeat searches with slight variations. If a search returns no results, broaden the query or try a different approach rather than retrying similar queries.
 
 CONVERSATION CONTEXT:
 - You have full memory of this conversation session
