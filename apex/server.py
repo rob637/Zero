@@ -221,6 +221,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "notion": "notion",
         "linear": "linear",
         "trello": "trello",
+        "airtable": "airtable",
     }
     
     # Check which providers have valid credentials
@@ -246,6 +247,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "notion": "NOTION_API_KEY",
         "linear": "LINEAR_API_KEY",
         "trello": "TRELLO_API_KEY",
+        "airtable": "AIRTABLE_API_KEY",
     }
     for provider, env_var in env_tokens.items():
         if os.environ.get(env_var):

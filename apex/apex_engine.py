@@ -2462,6 +2462,147 @@ class TrelloPrimitive(Primitive):
 
 
 # ============================================================
+#  AIRTABLE PRIMITIVE
+# ============================================================
+
+class AirtablePrimitive(Primitive):
+    """Airtable — bases, tables, and records.
+    
+    Uses the Airtable REST API via AirtableConnector.
+    """
+    
+    def __init__(self, connector: Any):
+        self._connector = connector
+    
+    @property
+    def name(self) -> str:
+        return "AIRTABLE"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "list_bases": "List all Airtable bases accessible to the token",
+            "get_base_schema": "Get the schema (tables and fields) for a base",
+            "list_records": "List records from a table with optional filters, sorting, and field selection",
+            "get_record": "Get a single record by ID",
+            "create_records": "Create one or more records in a table (max 10 per call)",
+            "update_records": "Update one or more records (max 10 per call)",
+            "delete_records": "Delete one or more records by ID (max 10 per call)",
+            "search_records": "Search for records where a field contains a value",
+        }
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "list_bases": {},
+            "get_base_schema": {
+                "base_id": {"type": "str", "required": True, "description": "Base ID (starts with 'app')"},
+            },
+            "list_records": {
+                "base_id": {"type": "str", "required": True, "description": "Base ID"},
+                "table_name": {"type": "str", "required": True, "description": "Table name or ID"},
+                "view": {"type": "str", "required": False, "description": "View name or ID to filter by"},
+                "formula": {"type": "str", "required": False, "description": "Airtable formula filter (e.g. \"{Status}='Active'\")"},
+                "sort": {"type": "list", "required": False, "description": "Sort list [{field, direction}]"},
+                "fields": {"type": "list", "required": False, "description": "Field names to include"},
+                "max_records": {"type": "int", "required": False, "description": "Max records (default 100)"},
+            },
+            "get_record": {
+                "base_id": {"type": "str", "required": True, "description": "Base ID"},
+                "table_name": {"type": "str", "required": True, "description": "Table name or ID"},
+                "record_id": {"type": "str", "required": True, "description": "Record ID (starts with 'rec')"},
+            },
+            "create_records": {
+                "base_id": {"type": "str", "required": True, "description": "Base ID"},
+                "table_name": {"type": "str", "required": True, "description": "Table name or ID"},
+                "records": {"type": "list", "required": True, "description": "List of field dicts, e.g. [{\"Name\": \"Test\"}]"},
+            },
+            "update_records": {
+                "base_id": {"type": "str", "required": True, "description": "Base ID"},
+                "table_name": {"type": "str", "required": True, "description": "Table name or ID"},
+                "records": {"type": "list", "required": True, "description": "List of {id, fields} dicts"},
+            },
+            "delete_records": {
+                "base_id": {"type": "str", "required": True, "description": "Base ID"},
+                "table_name": {"type": "str", "required": True, "description": "Table name or ID"},
+                "record_ids": {"type": "list", "required": True, "description": "List of record IDs to delete"},
+            },
+            "search_records": {
+                "base_id": {"type": "str", "required": True, "description": "Base ID"},
+                "table_name": {"type": "str", "required": True, "description": "Table name or ID"},
+                "field": {"type": "str", "required": True, "description": "Field name to search in"},
+                "value": {"type": "str", "required": True, "description": "Value to search for"},
+                "max_records": {"type": "int", "required": False, "description": "Max results (default 20)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        try:
+            if operation == "list_bases":
+                results = await self._connector.list_bases()
+                return StepResult(True, data={"count": len(results), "bases": results})
+            
+            elif operation == "get_base_schema":
+                result = await self._connector.get_base_schema(params["base_id"])
+                return StepResult(True, data=result)
+            
+            elif operation == "list_records":
+                results = await self._connector.list_records(
+                    base_id=params["base_id"],
+                    table_name=params["table_name"],
+                    view=params.get("view"),
+                    formula=params.get("formula"),
+                    sort=params.get("sort"),
+                    fields=params.get("fields"),
+                    max_records=int(params.get("max_records", 100)),
+                )
+                return StepResult(True, data={"count": len(results), "records": results})
+            
+            elif operation == "get_record":
+                result = await self._connector.get_record(
+                    params["base_id"], params["table_name"], params["record_id"],
+                )
+                return StepResult(True, data=result)
+            
+            elif operation == "create_records":
+                results = await self._connector.create_records(
+                    base_id=params["base_id"],
+                    table_name=params["table_name"],
+                    records=params["records"],
+                )
+                return StepResult(True, data={"count": len(results), "records": results})
+            
+            elif operation == "update_records":
+                results = await self._connector.update_records(
+                    base_id=params["base_id"],
+                    table_name=params["table_name"],
+                    records=params["records"],
+                )
+                return StepResult(True, data={"count": len(results), "records": results})
+            
+            elif operation == "delete_records":
+                results = await self._connector.delete_records(
+                    base_id=params["base_id"],
+                    table_name=params["table_name"],
+                    record_ids=params["record_ids"],
+                )
+                return StepResult(True, data={"count": len(results), "deleted": results})
+            
+            elif operation == "search_records":
+                results = await self._connector.search_records(
+                    base_id=params["base_id"],
+                    table_name=params["table_name"],
+                    field=params["field"],
+                    value=params["value"],
+                    max_records=int(params.get("max_records", 20)),
+                )
+                return StepResult(True, data={"count": len(results), "records": results})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
 #  NOTIFY PRIMITIVE
 # ============================================================
 
@@ -6875,6 +7016,11 @@ class Apex:
         trello_connector = c.get("trello")
         if trello_connector:
             self._primitives["TRELLO"] = TrelloPrimitive(trello_connector)
+        
+        # Airtable — wire Airtable connector
+        airtable_connector = c.get("airtable")
+        if airtable_connector:
+            self._primitives["AIRTABLE"] = AirtablePrimitive(airtable_connector)
         
         # Notify — wire DesktopNotify connector
         notify_send = None

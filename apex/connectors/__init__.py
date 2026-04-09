@@ -145,6 +145,9 @@ from .linear import LinearConnector
 # Trello
 from .trello import TrelloConnector
 
+# Airtable
+from .airtable import AirtableConnector
+
 # Desktop notifications
 from .desktop_notify import DesktopNotifyConnector
 
@@ -238,6 +241,8 @@ __all__ = [
     'LinearConnector',
     # Trello
     'TrelloConnector',
+    # Airtable
+    'AirtableConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
     # OAuth Flow

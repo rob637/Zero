@@ -663,6 +663,23 @@ class ConnectorRegistry:
             ))
         except ImportError:
             pass
+        
+        try:
+            from .airtable import AirtableConnector
+            self.register(ConnectorMetadata(
+                name="airtable",
+                display_name="Airtable",
+                provider="airtable",
+                primitives=["DATABASE", "SPREADSHEET"],
+                scopes=[],
+                connector_class=AirtableConnector,
+                description="Bases, tables, records, and field management via Airtable",
+                icon="airtable",
+                setup_url="https://airtable.com/create/tokens",
+                requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
     
     # ========================================================================
     # Registration
