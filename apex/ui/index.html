@@ -1472,41 +1472,13 @@
         </div>
         
         <div class="sidebar-section">
-            <div class="sidebar-section-title">Connected Services</div>
-            <div class="sidebar-item" id="googleStatus" onclick="connectGoogle()">
-                <span class="sidebar-item-icon">📧</span>
-                <span>Google</span>
-                <div class="service-status">
-                    <span class="status-dot" id="googleDot"></span>
-                </div>
+            <div class="sidebar-section-title">Providers</div>
+            <div id="providersList">
+                <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.8rem;">Loading...</div>
             </div>
-            <div class="sidebar-item" id="microsoftStatus" onclick="connectMicrosoft()">
-                <span class="sidebar-item-icon">📨</span>
-                <span>Microsoft</span>
-                <div class="service-status">
-                    <span class="status-dot" id="microsoftDot"></span>
-                </div>
-            </div>
-            <div class="sidebar-item" onclick="connectGitHub()">
-                <span class="sidebar-item-icon">🐙</span>
-                <span>GitHub</span>
-                <div class="service-status">
-                    <span class="status-dot" id="githubDot"></span>
-                </div>
-            </div>
-            <div class="sidebar-item" onclick="connectJira()">
-                <span class="sidebar-item-icon">📊</span>
-                <span>Jira</span>
-                <div class="service-status">
-                    <span class="status-dot" id="jiraDot"></span>
-                </div>
-            </div>
-            <div class="sidebar-item" onclick="connectSlack()">
-                <span class="sidebar-item-icon">💬</span>
-                <span>Slack</span>
-                <div class="service-status">
-                    <span class="status-dot" id="slackDot"></span>
-                </div>
+            <div class="sidebar-item" onclick="window.location.href='/setup'" style="margin-top: 4px;">
+                <span class="sidebar-item-icon">➕</span>
+                <span>Manage Connections</span>
             </div>
         </div>
         
@@ -2498,11 +2470,11 @@
             list.innerHTML = alerts.map(a => `
                 <div class="alert-card" data-id="${a.id}">
                     <div class="alert-card-header">
-                        <span class="alert-icon">${typeIcons[a.alert_type] || '💡'}</span>
+                        <span class="alert-icon">${typeIcons[a.type] || '💡'}</span>
                         <span class="alert-title priority-${a.priority}">${a.title}</span>
                     </div>
                     <div class="alert-message">${a.message}</div>
-                    <div class="alert-source">${a.source || ''}</div>
+                    <div class="alert-source">${a.source_service || ''}</div>
                     <div class="alert-actions">
                         <button class="alert-btn alert-btn-primary" onclick="acknowledgeAlert('${a.id}')">Got it</button>
                         <button class="alert-btn alert-btn-secondary" onclick="dismissAlert('${a.id}')">Dismiss</button>
@@ -2628,132 +2600,63 @@
         }
         
         // ============================================
-        // Service Connections
+        // Service Connections (Dynamic from /services)
         // ============================================
         
-        async function connectGoogle() {
-            setThinking(true);
+        const providerIcons = {
+            google: '🔵',
+            microsoft: '🟦',
+            github: '🐙',
+            atlassian: '📊',
+            slack: '💬',
+            spotify: '🎵',
+            discord: '🎮',
+            dropbox: '📦',
+            twilio: '📱',
+            smartthings: '🏠',
+            todoist: '✅',
+            twitter: '🐦',
+        };
+        
+        async function loadProviders() {
             try {
-                // First check status
-                const statusRes = await fetch(`${API}/google/status`);
-                const status = await statusRes.json();
+                const res = await fetch(`${API}/services`);
+                const data = await res.json();
+                const services = data.services || [];
                 
-                if (!status.has_credentials_file) {
-                    setThinking(false);
-                    addMessage(`**Google Calendar Setup Required**\n\n${status.setup_instructions || 'Please set up OAuth credentials.'}\n\nOnce you have the credentials file, click Google again to connect.`, 'system');
+                // Group by provider
+                const providers = {};
+                for (const svc of services) {
+                    const p = svc.provider || 'other';
+                    if (!providers[p]) providers[p] = { connected: 0, total: 0, services: [] };
+                    providers[p].total++;
+                    if (svc.connected) providers[p].connected++;
+                    providers[p].services.push(svc);
+                }
+                
+                const list = document.getElementById('providersList');
+                if (!Object.keys(providers).length) {
+                    list.innerHTML = '<div class="sidebar-item" style="color: var(--text-muted); font-size: 0.8rem;">No providers available</div>';
                     return;
                 }
                 
-                if (status.connected) {
-                    setThinking(false);
-                    const calList = status.calendars.map(c => `• ${c.summary}${c.primary ? ' (primary)' : ''}`).join('\n');
-                    addMessage(`**Already connected to Google Calendar!**\n\nAvailable calendars:\n${calList}`, 'assistant');
-                    document.getElementById('googleDot').classList.add('connected');
-                    return;
-                }
-                
-                // Trigger OAuth flow
-                addMessage('Opening browser for Google sign-in...', 'system');
-                const connectRes = await fetch(`${API}/google/connect`, { method: 'POST' });
-                const result = await connectRes.json();
-                setThinking(false);
-                
-                if (result.success) {
-                    document.getElementById('googleDot').classList.add('connected');
-                    const calList = result.calendars.map(c => `• ${c.summary}${c.primary ? ' (primary)' : ''}`).join('\n');
-                    addMessage(`✅ **Connected to Google Calendar!**\n\nAvailable calendars:\n${calList}\n\nYou can now create events with "add X to my calendar"`, 'assistant');
-                } else {
-                    addMessage(`❌ ${result.error}${result.setup_instructions ? '\n\n' + result.setup_instructions : ''}`, 'system');
-                }
+                list.innerHTML = Object.entries(providers).map(([name, info]) => {
+                    const icon = providerIcons[name] || '🔗';
+                    const label = name.charAt(0).toUpperCase() + name.slice(1);
+                    const dotClass = info.connected > 0 ? 'connected' : '';
+                    const count = info.connected > 0 ? `${info.connected}/${info.total}` : '';
+                    return `
+                        <div class="sidebar-item" onclick="window.location.href='/setup'">
+                            <span class="sidebar-item-icon">${icon}</span>
+                            <span>${label}</span>
+                            <div class="service-status">
+                                ${count ? `<span style="font-size:0.7rem;color:var(--text-muted)">${count}</span>` : ''}
+                                <span class="status-dot ${dotClass}"></span>
+                            </div>
+                        </div>`;
+                }).join('');
             } catch(e) {
-                setThinking(false);
-                addMessage(`Failed to connect to Google: ${e.message}`, 'system');
-            }
-        }
-
-        async function connectMicrosoft() {
-            addMessage(`**Microsoft Integration**\n\nOutlook Calendar/Email requires Azure AD setup:\n\n1. Register an app at portal.azure.com\n2. Add Calendar.ReadWrite, Mail.ReadWrite permissions\n3. Create a client secret\n4. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in .env\n\nFor now, calendar events are saved locally to ~/.telic/calendar.json`, 'system');
-        }
-
-        async function connectGitHub() {
-            setThinking(true);
-            try {
-                const res = await fetch(`${API}/intelligence/devtools/connect/github`, { method: 'POST' });
-                const data = await res.json();
-                setThinking(false);
-                
-                if (data.success) {
-                    document.getElementById('githubDot').classList.add('connected');
-                    addMessage(`✅ Connected to GitHub as **${data.user}**`, 'assistant');
-                } else {
-                    addMessage(`Set GITHUB_TOKEN environment variable to connect GitHub.`, 'system');
-                }
-            } catch(e) {
-                setThinking(false);
-                addMessage('Failed to connect GitHub.', 'system');
-            }
-        }
-        
-        async function connectJira() {
-            setThinking(true);
-            try {
-                const res = await fetch(`${API}/intelligence/devtools/connect/jira`, { method: 'POST' });
-                const data = await res.json();
-                setThinking(false);
-                
-                if (data.success) {
-                    document.getElementById('jiraDot').classList.add('connected');
-                    addMessage(`✅ Connected to Jira as **${data.user}**`, 'assistant');
-                } else {
-                    addMessage(`Set JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN to connect Jira.`, 'system');
-                }
-            } catch(e) {
-                setThinking(false);
-                addMessage('Failed to connect Jira.', 'system');
-            }
-        }
-        
-        async function connectSlack() {
-            setThinking(true);
-            try {
-                const res = await fetch(`${API}/intelligence/devtools/connect/slack`, { method: 'POST' });
-                const data = await res.json();
-                setThinking(false);
-                
-                if (data.success) {
-                    document.getElementById('slackDot').classList.add('connected');
-                    addMessage(`✅ Connected to Slack as **${data.user}**`, 'assistant');
-                } else {
-                    addMessage(`Set SLACK_BOT_TOKEN environment variable to connect Slack.`, 'system');
-                }
-            } catch(e) {
-                setThinking(false);
-                addMessage('Set SLACK_BOT_TOKEN to connect Slack.', 'system');
-            }
-        }
-        
-        async function checkServiceStatus() {
-            try {
-                // Check general health
-                const res = await fetch(`${API}/health`);
-                const data = await res.json();
-                
-                // Update service indicators based on response
-                if (data.services) {
-                    if (data.services.microsoft) document.getElementById('microsoftDot').classList.add('connected');
-                    if (data.services.github) document.getElementById('githubDot').classList.add('connected');
-                    if (data.services.jira) document.getElementById('jiraDot').classList.add('connected');
-                    if (data.services.slack) document.getElementById('slackDot').classList.add('connected');
-                }
-                
-                // Check Google Calendar separately (uses real OAuth)
-                const googleRes = await fetch(`${API}/google/status`);
-                const googleData = await googleRes.json();
-                if (googleData.connected) {
-                    document.getElementById('googleDot').classList.add('connected');
-                }
-            } catch(e) {
-                console.log('Could not check service status');
+                console.log('Could not load providers');
             }
         }
 
@@ -3264,14 +3167,15 @@
         
         document.getElementById('input').focus();
         
-        // Check alerts and service status on load
+        // Check alerts and load providers on startup
         setTimeout(() => {
             fetchAlerts();
-            checkServiceStatus();
+            loadProviders();
         }, 1000);
         
         // Periodic refresh
         setInterval(fetchAlerts, 60 * 1000);
+        setInterval(loadProviders, 60 * 1000);
     </script>
 </body>
 </html>

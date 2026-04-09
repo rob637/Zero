@@ -460,6 +460,40 @@ async def startup_event():
     except Exception as e:
         print(f"[STARTUP] Google reconnect failed: {e}")
 
+    # Start ProactiveMonitor with any connected services
+    try:
+        monitor = get_proactive_monitor()
+        
+        # Connect Google services if available
+        if _google_calendar and _google_calendar.connected:
+            monitor.connect_service("calendar", _google_calendar)
+        if _gmail_connector:
+            monitor.connect_service("email", _gmail_connector)
+        
+        # Connect services available via env vars
+        if os.environ.get("GITHUB_TOKEN"):
+            try:
+                from connectors.github import GitHubConnector
+                gh = GitHubConnector()
+                if await gh.connect():
+                    monitor.connect_service("github", gh)
+            except Exception:
+                pass
+        
+        if os.environ.get("SLACK_BOT_TOKEN"):
+            try:
+                from connectors.slack import SlackConnector
+                sl = SlackConnector()
+                if await sl.connect():
+                    monitor.connect_service("slack", sl)
+            except Exception:
+                pass
+        
+        await monitor.start()
+        print(f"[STARTUP] ProactiveMonitor started with services: {list(monitor._service_adapters.keys())}")
+    except Exception as e:
+        print(f"[STARTUP] ProactiveMonitor start failed (non-fatal): {e}")
+
 
 # Request models
 class SubmitRequest(BaseModel):
@@ -3240,7 +3274,7 @@ async def start_monitoring():
     monitor = get_proactive_monitor()
     await monitor.start()
     return JSONResponse({
-        "running": monitor.is_running,
+        "running": monitor._state.value == "running",
         "stats": monitor.get_stats(),
     })
 
@@ -3251,7 +3285,7 @@ async def stop_monitoring():
     monitor = get_proactive_monitor()
     await monitor.stop()
     return JSONResponse({
-        "running": monitor.is_running,
+        "running": monitor._state.value == "running",
         "stats": monitor.get_stats(),
     })
 
@@ -3261,10 +3295,10 @@ async def monitor_status():
     """Get monitoring status."""
     monitor = get_proactive_monitor()
     return JSONResponse({
-        "running": monitor.is_running,
-        "paused": monitor._paused,
+        "running": monitor._state.value == "running",
+        "paused": monitor._state.value == "paused",
         "stats": monitor.get_stats(),
-        "connected_services": list(monitor._services.keys()),
+        "connected_services": list(monitor._service_adapters.keys()),
     })
 
 
