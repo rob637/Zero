@@ -3846,10 +3846,14 @@
         async function openIntelDashboard() {
             try {
                 const [statsRes, patternsRes, memoryRes] = await Promise.all([
-                    fetch(`${API}/intelligence/stats`).then(r => r.json()).catch(() => null),
-                    fetch(`${API}/intelligence/patterns`).then(r => r.json()).catch(() => null),
-                    fetch(`${API}/intelligence/memory`).then(r => r.json()).catch(() => null),
+                    fetch(`${API}/intelligence/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch(`${API}/intelligence/patterns`).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch(`${API}/intelligence/memory`).then(r => r.ok ? r.json() : null).catch(() => null),
                 ]);
+                
+                if (!statsRes && !patternsRes && !memoryRes) {
+                    throw new Error('All intelligence endpoints failed');
+                }
                 
                 const mem = statsRes?.memory || {};
                 const prefs = statsRes?.preferences || {};
@@ -3950,6 +3954,22 @@
                 document.body.insertAdjacentHTML('beforeend', html);
             } catch (e) {
                 console.error('Intelligence dashboard error:', e);
+                const errHtml = `
+                    <div class="modal-overlay" onclick="closeIntelDashboard()" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;" id="intelDashboard">
+                        <div class="audit-log-modal" onclick="event.stopPropagation()" style="width:min(400px,90vw);">
+                            <div class="modal-header">
+                                <span class="modal-title">🧠 Intelligence Dashboard</span>
+                                <button class="modal-close" onclick="closeIntelDashboard()">✕</button>
+                            </div>
+                            <div style="padding:30px;text-align:center;">
+                                <div style="font-size:2rem;margin-bottom:12px;">⚠️</div>
+                                <div style="font-weight:600;margin-bottom:6px;">Dashboard unavailable</div>
+                                <div style="color:var(--text-muted);font-size:0.8rem;">Could not load intelligence data. Make sure the server is running.</div>
+                                <button class="btn btn-reject" onclick="closeIntelDashboard()" style="margin-top:16px;">Close</button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.insertAdjacentHTML('beforeend', errHtml);
             }
         }
         
