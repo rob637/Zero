@@ -103,6 +103,42 @@
             padding: 0 8px;
             margin-bottom: 8px;
         }
+        .sidebar-section-title.collapsible {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            user-select: none;
+        }
+        .sidebar-section-title.collapsible:hover {
+            background: var(--bg-hover);
+        }
+        .sidebar-section-title .chevron {
+            font-size: 0.6rem;
+            transition: transform 0.2s ease;
+        }
+        .sidebar-section-title .chevron.collapsed {
+            transform: rotate(-90deg);
+        }
+        .sidebar-section-title .section-badge {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        .sidebar-collapsible-content {
+            overflow: hidden;
+            transition: max-height 0.25s ease, opacity 0.2s ease;
+            max-height: 600px;
+            opacity: 1;
+        }
+        .sidebar-collapsible-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+        }
         
         .sidebar-item {
             display: flex;
@@ -1967,13 +2003,18 @@
         </div>
         
         <div class="sidebar-section">
-            <div class="sidebar-section-title">Providers</div>
-            <div id="providersList">
-                <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.8rem;">Loading...</div>
+            <div class="sidebar-section-title collapsible" onclick="toggleProviders()">
+                <span>Providers <span class="section-badge" id="providersBadge"></span></span>
+                <span class="chevron collapsed" id="providersChevron">▼</span>
             </div>
-            <div class="sidebar-item" onclick="window.location.href='/setup'" style="margin-top: 4px;">
-                <span class="sidebar-item-icon">➕</span>
-                <span>Manage Connections</span>
+            <div class="sidebar-collapsible-content collapsed" id="providersCollapsible">
+                <div id="providersList">
+                    <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.8rem;">Loading...</div>
+                </div>
+                <div class="sidebar-item" onclick="window.location.href='/setup'" style="margin-top: 4px;">
+                    <span class="sidebar-item-icon">➕</span>
+                    <span>Manage Connections</span>
+                </div>
             </div>
         </div>
         
@@ -3232,6 +3273,15 @@
             todoist: '✅',
             twitter: '🐦',
         };
+
+        function toggleProviders() {
+            const content = document.getElementById('providersCollapsible');
+            const chevron = document.getElementById('providersChevron');
+            if (content && chevron) {
+                content.classList.toggle('collapsed');
+                chevron.classList.toggle('collapsed');
+            }
+        }
         
         async function loadProviders() {
             try {
@@ -3255,6 +3305,12 @@
                     return;
                 }
                 
+                // Update badge with summary
+                const totalConnected = Object.values(providers).reduce((s, p) => s + p.connected, 0);
+                const totalAll = Object.values(providers).reduce((s, p) => s + p.total, 0);
+                const badge = document.getElementById('providersBadge');
+                if (badge) badge.textContent = `${totalConnected}/${totalAll} connected`;
+
                 list.innerHTML = Object.entries(providers).map(([name, info]) => {
                     const icon = providerIcons[name] || '🔗';
                     const label = name.charAt(0).toUpperCase() + name.slice(1);
