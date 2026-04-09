@@ -486,7 +486,7 @@
                 <span class="difficulty-badge">⚡ One-Click</span>
                 <h2 class="section-title">Just Sign In</h2>
             </div>
-            <p class="difficulty-desc">Click connect, sign in with your account, done. Requires CLIENT_ID & CLIENT_SECRET in your .env file.</p>
+            <p class="difficulty-desc">Click connect, sign in with your account, done. No setup required.</p>
             
             <div class="capabilities-grid" id="oneClickGrid">
                 <!-- Populated by JS -->
@@ -670,25 +670,6 @@
                 placeholder: 'Your Trello API key',
             },
         };
-
-        // OAuth developer console links (for getting CLIENT_ID / CLIENT_SECRET)
-        const oauthSetupLinks = {
-            google: { name: 'Google', url: 'https://console.cloud.google.com/apis/credentials' },
-            microsoft: { name: 'Microsoft', url: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade' },
-            discord: { name: 'Discord', url: 'https://discord.com/developers/applications' },
-            slack: { name: 'Slack', url: 'https://api.slack.com/apps' },
-            github: { name: 'GitHub', url: 'https://github.com/settings/developers' },
-            spotify: { name: 'Spotify', url: 'https://developer.spotify.com/dashboard' },
-            dropbox: { name: 'Dropbox', url: 'https://www.dropbox.com/developers/apps' },
-            todoist: { name: 'Todoist', url: 'https://developer.todoist.com/appconsole.html' },
-            notion: { name: 'Notion', url: 'https://www.notion.so/my-integrations' },
-            hubspot: { name: 'HubSpot', url: 'https://developers.hubspot.com/' },
-            atlassian: { name: 'Atlassian', url: 'https://developer.atlassian.com/console/myapps/' },
-            zoom: { name: 'Zoom', url: 'https://marketplace.zoom.us/develop/create' },
-            reddit: { name: 'Reddit', url: 'https://www.reddit.com/prefs/apps' },
-            linkedin: { name: 'LinkedIn', url: 'https://www.linkedin.com/developers/apps' },
-            twitter: { name: 'Twitter/X', url: 'https://developer.x.com/en/portal/dashboard' },
-        };
         
         // Listen for OAuth popup callback
         window.addEventListener('message', (event) => {
@@ -772,11 +753,6 @@
                             const tc = tokenConfig[s.provider] || tokenConfig[s.id];
                             if (tc) {
                                 linksHtml += `<div style="font-size:0.75rem;margin-top:4px;">${tc.help}</div>`;
-                            }
-                        } else if (section === 'oneClick') {
-                            const link = oauthSetupLinks[s.provider];
-                            if (link) {
-                                linksHtml += `<div style="font-size:0.75rem;margin-top:4px;"><a href="${link.url}" target="_blank" style="color:var(--accent-primary);text-decoration:none;">🔗 ${link.name} Developer Console</a></div>`;
                             }
                         }
                     });
