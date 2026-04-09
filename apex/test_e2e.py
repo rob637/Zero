@@ -385,11 +385,8 @@ async def test_apex_engine():
     
     apex = Apex()  # Will work even without API key for direct calls
     
-    # Add test contact
-    apex.add_contact("Fred", "fred@example.com")
-    
-    # Test direct primitive access
-    compute = apex.get_primitive("COMPUTE")
+    # Test direct primitive access via _primitives dict
+    compute = apex._primitives["COMPUTE"]
     result = await compute.execute("formula", {
         "name": "amortization",
         "inputs": {"principal": 100000, "rate": 5.0, "term_months": 180},
@@ -398,7 +395,7 @@ async def test_apex_engine():
     print(f"✓ Direct primitive access: $100k at 5%/15yr = ${result.data['monthly_payment']}/mo")
     
     # List capabilities
-    caps = apex.list_capabilities()
+    caps = {name: prim.get_operations() for name, prim in apex._primitives.items()}
     print(f"✓ Capabilities: {', '.join(caps.keys())}")
     
     total_ops = sum(len(ops) for ops in caps.values())

@@ -19,7 +19,7 @@ Usage:
 """
 
 from apex.apex_engine import (
-    Apex as BaseApex,
+    Apex,
     Primitive,
     StepResult,
     PlanStep,
@@ -30,14 +30,10 @@ from apex.apex_engine import (
     KnowledgePrimitive,
 )
 
-# Use v2 engine by default (includes Google integration)
-from apex.apex_engine_v2 import Apex
-
 __version__ = "0.1.0"
 
 __all__ = [
     'Apex',
-    'BaseApex',
     'Primitive',
     'StepResult',
     'PlanStep',
