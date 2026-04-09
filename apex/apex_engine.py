@@ -26,7 +26,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 from abc import ABC, abstractmethod
@@ -2023,9 +2023,15 @@ class CalendarPrimitive(Primitive):
                     # Map primitive params to connector params
                     api_params = {}
                     if params.get("start_date"):
-                        api_params["time_min"] = datetime.fromisoformat(params["start_date"])
+                        dt = datetime.fromisoformat(params["start_date"])
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        api_params["time_min"] = dt
                     if params.get("end_date"):
-                        api_params["time_max"] = datetime.fromisoformat(params["end_date"]) + timedelta(days=1)
+                        dt = datetime.fromisoformat(params["end_date"])
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        api_params["time_max"] = dt + timedelta(days=1)
                     if params.get("limit"):
                         api_params["max_results"] = params["limit"]
                     result = await self._list_func(**api_params)
@@ -4336,8 +4342,8 @@ class TaskPrimitive(Primitive):
             if operation == "create":
                 if provider and hasattr(provider, "create_task"):
                     result = await provider.create_task(
-                        title=params.get("title", "Untitled"),
-                        body=params.get("description"),
+                        content=params.get("title", "Untitled"),
+                        description=params.get("description", ""),
                         due_date=params.get("due"),
                     )
                     return StepResult(True, data={"id": getattr(result, "id", str(result)), "title": params.get("title"), "status": "created"})
@@ -4361,6 +4367,10 @@ class TaskPrimitive(Primitive):
             elif operation == "list":
                 if provider and hasattr(provider, "list_tasks"):
                     result = await provider.list_tasks()
+                    # Convert dataclass objects to dicts if needed
+                    if result and hasattr(result[0], '__dataclass_fields__'):
+                        from dataclasses import asdict
+                        result = [asdict(t) for t in result]
                     return StepResult(True, data=result)
                 
                 status = params.get("status", "open")

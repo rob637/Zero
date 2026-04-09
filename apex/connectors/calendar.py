@@ -23,7 +23,7 @@ Usage:
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 import json
 
@@ -227,7 +227,7 @@ class CalendarConnector:
             raise RuntimeError("Not connected. Call connect() first.")
         
         if time_min is None:
-            time_min = datetime.utcnow()
+            time_min = datetime.now(tz=timezone.utc)
         if time_max is None:
             time_max = time_min + timedelta(days=30)
         
@@ -249,8 +249,8 @@ class CalendarConnector:
             try:
                 request = self._service.events().list(
                     calendarId=cal_id,
-                    timeMin=time_min.isoformat() + 'Z',
-                    timeMax=time_max.isoformat() + 'Z',
+                    timeMin=(time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_min.tzinfo else (time_min.isoformat() + 'Z'),
+                    timeMax=(time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_max.tzinfo else (time_max.isoformat() + 'Z'),
                     maxResults=max_results,
                     singleEvents=single_events,
                     orderBy='startTime',
