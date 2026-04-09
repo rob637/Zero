@@ -1223,7 +1223,7 @@ async def oauth_start(provider: str, scopes: Optional[str] = None):
             config = OAUTH_PROVIDERS[provider]
             
             # Build scopes
-            scope_list = config.scopes.get("all", list(config.scopes.values())[0]) if config.scopes else []
+            scope_list = config.scopes.get("all", list(config.scopes.values())[0]) if len(config.scopes) > 0 else []
             scope_str = "%20".join(scope_list) if scope_list else ""
             
             redirect_uri = "http://127.0.0.1:8000/oauth/callback"

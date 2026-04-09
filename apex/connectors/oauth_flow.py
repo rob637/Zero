@@ -256,10 +256,7 @@ OAUTH_PROVIDERS: Dict[str, OAuthProviderConfig] = {
         name="Dropbox",
         auth_url="https://www.dropbox.com/oauth2/authorize",
         token_url="https://api.dropboxapi.com/oauth2/token",
-        scopes={
-            "files": ["files.content.read", "files.content.write"],
-            "sharing": ["sharing.read", "sharing.write"],
-        },
+        scopes={},  # Dropbox scopes are set in app console, not in auth URL
         supports_pkce=True,
         extra_auth_params={
             "token_access_type": "offline",  # For refresh tokens
