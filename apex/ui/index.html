@@ -1746,6 +1746,9 @@
                 <button class="icon-btn" onclick="openAuditLog()" title="Audit Log" style="position:relative;">
                     🔒
                 </button>
+                <button class="icon-btn" onclick="openIntelDashboard()" title="Intelligence" style="position:relative;">
+                    🧠
+                </button>
                 <button class="icon-btn" onclick="toggleAlerts()" id="alertsBtn" style="position:relative;">
                     🔔
                 </button>
@@ -3900,6 +3903,125 @@
                     </div>
                 `;
             }
+        }
+
+        // ============================================
+        // Intelligence Dashboard
+        // ============================================
+        
+        async function openIntelDashboard() {
+            try {
+                const [statsRes, patternsRes, memoryRes] = await Promise.all([
+                    fetch(`${API}/intelligence/stats`).then(r => r.json()).catch(() => null),
+                    fetch(`${API}/intelligence/patterns`).then(r => r.json()).catch(() => null),
+                    fetch(`${API}/intelligence/memory`).then(r => r.json()).catch(() => null),
+                ]);
+                
+                const mem = statsRes?.memory || {};
+                const prefs = statsRes?.preferences || {};
+                const pats = statsRes?.patterns || {};
+                const proactive = statsRes?.proactive || {};
+                
+                let html = `
+                    <div class="modal-overlay" onclick="closeIntelDashboard()" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;" id="intelDashboard">
+                        <div class="audit-log-modal" onclick="event.stopPropagation()" style="max-height:85vh;overflow-y:auto;width:min(600px,90vw);">
+                            <div class="modal-header">
+                                <span class="modal-title">🧠 Intelligence Dashboard</span>
+                                <button class="modal-close" onclick="closeIntelDashboard()">✕</button>
+                            </div>
+                            <div style="padding: 20px;">
+                                
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+                                    <div style="background:var(--bg-tertiary);border-radius:10px;padding:14px;text-align:center;">
+                                        <div style="font-size:1.8rem;font-weight:700;color:var(--accent-primary);">${mem.total_facts || 0}</div>
+                                        <div style="font-size:0.75rem;color:var(--text-muted);">Facts Remembered</div>
+                                    </div>
+                                    <div style="background:var(--bg-tertiary);border-radius:10px;padding:14px;text-align:center;">
+                                        <div style="font-size:1.8rem;font-weight:700;color:var(--accent-primary);">${mem.total_entities || 0}</div>
+                                        <div style="font-size:0.75rem;color:var(--text-muted);">Known Entities</div>
+                                    </div>
+                                    <div style="background:var(--bg-tertiary);border-radius:10px;padding:14px;text-align:center;">
+                                        <div style="font-size:1.8rem;font-weight:700;color:var(--accent-primary);">${pats.detected_patterns || 0}</div>
+                                        <div style="font-size:0.75rem;color:var(--text-muted);">Patterns Detected</div>
+                                    </div>
+                                    <div style="background:var(--bg-tertiary);border-radius:10px;padding:14px;text-align:center;">
+                                        <div style="font-size:1.8rem;font-weight:700;color:var(--accent-primary);">${prefs.learned_preferences || 0}</div>
+                                        <div style="font-size:0.75rem;color:var(--text-muted);">Learned Preferences</div>
+                                    </div>
+                                </div>
+                `;
+                
+                // Top entities
+                const topEntities = mem.top_entities || [];
+                if (topEntities.length > 0) {
+                    html += `<div style="margin-bottom:16px;">
+                        <div style="font-size:0.85rem;font-weight:600;margin-bottom:8px;">🏷️ Top Entities</div>`;
+                    topEntities.slice(0, 6).forEach(e => {
+                        const name = typeof e === 'string' ? e : (e.name || e[0] || '');
+                        const count = typeof e === 'object' ? (e.count || e.fact_count || e[1] || '') : '';
+                        html += `<span style="display:inline-block;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:20px;padding:4px 12px;margin:3px;font-size:0.8rem;">${escapeHtml(String(name))}${count ? ` <span style="color:var(--text-muted);">(${count})</span>` : ''}</span>`;
+                    });
+                    html += `</div>`;
+                }
+                
+                // Patterns
+                const patternList = patternsRes?.patterns || [];
+                if (patternList.length > 0) {
+                    html += `<div style="margin-bottom:16px;">
+                        <div style="font-size:0.85rem;font-weight:600;margin-bottom:8px;">🔄 Detected Patterns</div>`;
+                    patternList.slice(0, 8).forEach(p => {
+                        const conf = p.confidence ? Math.round(p.confidence * 100) : 0;
+                        html += `<div style="background:var(--bg-tertiary);border-radius:8px;padding:10px;margin-bottom:6px;font-size:0.8rem;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <strong>${escapeHtml(p.name || '')}</strong>
+                                <span style="color:${conf > 70 ? 'var(--success)' : 'var(--text-muted)'};font-size:0.7rem;">${conf}% confidence</span>
+                            </div>
+                            <div style="color:var(--text-secondary);margin-top:2px;">${escapeHtml(p.description || '')}</div>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                }
+                
+                // Learned preferences
+                const prefList = prefs.preferences || [];
+                if (prefList.length > 0) {
+                    html += `<div style="margin-bottom:16px;">
+                        <div style="font-size:0.85rem;font-weight:600;margin-bottom:8px;">📚 Learned Preferences</div>`;
+                    prefList.slice(0, 8).forEach(p => {
+                        html += `<div style="font-size:0.8rem;padding:6px 0;border-bottom:1px solid var(--border-subtle);">
+                            <span style="color:var(--accent-primary);">${escapeHtml(p.key || '')}</span>: 
+                            <span style="color:var(--text-secondary);">${escapeHtml(String(p.value || ''))}</span>
+                            <span style="color:var(--text-muted);font-size:0.7rem;margin-left:8px;">(${p.observation_count || 0} observations)</span>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                }
+                
+                // Observations count
+                const obsCount = prefs.total_observations || 0;
+                if (obsCount > 0) {
+                    html += `<div style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:8px;">
+                        ${obsCount} total observations recorded
+                    </div>`;
+                }
+                
+                html += `
+                            <div style="text-align:center;margin-top:16px;">
+                                <button class="btn btn-reject" onclick="closeIntelDashboard()">Close</button>
+                            </div>
+                            </div>
+                        </div>
+                    </div>`;
+                
+                document.body.insertAdjacentHTML('beforeend', html);
+            } catch (e) {
+                console.error('Intelligence dashboard error:', e);
+            }
+        }
+        
+        function closeIntelDashboard() {
+            const el = document.getElementById('intelDashboard');
+            if (el) el.remove();
         }
 
         // ============================================

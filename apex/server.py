@@ -525,6 +525,17 @@ async def startup_event():
     except Exception as e:
         print(f"[STARTUP] ProactiveMonitor start failed (non-fatal): {e}")
 
+    # Initialize IntelligenceHub and wire to connected services
+    try:
+        hub = get_intelligence_hub()
+        stats = hub.get_stats()
+        mem_facts = stats.get("memory", {}).get("total_facts", 0)
+        pref_count = stats.get("preferences", {}).get("learned_preferences", 0)
+        pat_count = stats.get("patterns", {}).get("detected_patterns", 0)
+        print(f"[STARTUP] IntelligenceHub ready: {mem_facts} facts, {pref_count} preferences, {pat_count} patterns")
+    except Exception as e:
+        print(f"[STARTUP] IntelligenceHub init failed (non-fatal): {e}")
+
 
 # Request models
 class SubmitRequest(BaseModel):

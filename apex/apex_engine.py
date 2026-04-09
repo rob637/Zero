@@ -1368,13 +1368,24 @@ class ContactsPrimitive(Primitive):
 
 
 # ============================================================
-#  KNOWLEDGE PRIMITIVE
+#  KNOWLEDGE PRIMITIVE (backed by SemanticMemory)
 # ============================================================
 
 class KnowledgePrimitive(Primitive):
-    """Memory and knowledge storage."""
+    """Memory and knowledge storage backed by the intelligence layer's SemanticMemory.
+    
+    Provides the agent with persistent, semantic memory — facts about people,
+    preferences, relationships, and context that survive across sessions.
+    """
     
     def __init__(self, storage_path: Optional[str] = None):
+        # Initialize real semantic memory from intelligence layer
+        try:
+            from intelligence.semantic_memory import get_semantic_memory
+            self._memory = get_semantic_memory()
+        except ImportError:
+            self._memory = None
+        # Keep legacy fallback
         self._memories: List[Dict] = []
         self._storage_path = storage_path
         if storage_path and Path(storage_path).exists():
@@ -1386,23 +1397,35 @@ class KnowledgePrimitive(Primitive):
     
     def get_operations(self) -> Dict[str, str]:
         return {
-            "remember": "Store information for later recall",
-            "recall": "Retrieve relevant information",
-            "forget": "Remove stored information",
+            "remember": "Store a fact or piece of information for later recall. Use this to remember user preferences, facts about people, important context, or anything worth persisting across conversations.",
+            "recall": "Search memory for relevant facts matching a query. Returns the most relevant stored facts ranked by relevance.",
+            "recall_about": "Get everything known about a specific person or entity — all facts, relationships, interaction history.",
+            "connect": "Create a relationship between two entities in the knowledge graph (e.g., 'Alice' works_with 'Bob').",
+            "forget": "Remove stored information by fact ID or entity name.",
         }
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
         return {
             "remember": {
-                "content": {"type": "str", "required": True, "description": "Information to store"},
-                "tags": {"type": "list", "required": False, "description": "Tags for categorization"},
+                "content": {"type": "str", "required": True, "description": "The fact or information to remember"},
+                "entity": {"type": "str", "required": False, "description": "Primary entity this fact is about (person name, org, etc.)"},
+                "category": {"type": "str", "required": False, "description": "Category: preference, relationship, event, insight, context, instruction, behavior, entity_info"},
             },
             "recall": {
                 "query": {"type": "str", "required": True, "description": "Search query to find relevant memories"},
                 "limit": {"type": "int", "required": False, "description": "Max results (default 5)"},
             },
+            "recall_about": {
+                "entity": {"type": "str", "required": True, "description": "Person or entity name to get facts about"},
+            },
+            "connect": {
+                "entity1": {"type": "str", "required": True, "description": "First entity name"},
+                "relationship": {"type": "str", "required": True, "description": "Relationship type (e.g., works_with, manages, married_to)"},
+                "entity2": {"type": "str", "required": True, "description": "Second entity name"},
+            },
             "forget": {
-                "id": {"type": "int", "required": True, "description": "Memory ID to remove"},
+                "entity": {"type": "str", "required": False, "description": "Entity name — forgets all facts about this entity"},
+                "fact_id": {"type": "str", "required": False, "description": "Specific fact ID to remove"},
             },
         }
     
@@ -1411,7 +1434,7 @@ class KnowledgePrimitive(Primitive):
             try:
                 with open(self._storage_path, "r") as f:
                     self._memories = json.load(f)
-            except:
+            except Exception:
                 pass
     
     def _save(self):
@@ -1422,41 +1445,352 @@ class KnowledgePrimitive(Primitive):
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
-            if operation == "remember":
-                content = params.get("content", "")
-                tags = params.get("tags", [])
-                
-                memory = {
-                    "id": len(self._memories),
-                    "content": content,
-                    "tags": tags,
-                    "timestamp": datetime.now().isoformat(),
-                }
-                self._memories.append(memory)
-                self._save()
-                
-                return StepResult(True, data={"id": memory["id"]})
+            # Use real SemanticMemory if available
+            if self._memory:
+                return await self._execute_semantic(operation, params)
+            # Fallback to basic list storage
+            return await self._execute_basic(operation, params)
+        except Exception as e:
+            return StepResult(False, error=str(e))
+    
+    async def _execute_semantic(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        """Execute using the real SemanticMemory intelligence layer."""
+        if operation == "remember":
+            content = params.get("content") or params.get("text") or ""
+            entity = params.get("entity")
+            category_str = params.get("category", "context")
             
-            elif operation == "recall":
-                query = params.get("query", "").lower()
-                limit = params.get("limit", 5)
-                
-                matches = [
-                    m for m in self._memories
-                    if query in m["content"].lower() or any(query in t.lower() for t in m.get("tags", []))
-                ]
-                
-                return StepResult(True, data=matches[:limit])
+            # Convert category string to enum, fallback to CONTEXT
+            from intelligence.semantic_memory import FactCategory
+            category_map = {c.value: c for c in FactCategory}
+            category = category_map.get(category_str.lower(), FactCategory.CONTEXT) if isinstance(category_str, str) else category_str
             
-            elif operation == "forget":
-                memory_id = params.get("id")
-                self._memories = [m for m in self._memories if m.get("id") != memory_id]
-                self._save()
-                return StepResult(True)
+            fact = await self._memory.remember(
+                content,
+                category=category,
+                entity=entity,
+            )
+            return StepResult(True, data={
+                "stored": True,
+                "fact_id": fact.id if hasattr(fact, 'id') else str(fact),
+                "message": f"Remembered: {content[:100]}"
+            })
+        
+        elif operation == "recall":
+            query = params.get("query", "")
+            limit = params.get("limit", 5)
+            
+            results = await self._memory.recall(query, limit=limit)
+            if not results:
+                return StepResult(True, data={"results": [], "message": "No matching memories found."})
+            
+            facts = []
+            for item in results:
+                if hasattr(item, 'content'):
+                    facts.append({
+                        "content": item.content,
+                        "category": item.category.value if hasattr(item.category, 'value') else str(item.category),
+                        "entity": item.primary_entity,
+                        "created": item.created_at if hasattr(item, 'created_at') else None,
+                    })
+                elif isinstance(item, dict):
+                    facts.append(item)
+            
+            return StepResult(True, data={"results": facts[:limit]})
+        
+        elif operation == "recall_about":
+            entity = params.get("entity", "")
+            facts = await self._memory.recall_about(entity)
+            
+            if not facts:
+                return StepResult(True, data={"entity": entity, "facts": [], "message": f"No facts known about '{entity}'."})
+            
+            fact_list = []
+            for f in facts:
+                if hasattr(f, 'content'):
+                    fact_list.append({"content": f.content, "category": f.category.value if hasattr(f.category, 'value') else str(f.category)})
+                elif isinstance(f, dict):
+                    fact_list.append(f)
+            
+            # Also get entity summary if available
+            entity_info = await self._memory.get_entity(entity)
+            summary = None
+            if entity_info and isinstance(entity_info, dict):
+                summary = entity_info.get("summary")
+            
+            return StepResult(True, data={
+                "entity": entity,
+                "facts": fact_list,
+                "summary": summary,
+                "count": len(fact_list),
+            })
+        
+        elif operation == "connect":
+            e1 = params.get("entity1", "")
+            rel = params.get("relationship", "")
+            e2 = params.get("entity2", "")
+            await self._memory.connect_entities(e1, rel, e2)
+            return StepResult(True, data={"connected": f"{e1} --[{rel}]--> {e2}"})
+        
+        elif operation == "forget":
+            entity = params.get("entity")
+            fact_id = params.get("fact_id")
+            if entity:
+                await self._memory.forget(entity=entity)
+                return StepResult(True, data={"forgotten": f"All facts about '{entity}'"})
+            elif fact_id:
+                await self._memory.forget(fact_id=fact_id)
+                return StepResult(True, data={"forgotten": f"Fact {fact_id}"})
+            else:
+                return StepResult(False, error="Provide either 'entity' or 'fact_id'")
+        
+        else:
+            return StepResult(False, error=f"Unknown operation: {operation}")
+    
+    async def _execute_basic(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        """Fallback: basic list-based memory."""
+        if operation == "remember":
+            content = params.get("content", "")
+            memory = {
+                "id": len(self._memories),
+                "content": content,
+                "tags": params.get("tags", []),
+                "timestamp": datetime.now().isoformat(),
+            }
+            self._memories.append(memory)
+            self._save()
+            return StepResult(True, data={"id": memory["id"]})
+        
+        elif operation == "recall":
+            query = params.get("query", "").lower()
+            limit = params.get("limit", 5)
+            matches = [
+                m for m in self._memories
+                if query in m["content"].lower() or any(query in t.lower() for t in m.get("tags", []))
+            ]
+            return StepResult(True, data=matches[:limit])
+        
+        elif operation == "forget":
+            memory_id = params.get("id") or params.get("fact_id")
+            self._memories = [m for m in self._memories if m.get("id") != memory_id]
+            self._save()
+            return StepResult(True)
+        
+        else:
+            return StepResult(True, data={"results": []})
+
+
+# ============================================================
+#  PATTERNS PRIMITIVE
+# ============================================================
+
+class PatternsPrimitive(Primitive):
+    """Behavioral pattern recognition — detects routines, habits, and anomalies.
+    
+    The agent can check what the user typically does at this time,
+    detect when something is unusual, and understand recurring behaviors.
+    """
+    
+    def __init__(self):
+        try:
+            from intelligence.pattern_recognition import get_pattern_engine
+            self._patterns = get_pattern_engine()
+        except ImportError:
+            self._patterns = None
+    
+    @property
+    def name(self) -> str:
+        return "PATTERNS"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "whats_expected": "Check what the user typically does at this time of day/week. Use to proactively suggest routine actions.",
+            "get_patterns": "List all detected behavioral patterns (routines, habits, recurring actions).",
+            "detect_anomalies": "Check for anything unusual — missed routines, unexpected behavior changes.",
+        }
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        if not self._patterns:
+            return {}
+        return self.get_operations()
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "whats_expected": {
+                "window_minutes": {"type": "int", "required": False, "description": "Time window to check (default 60 minutes)"},
+            },
+            "get_patterns": {
+                "min_confidence": {"type": "float", "required": False, "description": "Minimum confidence threshold 0-1 (default 0.5)"},
+            },
+            "detect_anomalies": {
+                "lookback_days": {"type": "int", "required": False, "description": "Days to look back for anomaly detection (default 7)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._patterns:
+            return StepResult(False, error="Pattern engine not available")
+        
+        try:
+            if operation == "whats_expected":
+                window = params.get("window_minutes", 60)
+                expected = await self._patterns.whats_expected_now(window_minutes=window)
+                if not expected:
+                    return StepResult(True, data={"expected": [], "message": "No expected patterns right now."})
+                patterns = [{"name": p.name, "description": p.description, "confidence": p.confidence} for p in expected]
+                return StepResult(True, data={"expected": patterns})
+            
+            elif operation == "get_patterns":
+                min_conf = params.get("min_confidence", 0.5)
+                detected = await self._patterns.get_patterns(min_confidence=min_conf)
+                if not detected:
+                    return StepResult(True, data={"patterns": [], "message": "No patterns detected yet. Patterns emerge after repeated usage."})
+                patterns = [{
+                    "name": p.name,
+                    "description": p.description,
+                    "type": p.pattern_type.value if hasattr(p.pattern_type, 'value') else str(p.pattern_type),
+                    "confidence": p.confidence,
+                    "occurrences": p.occurrence_count,
+                } for p in detected]
+                return StepResult(True, data={"patterns": patterns, "count": len(patterns)})
+            
+            elif operation == "detect_anomalies":
+                lookback = params.get("lookback_days", 7)
+                anomalies = await self._patterns.detect_anomalies(lookback_days=lookback)
+                if not anomalies:
+                    return StepResult(True, data={"anomalies": [], "message": "No anomalies detected."})
+                items = [{"type": a.get("type", "unknown"), "description": a.get("description", ""), "severity": a.get("severity", "low")} for a in anomalies]
+                return StepResult(True, data={"anomalies": items})
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
-                
+        
+        except Exception as e:
+            return StepResult(False, error=str(e))
+
+
+# ============================================================
+#  INTELLIGENCE PRIMITIVE (cross-service + proactive)
+# ============================================================
+
+class IntelligencePrimitive(Primitive):
+    """Cross-service intelligence — connects dots across email, calendar, files, and memory.
+    
+    Provides person briefs, meeting preparation, related content discovery,
+    and proactive suggestions.
+    """
+    
+    def __init__(self):
+        try:
+            from intelligence import get_intelligence_hub
+            self._hub = get_intelligence_hub()
+        except ImportError:
+            self._hub = None
+    
+    @property
+    def name(self) -> str:
+        return "INTELLIGENCE"
+    
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "brief_on_person": "Get a comprehensive brief on a person — recent emails, meetings, shared docs, known facts, communication frequency.",
+            "prepare_for_meeting": "Gather preparation materials for a meeting — attendee briefs, related emails/docs, suggested discussion points.",
+            "find_related": "Search across all services for content related to a query — finds emails, docs, tasks, and memories that connect.",
+            "get_suggestions": "Get proactive suggestions — things the user should do, follow up on, or prepare for.",
+        }
+    
+    def get_available_operations(self) -> Dict[str, str]:
+        if not self._hub:
+            return {}
+        return self.get_operations()
+    
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "brief_on_person": {
+                "person": {"type": "str", "required": True, "description": "Person name or email to get a brief on"},
+            },
+            "prepare_for_meeting": {
+                "title": {"type": "str", "required": False, "description": "Meeting title to prepare for"},
+                "attendees": {"type": "str", "required": False, "description": "Comma-separated attendee names/emails"},
+            },
+            "find_related": {
+                "query": {"type": "str", "required": True, "description": "Topic or query to find related content across all services"},
+                "max_items": {"type": "int", "required": False, "description": "Max results (default 10)"},
+            },
+            "get_suggestions": {
+                "max_suggestions": {"type": "int", "required": False, "description": "Max suggestions to return (default 5)"},
+            },
+        }
+    
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if not self._hub:
+            return StepResult(False, error="Intelligence hub not available")
+        
+        try:
+            if operation == "brief_on_person":
+                person = params.get("person", "")
+                brief = await self._hub.brief_on_person(person)
+                if not brief:
+                    return StepResult(True, data={"person": person, "message": f"No information found about '{person}'."})
+                # Convert to serializable dict
+                if hasattr(brief, '__dict__'):
+                    data = {k: v for k, v in brief.__dict__.items() if not k.startswith('_')}
+                elif isinstance(brief, dict):
+                    data = brief
+                else:
+                    data = {"brief": str(brief)}
+                data["person"] = person
+                return StepResult(True, data=data)
+            
+            elif operation == "prepare_for_meeting":
+                title = params.get("title")
+                attendees_str = params.get("attendees", "")
+                attendees = [a.strip() for a in attendees_str.split(",") if a.strip()] if attendees_str else []
+                prep = await self._hub.prepare_for_meeting(title=title, attendees=attendees)
+                if not prep:
+                    return StepResult(True, data={"message": "No meeting preparation data available."})
+                if hasattr(prep, '__dict__'):
+                    data = {k: v for k, v in prep.__dict__.items() if not k.startswith('_')}
+                elif isinstance(prep, dict):
+                    data = prep
+                else:
+                    data = {"prep": str(prep)}
+                return StepResult(True, data=data)
+            
+            elif operation == "find_related":
+                query = params.get("query", "")
+                max_items = params.get("max_items", 10)
+                results = await self._hub.find_related(query, max_items=max_items)
+                if not results:
+                    return StepResult(True, data={"results": [], "message": f"No related content found for '{query}'."})
+                items = []
+                for r in results:
+                    if hasattr(r, 'to_dict'):
+                        items.append(r.to_dict())
+                    elif hasattr(r, '__dict__'):
+                        items.append({k: v for k, v in r.__dict__.items() if not k.startswith('_')})
+                    else:
+                        items.append(str(r))
+                return StepResult(True, data={"results": items, "count": len(items)})
+            
+            elif operation == "get_suggestions":
+                max_sugg = params.get("max_suggestions", 5)
+                suggestions = await self._hub.get_suggestions(max_suggestions=max_sugg)
+                if not suggestions:
+                    return StepResult(True, data={"suggestions": [], "message": "No proactive suggestions right now."})
+                items = []
+                for s in suggestions:
+                    if hasattr(s, 'to_dict'):
+                        items.append(s.to_dict())
+                    elif hasattr(s, '__dict__'):
+                        items.append({k: v for k, v in s.__dict__.items() if not k.startswith('_')})
+                    else:
+                        items.append(str(s))
+                return StepResult(True, data={"suggestions": items, "count": len(items)})
+            
+            else:
+                return StepResult(False, error=f"Unknown operation: {operation}")
+        
         except Exception as e:
             return StepResult(False, error=str(e))
 
@@ -8332,6 +8666,8 @@ class Apex:
         self._primitives["CONTACTS"] = ContactsPrimitive(providers=contacts_providers)
         
         self._primitives["KNOWLEDGE"] = KnowledgePrimitive(str(self._storage_path / "knowledge.json"))
+        self._primitives["PATTERNS"] = PatternsPrimitive()
+        self._primitives["INTELLIGENCE"] = IntelligencePrimitive()
         
         # Calendar — wire Google Calendar and/or Outlook Calendar
         cal_create = None
