@@ -920,6 +920,163 @@
         }
 
         /* ============================================ */
+        /* Execution Blueprint */
+        /* ============================================ */
+        .blueprint-container {
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 14px;
+            padding: 20px;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(99, 102, 241, 0.03));
+            margin-bottom: 12px;
+            transition: all 0.5s ease;
+        }
+        .blueprint-container.executing {
+            border-color: rgba(139, 92, 246, 0.15);
+        }
+        .blueprint-container.done {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.04);
+        }
+        .blueprint-header {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--accent-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .blueprint-header .bp-icon {
+            font-size: 0.9rem;
+        }
+        .blueprint-flow {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            overflow-x: auto;
+            padding: 4px 0;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-light) transparent;
+        }
+        .blueprint-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            min-width: 90px;
+            max-width: 110px;
+            flex-shrink: 0;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .blueprint-node-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            background: var(--bg-tertiary);
+            border: 2px solid var(--border-light);
+            transition: all 0.4s ease;
+            position: relative;
+        }
+        .blueprint-node.pending .blueprint-node-icon {
+            opacity: 0.5;
+        }
+        .blueprint-node.active .blueprint-node-icon {
+            border-color: var(--accent-primary);
+            background: rgba(139, 92, 246, 0.15);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+            animation: blueprintPulse 1.5s ease-in-out infinite;
+            opacity: 1;
+        }
+        .blueprint-node.completed .blueprint-node-icon {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.15);
+            opacity: 1;
+        }
+        .blueprint-node.completed .blueprint-node-icon::after {
+            content: '✓';
+            position: absolute;
+            bottom: -4px;
+            right: -4px;
+            width: 16px;
+            height: 16px;
+            background: var(--success);
+            border-radius: 50%;
+            font-size: 0.55rem;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .blueprint-node-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-align: center;
+            line-height: 1.3;
+            max-width: 100px;
+            transition: color 0.3s;
+        }
+        .blueprint-node.active .blueprint-node-label {
+            color: var(--text-primary);
+        }
+        .blueprint-node.completed .blueprint-node-label {
+            color: var(--success);
+        }
+        .blueprint-arrow {
+            display: flex;
+            align-items: center;
+            padding: 0 2px;
+            margin-bottom: 20px;
+            flex-shrink: 0;
+        }
+        .blueprint-arrow-line {
+            width: 24px;
+            height: 2px;
+            background: var(--border-light);
+            position: relative;
+            transition: background 0.4s;
+        }
+        .blueprint-arrow.completed .blueprint-arrow-line {
+            background: var(--success);
+        }
+        .blueprint-arrow.active .blueprint-arrow-line {
+            background: var(--accent-primary);
+        }
+        .blueprint-arrow-line::after {
+            content: '';
+            position: absolute;
+            right: -1px;
+            top: -3px;
+            border: 4px solid transparent;
+            border-left-color: inherit;
+        }
+        .blueprint-arrow.completed .blueprint-arrow-line::after {
+            border-left-color: var(--success);
+        }
+        .blueprint-arrow.active .blueprint-arrow-line::after {
+            border-left-color: var(--accent-primary);
+        }
+        @keyframes blueprintPulse {
+            0%, 100% { box-shadow: 0 0 12px rgba(139, 92, 246, 0.2); }
+            50% { box-shadow: 0 0 24px rgba(139, 92, 246, 0.45); }
+        }
+        .blueprint-status {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* ============================================ */
         /* Plan Card */
         /* ============================================ */
         .plan-card {
@@ -2435,6 +2592,155 @@
                 .replace(/\b\w/g, c => c.toUpperCase());
         }
 
+        // ============================================
+        // Execution Blueprint
+        // ============================================
+        
+        // Map service names to emojis for blueprint nodes
+        function getServiceEmoji(service) {
+            const map = {
+                calendar: '📅', gmail: '📧', outlook: '📧', email: '📧',
+                drive: '📁', onedrive: '📁', file: '📁', files: '📁',
+                contacts: '👤', contact: '👤',
+                sheets: '📊', excel: '📊', spreadsheet: '📊',
+                slides: '📽️', powerpoint: '📽️', presentation: '📽️',
+                photos: '📷', photo: '📷', image: '📷', media: '📷',
+                spotify: '🎵', music: '🎵',
+                slack: '💬', teams: '💬', discord: '💬', chat: '💬', message: '💬',
+                github: '⚙️', devtools: '⚙️',
+                todoist: '✅', task: '✅', todo: '✅',
+                onenote: '📝', notes: '📝', note: '📝',
+                web: '🌐', search: '🔍', weather: '🌤️', news: '📰',
+            };
+            return map[(service || '').toLowerCase()] || '⚡';
+        }
+
+        let _blueprintSteps = null;
+        let _blueprintEl = null;
+        let _blueprintCompletedCount = 0;
+
+        function renderBlueprint(activityEl, steps) {
+            if (!activityEl || !steps || steps.length === 0) return;
+            
+            _blueprintSteps = steps;
+            _blueprintCompletedCount = 0;
+            
+            const container = activityEl.querySelector('.activity-container');
+            if (!container) return;
+
+            // Build blueprint HTML
+            let nodesHtml = '';
+            steps.forEach((step, i) => {
+                const emoji = getServiceEmoji(step.service);
+                const nodeId = `bp-node-${i}`;
+                
+                nodesHtml += `
+                    <div class="blueprint-node pending" id="${nodeId}" data-tool-hint="${(step.tool || '').toLowerCase()}">
+                        <div class="blueprint-node-icon">${emoji}</div>
+                        <div class="blueprint-node-label">${escapeHtml(step.label)}</div>
+                    </div>
+                `;
+                
+                if (i < steps.length - 1) {
+                    nodesHtml += `
+                        <div class="blueprint-arrow" id="bp-arrow-${i}">
+                            <div class="blueprint-arrow-line"></div>
+                        </div>
+                    `;
+                }
+            });
+
+            const blueprintHtml = `
+                <div class="blueprint-container" id="executionBlueprint">
+                    <div class="blueprint-header">
+                        <span class="bp-icon">◎</span>
+                        <span>Execution Blueprint</span>
+                        <span class="step-spinner" id="bp-spinner"></span>
+                    </div>
+                    <div class="blueprint-flow">
+                        ${nodesHtml}
+                    </div>
+                </div>
+            `;
+            
+            // Insert blueprint before the activity steps
+            const stepsEl = container.querySelector('.activity-steps');
+            stepsEl.insertAdjacentHTML('beforebegin', blueprintHtml);
+            _blueprintEl = document.getElementById('executionBlueprint');
+        }
+
+        function updateBlueprintNode(toolName, status) {
+            if (!_blueprintSteps || !_blueprintEl) return;
+            
+            const normalizedTool = (toolName || '').toLowerCase();
+            
+            // Find the best matching blueprint node that hasn't been completed yet
+            const nodes = _blueprintEl.querySelectorAll('.blueprint-node');
+            let matchedNode = null;
+            let matchedIndex = -1;
+            
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                if (node.classList.contains('completed')) continue;
+                
+                const hint = (node.dataset.toolHint || '').toLowerCase();
+                // Match by tool name overlap or service category  
+                if (normalizedTool.includes(hint) || hint.includes(normalizedTool) || 
+                    toolPartsMatch(normalizedTool, hint)) {
+                    matchedNode = node;
+                    matchedIndex = i;
+                    break;
+                }
+            }
+            
+            // If no match found, activate the next pending node
+            if (!matchedNode) {
+                for (let i = 0; i < nodes.length; i++) {
+                    if (nodes[i].classList.contains('pending')) {
+                        matchedNode = nodes[i];
+                        matchedIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (!matchedNode) return;
+            
+            if (status === 'running') {
+                matchedNode.className = 'blueprint-node active';
+            } else if (status === 'completed') {
+                matchedNode.className = 'blueprint-node completed';
+                _blueprintCompletedCount++;
+                
+                // Light up the arrow before this node
+                if (matchedIndex > 0) {
+                    const arrow = document.getElementById(`bp-arrow-${matchedIndex - 1}`);
+                    if (arrow) arrow.className = 'blueprint-arrow completed';
+                }
+                // Light up the arrow after this node and activate next if all arrows glow
+                const nextArrow = document.getElementById(`bp-arrow-${matchedIndex}`);
+                if (nextArrow) nextArrow.className = 'blueprint-arrow active';
+                
+                // Check if all done
+                if (_blueprintCompletedCount >= _blueprintSteps.length) {
+                    _blueprintEl.className = 'blueprint-container done';
+                    const spinner = document.getElementById('bp-spinner');
+                    if (spinner) spinner.remove();
+                    const header = _blueprintEl.querySelector('.blueprint-header');
+                    if (header) {
+                        header.innerHTML = `<span class="bp-icon" style="color: var(--success)">✓</span><span>Complete</span>`;
+                    }
+                }
+            }
+        }
+
+        function toolPartsMatch(toolName, hint) {
+            // Match tool parts: "calendar_list" matches "calendar", "media_search" matches "search"
+            const toolParts = toolName.split('_');
+            const hintParts = hint.split('_');
+            return toolParts.some(p => hintParts.some(h => p.length > 2 && h.length > 2 && (p.includes(h) || h.includes(p))));
+        }
+
         function handleStreamEvent(event, activityEl) {
             const chat = document.getElementById('chat');
 
@@ -2443,13 +2749,20 @@
                     updateActivityHeader(activityEl, 'Working on it...', true);
                     break;
 
+                case 'plan':
+                    renderBlueprint(activityEl, event.steps);
+                    updateActivityHeader(activityEl, 'Executing plan...', true);
+                    break;
+
                 case 'tool_start':
                     updateActivityHeader(activityEl, `Running ${formatToolName(event.step?.tool)}...`, true);
                     addLiveStep(activityEl, event.step);
+                    updateBlueprintNode(event.step?.tool, 'running');
                     break;
 
                 case 'tool_complete':
                     updateLiveStep(activityEl, event.step, 'completed');
+                    updateBlueprintNode(event.step?.tool, 'completed');
                     break;
 
                 case 'tool_failed':
@@ -2465,6 +2778,25 @@
 
                 case 'complete':
                     finalizeActivityFeed(activityEl, 'done');
+                    // Finalize blueprint
+                    if (_blueprintEl) {
+                        _blueprintEl.className = 'blueprint-container done';
+                        const spinner = document.getElementById('bp-spinner');
+                        if (spinner) spinner.remove();
+                        const header = _blueprintEl.querySelector('.blueprint-header');
+                        if (header) {
+                            header.innerHTML = `<span class="bp-icon" style="color: var(--success)">✓</span><span>Complete</span>`;
+                        }
+                        // Mark any remaining pending nodes as completed
+                        _blueprintEl.querySelectorAll('.blueprint-node.pending, .blueprint-node.active').forEach(n => {
+                            n.className = 'blueprint-node completed';
+                        });
+                        _blueprintEl.querySelectorAll('.blueprint-arrow:not(.completed)').forEach(a => {
+                            a.className = 'blueprint-arrow completed';
+                        });
+                        _blueprintEl = null;
+                        _blueprintSteps = null;
+                    }
                     if (event.data?.response) {
                         addMessage(event.data.response, 'assistant');
                     }

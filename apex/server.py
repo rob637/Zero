@@ -2372,6 +2372,63 @@ Remember: References like "the first one", "send it to him", "the information ab
         # Initial thinking event
         yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
 
+        # Generate execution blueprint (plan) before running
+        try:
+            engine = get_telic_engine()
+            # Build a compact list of available capabilities
+            available_tools = []
+            for prim_name, primitive in engine._primitives.items():
+                ops = primitive.get_available_operations()
+                connected = primitive.get_connected_providers()
+                if connected:
+                    for op_name, desc in ops.items():
+                        available_tools.append(f"{prim_name}_{op_name}: {desc}")
+            
+            tools_summary = "\n".join(available_tools[:80])  # Cap for token efficiency
+            
+            plan_prompt = f"""Given this user request, output a JSON array of the steps you would take.
+Each step: {{"tool": "tool_name", "label": "short human description", "service": "primary service icon name"}}
+Service icon names: calendar, gmail, outlook, drive, onedrive, contacts, sheets, slides, photos, spotify, slack, github, discord, todoist, teams, onenote, excel, powerpoint, web, file, task, search, weather, news
+Only include steps that require tool calls. Keep it to 2-6 steps. Output ONLY the JSON array, no other text.
+
+Available tools:
+{tools_summary}
+
+User request: {req.message}"""
+
+            if os.environ.get("ANTHROPIC_API_KEY"):
+                import anthropic
+                plan_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+                plan_response = plan_client.messages.create(
+                    model="claude-haiku-4-20250414",
+                    max_tokens=300,
+                    messages=[{"role": "user", "content": plan_prompt}]
+                )
+                plan_text = plan_response.content[0].text.strip()
+            else:
+                import openai
+                plan_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+                plan_response = plan_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    max_tokens=300,
+                    messages=[{"role": "user", "content": plan_prompt}]
+                )
+                plan_text = plan_response.choices[0].message.content.strip()
+
+            # Parse JSON from response (handle markdown code blocks)
+            if plan_text.startswith("```"):
+                plan_text = plan_text.split("```")[1]
+                if plan_text.startswith("json"):
+                    plan_text = plan_text[4:]
+                plan_text = plan_text.strip()
+            
+            plan_steps = json.loads(plan_text)
+            if isinstance(plan_steps, list) and len(plan_steps) > 0:
+                yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
+                print(f"[STREAM] Blueprint: {len(plan_steps)} planned steps")
+        except Exception as e:
+            print(f"[STREAM] Blueprint generation skipped: {e}")
+
         # Run agent as background task
         task = asyncio.create_task(agent.run(full_message))
 
