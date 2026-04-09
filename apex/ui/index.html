@@ -713,34 +713,157 @@
         /* Streaming Activity Feed */
         /* ============================================ */
         .activity-container {
-            border: 1px solid var(--accent-secondary);
-            border-radius: 10px;
-            padding: 12px;
-            background: rgba(99, 102, 241, 0.05);
-            transition: border-color 0.3s ease;
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            transition: border-color 0.3s ease, background 0.3s ease;
+        }
+        .activity-container.done {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.04);
+        }
+        .activity-container.error {
+            border-color: var(--error);
+        }
+        .activity-container.approval {
+            border-color: var(--warning);
         }
         .activity-header {
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
             color: var(--accent-primary);
             display: flex;
             align-items: center;
             gap: 8px;
         }
+        .activity-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            position: relative;
+        }
+        /* Connecting line between steps */
+        .activity-steps::before {
+            content: '';
+            position: absolute;
+            left: 17px;
+            top: 20px;
+            bottom: 20px;
+            width: 2px;
+            background: var(--border-light);
+            z-index: 0;
+        }
         .activity-step {
-            padding: 8px 12px;
+            padding: 10px 14px 10px 42px;
             background: rgba(255,255,255,0.02);
-            border-radius: 6px;
-            margin-bottom: 4px;
-            animation: messageIn 0.2s ease-out;
+            border-radius: 8px;
+            position: relative;
+            animation: stepSlideIn 0.25s ease-out;
+            transition: background 0.2s;
+        }
+        .activity-step:hover {
+            background: rgba(255,255,255,0.05);
         }
         .activity-step .step-icon {
+            position: absolute;
+            left: 8px;
+            top: 12px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
             font-weight: bold;
-            width: 16px;
-            text-align: center;
+            z-index: 1;
+            background: var(--bg-primary);
+            border: 2px solid var(--border-light);
+            transition: all 0.3s ease;
+        }
+        .activity-step.running .step-icon {
+            border-color: var(--accent-primary);
+        }
+        .activity-step.completed .step-icon {
+            border-color: var(--success);
+            background: var(--success);
+            color: #fff;
+        }
+        .activity-step.failed .step-icon {
+            border-color: var(--error);
+            background: var(--error);
+            color: #fff;
+        }
+        .step-tool-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .step-tool-name .tool-emoji {
+            font-size: 1rem;
+        }
+        .step-params {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .step-params .param-key {
+            color: var(--accent-primary);
+        }
+        .step-result-toggle {
+            font-size: 0.7rem;
+            color: var(--accent-primary);
+            cursor: pointer;
+            margin-top: 6px;
+            user-select: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .step-result-toggle:hover {
+            text-decoration: underline;
+        }
+        .step-result {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+            padding: 8px 10px;
+            background: rgba(0,0,0,0.25);
+            border-radius: 6px;
+            max-height: 200px;
+            overflow: auto;
+            white-space: pre-wrap;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            line-height: 1.5;
+            border: 1px solid var(--border-subtle);
+        }
+        .step-result.collapsed {
+            display: none;
+        }
+        .step-error {
+            font-size: 0.75rem;
+            color: var(--error);
+            margin-top: 4px;
+            padding: 6px 8px;
+            background: rgba(239, 68, 68, 0.08);
+            border-radius: 4px;
+            border-left: 3px solid var(--error);
+        }
+        .step-duration {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+        @keyframes stepSlideIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         @keyframes stepPulse {
             0%, 100% { opacity: 1; }
@@ -748,12 +871,13 @@
         }
         .step-spinner {
             display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid var(--text-muted);
+            width: 12px;
+            height: 12px;
+            border: 2px solid transparent;
             border-top-color: var(--accent-primary);
+            border-right-color: var(--accent-primary);
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spin 0.6s linear infinite;
         }
         @keyframes spin {
             to { transform: rotate(360deg); }
@@ -2226,7 +2350,7 @@
                 <div class="activity-container">
                     <div class="activity-header">
                         <span class="step-spinner"></span>
-                        <span>Thinking...</span>
+                        <span>Working on it...</span>
                     </div>
                     <div class="activity-steps"></div>
                 </div>
@@ -2236,16 +2360,50 @@
             return feed;
         }
 
+        // Map tool names to emoji icons
+        function getToolEmoji(toolName) {
+            const name = (toolName || '').toLowerCase();
+            if (name.includes('calendar')) return '📅';
+            if (name.includes('email') || name.includes('gmail') || name.includes('outlook')) return '📧';
+            if (name.includes('task') || name.includes('todo')) return '✅';
+            if (name.includes('file') || name.includes('drive')) return '📁';
+            if (name.includes('contact')) return '👤';
+            if (name.includes('message') || name.includes('chat') || name.includes('slack') || name.includes('teams')) return '💬';
+            if (name.includes('search')) return '🔍';
+            if (name.includes('compute') || name.includes('math')) return '🧮';
+            if (name.includes('document') || name.includes('note')) return '📄';
+            if (name.includes('weather')) return '🌤️';
+            if (name.includes('web') || name.includes('browser')) return '🌐';
+            if (name.includes('knowledge') || name.includes('memory')) return '🧠';
+            if (name.includes('photo') || name.includes('media') || name.includes('image')) return '📷';
+            if (name.includes('music') || name.includes('spotify')) return '🎵';
+            if (name.includes('github') || name.includes('devtools')) return '⚙️';
+            if (name.includes('social') || name.includes('twitter')) return '📱';
+            if (name.includes('finance') || name.includes('stripe')) return '💳';
+            if (name.includes('notify') || name.includes('alert')) return '🔔';
+            if (name.includes('translate')) return '🌍';
+            if (name.includes('spreadsheet')) return '📊';
+            if (name.includes('presentation')) return '📽️';
+            return '⚡';
+        }
+
+        // Format tool name for display
+        function formatToolName(toolName) {
+            return (toolName || 'Unknown')
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, c => c.toUpperCase());
+        }
+
         function handleStreamEvent(event, activityEl) {
             const chat = document.getElementById('chat');
 
             switch (event.event) {
                 case 'thinking':
-                    updateActivityHeader(activityEl, 'Thinking...', true);
+                    updateActivityHeader(activityEl, 'Working on it...', true);
                     break;
 
                 case 'tool_start':
-                    updateActivityHeader(activityEl, 'Working...', true);
+                    updateActivityHeader(activityEl, `Running ${formatToolName(event.step?.tool)}...`, true);
                     addLiveStep(activityEl, event.step);
                     break;
 
@@ -2269,8 +2427,8 @@
                     if (event.data?.response) {
                         addMessage(event.data.response, 'assistant');
                     }
-                    loadSessions();  // Refresh sidebar with saved session
-                    fetchAlerts();   // Refresh alerts after intelligence learns
+                    loadSessions();
+                    fetchAlerts();
                     break;
 
                 case 'error':
@@ -2297,22 +2455,26 @@
             if (!container) return;
 
             const stepEl = document.createElement('div');
-            stepEl.className = 'activity-step';
+            stepEl.className = 'activity-step running';
             stepEl.dataset.stepId = step.id || '';
+            stepEl.dataset.startTime = Date.now();
 
-            const paramsStr = Object.entries(step.params || {})
-                .slice(0, 3)
-                .map(([k, v]) => `<span style="color:var(--accent-primary)">${k}</span>: ${escapeHtml(String(v).substring(0, 50))}`)
-                .join(' | ');
+            const emoji = getToolEmoji(step.tool);
+            const paramsEntries = Object.entries(step.params || {}).slice(0, 4);
+            const paramsStr = paramsEntries.length
+                ? paramsEntries.map(([k, v]) => {
+                    const val = String(v).length > 60 ? String(v).substring(0, 60) + '…' : String(v);
+                    return `<span class="param-key">${escapeHtml(k)}</span>: ${escapeHtml(val)}`;
+                }).join(' · ')
+                : '';
 
             stepEl.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="step-icon"><span class="step-spinner"></span></span>
-                    <div style="flex: 1;">
-                        <div style="font-size: 0.85rem; color: var(--text-primary)">${escapeHtml(step.tool)}</div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted)">${paramsStr}</div>
-                    </div>
+                <div class="step-icon"><span class="step-spinner"></span></div>
+                <div class="step-tool-name">
+                    <span class="tool-emoji">${emoji}</span>
+                    ${escapeHtml(formatToolName(step.tool))}
                 </div>
+                ${paramsStr ? `<div class="step-params">${paramsStr}</div>` : ''}
             `;
 
             container.appendChild(stepEl);
@@ -2321,55 +2483,77 @@
         function updateLiveStep(activityEl, step, status) {
             if (!activityEl) return;
 
-            // Find step by ID
             let stepEl = null;
             if (step.id) {
                 stepEl = activityEl.querySelector(`[data-step-id="${CSS.escape(step.id)}"]`);
             }
-            // Fallback: find last running step with same tool name
             if (!stepEl) {
-                const candidates = activityEl.querySelectorAll('.activity-step');
+                const candidates = activityEl.querySelectorAll('.activity-step.running');
                 for (const el of candidates) {
-                    if (el.querySelector('.step-spinner')) {
-                        stepEl = el;
-                    }
+                    stepEl = el;
                 }
             }
             if (!stepEl) {
-                // Step wasn't tracked yet, add it as completed
                 addLiveStep(activityEl, step);
                 stepEl = activityEl.querySelector('.activity-step:last-child');
             }
             if (!stepEl) return;
 
-            const isSuccess = status === 'completed';
-            const icon = isSuccess ? '✓' : '✗';
-            const color = isSuccess ? 'var(--success)' : 'var(--error)';
+            // Calculate duration
+            const startTime = parseInt(stepEl.dataset.startTime || '0');
+            const duration = startTime ? ((Date.now() - startTime) / 1000).toFixed(1) : null;
 
-            // Update the icon
+            const isSuccess = status === 'completed';
+            stepEl.className = `activity-step ${status}`;
+
+            // Update icon
             const iconEl = stepEl.querySelector('.step-icon');
             if (iconEl) {
-                iconEl.innerHTML = `<span style="color: ${color}; font-weight: bold;">${icon}</span>`;
+                iconEl.innerHTML = isSuccess ? '✓' : '✗';
             }
 
-            // Add result preview
+            // Add duration badge
+            if (duration) {
+                const nameEl = stepEl.querySelector('.step-tool-name');
+                if (nameEl && !nameEl.querySelector('.step-duration')) {
+                    nameEl.insertAdjacentHTML('beforeend', 
+                        `<span class="step-duration">${duration}s</span>`);
+                }
+            }
+
+            // Add collapsible result
             if (step.result && isSuccess) {
                 const resultStr = typeof step.result === 'string'
                     ? step.result
                     : JSON.stringify(step.result, null, 2);
-                const preview = resultStr.substring(0, 300) + (resultStr.length > 300 ? '...' : '');
+                const resultId = 'result-' + (step.id || Math.random().toString(36).substr(2));
+
                 if (!stepEl.querySelector('.step-result')) {
+                    const toggleEl = document.createElement('div');
+                    toggleEl.className = 'step-result-toggle';
+                    toggleEl.innerHTML = '▶ Show result';
+                    toggleEl.onclick = function() {
+                        const resultDiv = document.getElementById(resultId);
+                        if (resultDiv) {
+                            const collapsed = resultDiv.classList.toggle('collapsed');
+                            this.innerHTML = collapsed ? '▶ Show result' : '▼ Hide result';
+                        }
+                    };
+                    stepEl.appendChild(toggleEl);
+
                     const resultDiv = document.createElement('div');
-                    resultDiv.className = 'step-result';
-                    resultDiv.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; padding: 6px 8px; background: rgba(0,0,0,0.2); border-radius: 4px; max-height: 80px; overflow: auto; white-space: pre-wrap;';
-                    resultDiv.textContent = preview;
+                    resultDiv.className = 'step-result collapsed';
+                    resultDiv.id = resultId;
+                    resultDiv.textContent = resultStr;
                     stepEl.appendChild(resultDiv);
                 }
             }
+
+            // Add error
             if (step.error) {
                 const errorDiv = document.createElement('div');
-                errorDiv.style.cssText = 'font-size: 0.75rem; color: var(--error); margin-top: 4px;';
-                errorDiv.textContent = 'Error: ' + step.error;
+                errorDiv.className = 'step-error';
+                errorDiv.textContent = step.error;
                 stepEl.appendChild(errorDiv);
             }
         }
@@ -2380,24 +2564,22 @@
             const header = activityEl.querySelector('.activity-header');
             if (!container || !header) return;
 
-            // Check if any steps were shown
             const hasSteps = activityEl.querySelectorAll('.activity-step').length > 0;
+            const stepCount = activityEl.querySelectorAll('.activity-step').length;
 
             if (status === 'done') {
+                container.classList.add('done');
                 if (hasSteps) {
-                    header.innerHTML = '<span style="color: var(--success)">✓</span> <span>Complete</span>';
-                    container.style.borderColor = 'var(--success)';
-                    container.style.background = 'rgba(16, 185, 129, 0.05)';
+                    header.innerHTML = `<span style="color: var(--success)">✓</span> <span>Complete</span> <span class="step-duration">${stepCount} step${stepCount !== 1 ? 's' : ''}</span>`;
                 } else {
-                    // No tools were called — remove the empty activity feed
                     activityEl.remove();
                 }
             } else if (status === 'approval') {
+                container.classList.add('approval');
                 header.innerHTML = '<span style="color: var(--warning)">⏸</span> <span>Waiting for approval</span>';
-                container.style.borderColor = 'var(--warning)';
             } else if (status === 'error') {
+                container.classList.add('error');
                 header.innerHTML = '<span style="color: var(--error)">✗</span> <span>Error</span>';
-                container.style.borderColor = 'var(--error)';
                 if (!hasSteps) activityEl.remove();
             }
         }
