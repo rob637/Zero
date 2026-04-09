@@ -296,7 +296,7 @@ class CalendarConnector:
                 items = result.get('items', [])
                 print(f"[CALENDAR] {cal_id}: {len(items)} events found")
                 return [self._parse_event(e) for e in items]
-            except HttpError as e:
+            except Exception as e:
                 print(f"[CALENDAR] Skipping calendar {cal_id}: {e}")
                 return []
 
