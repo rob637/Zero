@@ -24,6 +24,10 @@ Usage:
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 from typing import Any, Dict, List, Optional
 import json
 
@@ -249,12 +253,26 @@ class CalendarConnector:
         
         for cal_id in calendar_ids:
             try:
-                # Format time bounds for Google API
+                # Format time bounds as RFC3339 for Google API
                 # If datetime is tz-aware, convert to UTC and append Z
-                # If naive (e.g. date-only from user), use isoformat+Z and let
-                # the timeZone param tell Google how to interpret it
-                t_min = (time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_min.tzinfo else (time_min.isoformat() + 'Z')
-                t_max = (time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z') if time_max.tzinfo else (time_max.isoformat() + 'Z')
+                # If naive (e.g. date-only "2026-04-09" from user), localize
+                # to the user's calendar timezone so "today" means the right day
+                if not time_min.tzinfo and self._calendar_timezone and ZoneInfo:
+                    try:
+                        tz = ZoneInfo(self._calendar_timezone)
+                        t_min_dt = time_min.replace(tzinfo=tz)
+                        t_max_dt = time_max.replace(tzinfo=tz)
+                        t_min = t_min_dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+                        t_max = t_max_dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+                    except Exception:
+                        t_min = time_min.isoformat() + 'Z'
+                        t_max = time_max.isoformat() + 'Z'
+                elif time_min.tzinfo:
+                    t_min = time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+                    t_max = time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+                else:
+                    t_min = time_min.isoformat() + 'Z'
+                    t_max = time_max.isoformat() + 'Z'
 
                 list_kwargs = dict(
                     calendarId=cal_id,
@@ -265,14 +283,13 @@ class CalendarConnector:
                     orderBy='startTime',
                     q=query,
                 )
-                # When we have naive datetimes (date-only), tell Google
-                # to interpret them in the user's calendar timezone
-                if not time_min.tzinfo and self._calendar_timezone:
-                    list_kwargs['timeZone'] = self._calendar_timezone
+                print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={self._calendar_timezone})")
 
                 request = self._service.events().list(**list_kwargs)
                 result = await asyncio.to_thread(request.execute)
-                all_events.extend([self._parse_event(e) for e in result.get('items', [])])
+                items = result.get('items', [])
+                print(f"[CALENDAR] {cal_id}: {len(items)} events found")
+                all_events.extend([self._parse_event(e) for e in items])
             except HttpError as e:
                 # Skip calendars that fail (e.g. no access)
                 print(f"[CALENDAR] Skipping calendar {cal_id}: {e}")

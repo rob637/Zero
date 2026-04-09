@@ -3025,12 +3025,14 @@
             if (!items || !items.length) return '';
             const events = items.slice(0, 8);
             const rows = events.map(e => {
-                const title = e.title || e.summary || e.subject || 'Untitled';
+                const title = decodeHtmlEntities(e.title || e.summary || e.subject || 'Untitled');
                 const start = formatTime(e.start || e.start_time || e.dateTime);
                 const end = formatTime(e.end || e.end_time);
-                const loc = e.location || '';
+                const loc = decodeHtmlEntities(e.location || '');
+                const allDay = e.all_day;
+                const timeDisplay = allDay ? 'All day' : (start + (end ? ' – ' + end : ''));
                 return `<div class="calendar-event">
-                    <div class="cal-time">${escapeCardHtml(start)}${end ? ' – ' + escapeCardHtml(end) : ''}</div>
+                    <div class="cal-time">${escapeCardHtml(timeDisplay)}</div>
                     <div class="cal-details">
                         <div class="cal-title">${escapeCardHtml(title)}</div>
                         ${loc ? `<div class="cal-location">📍 ${escapeCardHtml(loc)}</div>` : ''}
@@ -3038,28 +3040,63 @@
                 </div>`;
             }).join('');
             return `<div class="canvas-card calendar">
-                <div class="canvas-card-header"><span class="card-icon">📅</span>Calendar</div>
+                <div class="canvas-card-header"><span class="card-icon">📅</span>Calendar <span style="font-weight: 400; opacity: 0.7;">(${events.length} event${events.length !== 1 ? 's' : ''})</span></div>
                 <div class="canvas-card-body">${rows}</div>
             </div>`;
+        }
+
+        function decodeHtmlEntities(str) {
+            if (!str) return '';
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = str;
+            return textarea.value;
+        }
+
+        function extractSenderName(sender) {
+            if (!sender) return 'Unknown';
+            // "John Doe <john@example.com>" → "John Doe"
+            // "<john@example.com>" → "john@example.com"
+            // "john@example.com" → "john"
+            const match = sender.match(/^(.+?)\s*<.+>$/);
+            if (match) return match[1].replace(/"/g, '').trim();
+            if (sender.includes('@')) return sender.split('@')[0];
+            return sender;
+        }
+
+        function formatEmailDate(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const d = new Date(dateStr);
+                if (isNaN(d)) return dateStr.slice(0, 16).replace('T', ' ');
+                const now = new Date();
+                const isToday = d.toDateString() === now.toDateString();
+                if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch { return dateStr; }
         }
 
         function renderEmailCard(items) {
             if (!items || !items.length) return '';
             const emails = items.slice(0, 6);
             const rows = emails.map(e => {
-                const from = e.from || e.sender || e.from_name || '';
-                const subject = e.subject || e.title || 'No subject';
-                const snippet = e.snippet || e.preview || e.body_preview || '';
-                const date = e.date || e.received || e.received_at || '';
+                const from = extractSenderName(e.sender || e.from || e.from_name || '');
+                const subject = decodeHtmlEntities(e.subject || e.title || 'No subject');
+                const snippet = decodeHtmlEntities(e.snippet || e.preview || e.body_preview || '');
+                const date = formatEmailDate(e.date || e.received || e.received_at || '');
+                const isUnread = (e.labels && e.labels.includes('UNREAD')) || e.is_read === false;
                 return `<div class="email-item">
-                    <div class="email-from">${escapeCardHtml(from)}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <div class="email-from" style="${isUnread ? 'font-weight: 700;' : ''}">${isUnread ? '● ' : ''}${escapeCardHtml(from)}</div>
+                        ${date ? `<div class="email-meta" style="flex-shrink: 0; margin-left: 12px;">${escapeCardHtml(date)}</div>` : ''}
+                    </div>
                     <div class="email-subject">${escapeCardHtml(subject)}</div>
                     ${snippet ? `<div class="email-snippet">${escapeCardHtml(snippet)}</div>` : ''}
-                    ${date ? `<div class="email-meta">${escapeCardHtml(typeof date === 'string' ? date.slice(0, 16).replace('T', ' ') : date)}</div>` : ''}
                 </div>`;
             }).join('');
+            const unreadCount = emails.filter(e => (e.labels && e.labels.includes('UNREAD')) || e.is_read === false).length;
+            const headerExtra = unreadCount ? ` <span style="font-weight: 400; opacity: 0.7;">(${unreadCount} unread)</span>` : '';
             return `<div class="canvas-card email">
-                <div class="canvas-card-header"><span class="card-icon">📧</span>Email</div>
+                <div class="canvas-card-header"><span class="card-icon">📧</span>Email${headerExtra}</div>
                 <div class="canvas-card-body">${rows}</div>
             </div>`;
         }
@@ -3068,19 +3105,22 @@
             if (!items || !items.length) return '';
             const tasks = items.slice(0, 8);
             const rows = tasks.map(t => {
-                const title = t.title || t.content || t.name || 'Untitled';
+                const title = decodeHtmlEntities(t.title || t.content || t.name || 'Untitled');
                 const done = t.is_completed || t.status === 'completed' || t.status === 'done';
                 const due = t.due || t.due_date || t.due_string || '';
+                const priority = t.priority || 0;
+                const priorityDot = priority >= 4 ? '<span style="color: var(--error);">!</span> ' : priority >= 3 ? '<span style="color: var(--warning);">!</span> ' : '';
                 return `<div class="task-item ${done ? 'done' : ''}">
                     <div class="task-check"></div>
-                    <div>
-                        <div class="task-content">${escapeCardHtml(title)}</div>
-                        ${due ? `<div class="task-due">Due: ${escapeCardHtml(due)}</div>` : ''}
+                    <div style="flex: 1;">
+                        <div class="task-content">${priorityDot}${escapeCardHtml(title)}</div>
+                        ${due ? `<div class="task-due">📅 ${escapeCardHtml(due)}</div>` : ''}
                     </div>
                 </div>`;
             }).join('');
+            const openCount = tasks.filter(t => !t.is_completed && t.status !== 'completed' && t.status !== 'done').length;
             return `<div class="canvas-card tasks">
-                <div class="canvas-card-header"><span class="card-icon">✅</span>Tasks</div>
+                <div class="canvas-card-header"><span class="card-icon">✅</span>Tasks <span style="font-weight: 400; opacity: 0.7;">(${openCount} open)</span></div>
                 <div class="canvas-card-body">${rows}</div>
             </div>`;
         }
