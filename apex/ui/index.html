@@ -420,6 +420,56 @@
         }
 
         /* ============================================ */
+        /* Streaming Activity Feed */
+        /* ============================================ */
+        .activity-container {
+            border: 1px solid var(--accent-secondary);
+            border-radius: 10px;
+            padding: 12px;
+            background: rgba(99, 102, 241, 0.05);
+            transition: border-color 0.3s ease;
+        }
+        .activity-header {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+            color: var(--accent-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .activity-step {
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 6px;
+            margin-bottom: 4px;
+            animation: messageIn 0.2s ease-out;
+        }
+        .activity-step .step-icon {
+            font-weight: bold;
+            width: 16px;
+            text-align: center;
+        }
+        @keyframes stepPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .step-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--text-muted);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ============================================ */
         /* Plan Card */
         /* ============================================ */
         .plan-card {
@@ -1618,7 +1668,7 @@
         }
 
         // ============================================
-        // Chat Functions (ReAct-based)
+        // Chat Functions (ReAct-based, Streaming)
         // ============================================
 
         let currentMsgElement = null;  // Track the message being updated
@@ -1627,14 +1677,64 @@
             const input = document.getElementById('input');
             const message = text || input.value.trim();
             if (!message) return;
-            
+
             input.value = '';
             addMessage(message, 'user');
             setThinking(true);
-            addTypingIndicator();
+
+            // Create live activity feed
+            const activityEl = addActivityFeed();
 
             try {
-                // Always use /react/chat - server maintains session context
+                const res = await fetch(`${API}/react/chat/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                if (!res.ok || !res.body) {
+                    // Fallback: try non-streaming endpoint
+                    activityEl?.remove();
+                    await sendMessageFallback(message);
+                    return;
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete line
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        try {
+                            const event = JSON.parse(line.slice(6));
+                            handleStreamEvent(event, activityEl);
+                        } catch (parseErr) {
+                            // Skip malformed events
+                        }
+                    }
+                }
+
+                setThinking(false);
+
+            } catch (e) {
+                setThinking(false);
+                activityEl?.remove();
+                addMessage('Cannot connect to Ziggy. Is the server running?', 'system');
+            }
+        }
+
+        async function sendMessageFallback(message) {
+            // Non-streaming fallback (original endpoint)
+            addTypingIndicator();
+            try {
                 const res = await fetch(`${API}/react/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1648,14 +1748,197 @@
                     addMessage(data.error, 'system');
                     return;
                 }
-
-                // Render the current state
                 renderReactState(data);
-
             } catch (e) {
                 removeTypingIndicator();
                 setThinking(false);
                 addMessage('Cannot connect to Ziggy. Is the server running?', 'system');
+            }
+        }
+
+        function addActivityFeed() {
+            const welcome = document.getElementById('welcome');
+            if (welcome) welcome.style.display = 'none';
+
+            const chat = document.getElementById('chat');
+            const feed = document.createElement('div');
+            feed.className = 'message assistant';
+            feed.id = 'activityFeed';
+            feed.innerHTML = `
+                <div class="activity-container">
+                    <div class="activity-header">
+                        <span class="step-spinner"></span>
+                        <span>Thinking...</span>
+                    </div>
+                    <div class="activity-steps"></div>
+                </div>
+            `;
+            chat.appendChild(feed);
+            chat.scrollTop = chat.scrollHeight;
+            return feed;
+        }
+
+        function handleStreamEvent(event, activityEl) {
+            const chat = document.getElementById('chat');
+
+            switch (event.event) {
+                case 'thinking':
+                    updateActivityHeader(activityEl, 'Thinking...', true);
+                    break;
+
+                case 'tool_start':
+                    updateActivityHeader(activityEl, 'Working...', true);
+                    addLiveStep(activityEl, event.step);
+                    break;
+
+                case 'tool_complete':
+                    updateLiveStep(activityEl, event.step, 'completed');
+                    break;
+
+                case 'tool_failed':
+                    updateLiveStep(activityEl, event.step, 'failed');
+                    break;
+
+                case 'approval_needed':
+                    finalizeActivityFeed(activityEl, 'approval');
+                    setThinking(false);
+                    const approvalHtml = renderApprovalRequest(event.step);
+                    addMessage('', 'assistant', approvalHtml);
+                    break;
+
+                case 'complete':
+                    finalizeActivityFeed(activityEl, 'done');
+                    if (event.data?.response) {
+                        addMessage(event.data.response, 'assistant');
+                    }
+                    break;
+
+                case 'error':
+                    finalizeActivityFeed(activityEl, 'error');
+                    addMessage('Error: ' + (event.message || 'Unknown error'), 'system');
+                    break;
+            }
+
+            if (chat) chat.scrollTop = chat.scrollHeight;
+        }
+
+        function updateActivityHeader(activityEl, text, showSpinner) {
+            if (!activityEl) return;
+            const header = activityEl.querySelector('.activity-header');
+            if (!header) return;
+            header.innerHTML = showSpinner
+                ? `<span class="step-spinner"></span><span>${text}</span>`
+                : `<span>${text}</span>`;
+        }
+
+        function addLiveStep(activityEl, step) {
+            if (!activityEl) return;
+            const container = activityEl.querySelector('.activity-steps');
+            if (!container) return;
+
+            const stepEl = document.createElement('div');
+            stepEl.className = 'activity-step';
+            stepEl.dataset.stepId = step.id || '';
+
+            const paramsStr = Object.entries(step.params || {})
+                .slice(0, 3)
+                .map(([k, v]) => `<span style="color:var(--accent-primary)">${k}</span>: ${escapeHtml(String(v).substring(0, 50))}`)
+                .join(' | ');
+
+            stepEl.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="step-icon"><span class="step-spinner"></span></span>
+                    <div style="flex: 1;">
+                        <div style="font-size: 0.85rem; color: var(--text-primary)">${escapeHtml(step.tool)}</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted)">${paramsStr}</div>
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(stepEl);
+        }
+
+        function updateLiveStep(activityEl, step, status) {
+            if (!activityEl) return;
+
+            // Find step by ID
+            let stepEl = null;
+            if (step.id) {
+                stepEl = activityEl.querySelector(`[data-step-id="${CSS.escape(step.id)}"]`);
+            }
+            // Fallback: find last running step with same tool name
+            if (!stepEl) {
+                const candidates = activityEl.querySelectorAll('.activity-step');
+                for (const el of candidates) {
+                    if (el.querySelector('.step-spinner')) {
+                        stepEl = el;
+                    }
+                }
+            }
+            if (!stepEl) {
+                // Step wasn't tracked yet, add it as completed
+                addLiveStep(activityEl, step);
+                stepEl = activityEl.querySelector('.activity-step:last-child');
+            }
+            if (!stepEl) return;
+
+            const isSuccess = status === 'completed';
+            const icon = isSuccess ? '✓' : '✗';
+            const color = isSuccess ? 'var(--success)' : 'var(--error)';
+
+            // Update the icon
+            const iconEl = stepEl.querySelector('.step-icon');
+            if (iconEl) {
+                iconEl.innerHTML = `<span style="color: ${color}; font-weight: bold;">${icon}</span>`;
+            }
+
+            // Add result preview
+            if (step.result && isSuccess) {
+                const resultStr = typeof step.result === 'string'
+                    ? step.result
+                    : JSON.stringify(step.result, null, 2);
+                const preview = resultStr.substring(0, 300) + (resultStr.length > 300 ? '...' : '');
+                if (!stepEl.querySelector('.step-result')) {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'step-result';
+                    resultDiv.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; padding: 6px 8px; background: rgba(0,0,0,0.2); border-radius: 4px; max-height: 80px; overflow: auto; white-space: pre-wrap;';
+                    resultDiv.textContent = preview;
+                    stepEl.appendChild(resultDiv);
+                }
+            }
+            if (step.error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.style.cssText = 'font-size: 0.75rem; color: var(--error); margin-top: 4px;';
+                errorDiv.textContent = 'Error: ' + step.error;
+                stepEl.appendChild(errorDiv);
+            }
+        }
+
+        function finalizeActivityFeed(activityEl, status) {
+            if (!activityEl) return;
+            const container = activityEl.querySelector('.activity-container');
+            const header = activityEl.querySelector('.activity-header');
+            if (!container || !header) return;
+
+            // Check if any steps were shown
+            const hasSteps = activityEl.querySelectorAll('.activity-step').length > 0;
+
+            if (status === 'done') {
+                if (hasSteps) {
+                    header.innerHTML = '<span style="color: var(--success)">✓</span> <span>Complete</span>';
+                    container.style.borderColor = 'var(--success)';
+                    container.style.background = 'rgba(16, 185, 129, 0.05)';
+                } else {
+                    // No tools were called — remove the empty activity feed
+                    activityEl.remove();
+                }
+            } else if (status === 'approval') {
+                header.innerHTML = '<span style="color: var(--warning)">⏸</span> <span>Waiting for approval</span>';
+                container.style.borderColor = 'var(--warning)';
+            } else if (status === 'error') {
+                header.innerHTML = '<span style="color: var(--error)">✗</span> <span>Error</span>';
+                container.style.borderColor = 'var(--error)';
+                if (!hasSteps) activityEl.remove();
             }
         }
         

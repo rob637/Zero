@@ -2438,6 +2438,126 @@ Remember: References like "the first one", "send it to him", "the information ab
         })
 
 
+@app.post("/react/chat/stream")
+async def react_chat_stream(req: ReactRequest):
+    """
+    Streaming chat endpoint using Server-Sent Events.
+    
+    Streams step-by-step progress as the agent works,
+    so the UI can show real-time activity instead of waiting.
+    """
+    import json
+    global _react_state, _session_messages
+
+    agent = get_session_agent()
+    if not agent:
+        async def err():
+            yield f"data: {json.dumps({'event': 'error', 'message': 'No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.'})}\n\n"
+        return StreamingResponse(err(), media_type="text/event-stream")
+
+    # Build message with conversation context (same logic as react_chat)
+    print(f"[STREAM] User: {req.message[:80]}...")
+    print(f"[STREAM] Conversation history: {len(_session_messages)} messages")
+
+    if _session_messages:
+        context_lines = []
+        for m in _session_messages[-10:]:
+            role = 'User' if m['role'] == 'user' else 'Assistant'
+            content = m['content'][:300] + "..." if len(m['content']) > 300 else m['content']
+            context_lines.append(f"{role}: {content}")
+        context_summary = "\n".join(context_lines)
+
+        full_message = f"""[CONVERSATION CONTEXT - This is a continuation of an ongoing conversation]
+Previous messages in this session:
+{context_summary}
+
+[CURRENT USER MESSAGE]
+{req.message}
+
+Remember: References like "the first one", "send it to him", "the information above" refer to the context above."""
+    else:
+        full_message = req.message
+
+    # Event queue for SSE
+    queue = asyncio.Queue()
+
+    async def on_step(step: Step):
+        """Push step events to SSE queue."""
+        data = step_to_dict(step)
+        data["id"] = step.tool_call.id  # Unique ID for matching start/complete
+        if step.status == StepStatus.RUNNING:
+            await queue.put({"event": "tool_start", "step": data})
+        elif step.status == StepStatus.COMPLETED:
+            await queue.put({"event": "tool_complete", "step": data})
+        elif step.status == StepStatus.FAILED:
+            await queue.put({"event": "tool_failed", "step": data})
+        elif step.status == StepStatus.PENDING_APPROVAL:
+            await queue.put({"event": "approval_needed", "step": data})
+
+    async def on_thinking():
+        await queue.put({"event": "thinking"})
+
+    # Wire callbacks (save previous to restore later)
+    prev_on_step = agent.on_step
+    prev_on_thinking = getattr(agent, 'on_thinking', None)
+    agent.on_step = on_step
+    agent.on_thinking = on_thinking
+
+    async def event_generator():
+        global _react_state
+
+        # Initial thinking event
+        yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
+
+        # Run agent as background task
+        task = asyncio.create_task(agent.run(full_message))
+
+        try:
+            while not task.done():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+
+            # Drain remaining queued events
+            while not queue.empty():
+                event = await queue.get()
+                yield f"data: {json.dumps(event)}\n\n"
+
+            # Final state
+            state = task.result()
+            _react_state = state
+
+            # Update session history
+            _session_messages.append({"role": "user", "content": req.message})
+            if state.final_response:
+                _session_messages.append({"role": "assistant", "content": state.final_response})
+
+            # Log
+            for s in state.steps:
+                icon = "✓" if s.status == StepStatus.COMPLETED else "⏸" if s.status == StepStatus.PENDING_APPROVAL else "✗"
+                print(f"[STREAM] {icon} {s.tool_call.name}")
+            if state.is_complete:
+                print(f"[STREAM] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
+
+            yield f"data: {json.dumps({'event': 'complete', 'data': state_to_response(state)})}\n\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
+        finally:
+            agent.on_step = prev_on_step
+            agent.on_thinking = prev_on_thinking
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/react/new")
 async def react_new_conversation():
     """Start a fresh conversation - clears session history."""

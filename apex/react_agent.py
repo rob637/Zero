@@ -95,12 +95,14 @@ class ReActAgent:
         tools: List[Tool],
         system_prompt: Optional[str] = None,
         on_step: Optional[Callable[[Step], Awaitable[None]]] = None,
+        on_thinking: Optional[Callable[[], Awaitable[None]]] = None,
     ):
         self.llm_client = llm_client
         self.tools = {t.name: t for t in tools}
         self.tool_schemas = self._build_tool_schemas(tools)
         self.system_prompt = system_prompt or self._default_system_prompt()
         self.on_step = on_step  # Callback when step starts/completes
+        self.on_thinking = on_thinking  # Callback before each LLM call
         self.state = AgentState()
     
     def _default_system_prompt(self) -> str:
@@ -208,6 +210,10 @@ When you have completed the task, respond with a summary of what was done."""
         max_iterations = 40  # Safety limit
         
         for _ in range(max_iterations):
+            # Notify that we're about to call the LLM
+            if self.on_thinking:
+                await self.on_thinking()
+            
             # Call LLM with tools
             response = await self._call_llm()
             
