@@ -649,6 +649,7 @@ async def startup_event(app=None):
                     'photoslibrary': 'photos',
                     'spreadsheets': 'sheets',
                     'presentations': 'slides',
+                    'youtube': 'youtube',
                 }
                 
                 # Populate connected services based on token scopes

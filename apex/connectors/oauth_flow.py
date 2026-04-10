@@ -109,6 +109,10 @@ OAUTH_PROVIDERS: Dict[str, OAuthProviderConfig] = {
             "photos": [
                 "https://www.googleapis.com/auth/photoslibrary.readonly",
             ],
+            "youtube": [
+                "https://www.googleapis.com/auth/youtube.readonly",
+                "https://www.googleapis.com/auth/youtube",
+            ],
             # Combined scopes for all Google services
             "all": [
                 "https://www.googleapis.com/auth/gmail.readonly",
@@ -119,6 +123,7 @@ OAUTH_PROVIDERS: Dict[str, OAuthProviderConfig] = {
                 "https://www.googleapis.com/auth/drive",
                 "https://www.googleapis.com/auth/drive.file",
                 "https://www.googleapis.com/auth/contacts.readonly",
+                "https://www.googleapis.com/auth/youtube.readonly",
             ],
         },
         supports_pkce=True,
