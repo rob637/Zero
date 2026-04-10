@@ -288,15 +288,19 @@ def _extract_xlsx(path: str) -> str:
         return ""
 
 
-def _extract_image_metadata(path: str) -> str:
-    """Extract EXIF metadata from images — GPS location, date, camera, dimensions."""
+def _extract_image_metadata(path: str) -> dict:
+    """Extract EXIF metadata from images — GPS location, date, camera, dimensions.
+    
+    Returns dict with 'text' (str) and optional 'lat'/'lng' (float).
+    """
     try:
         from PIL import Image
         from PIL.ExifTags import TAGS, GPSTAGS
     except ImportError:
-        return ""
+        return {"text": ""}
 
     parts: list[str] = []
+    result: dict = {"text": ""}
     try:
         with Image.open(path) as img:
             w, h = img.size
@@ -304,7 +308,8 @@ def _extract_image_metadata(path: str) -> str:
 
             exif = img.getexif()
             if not exif:
-                return " ".join(parts)
+                result["text"] = " ".join(parts)
+                return result
 
             # Camera / device
             make = exif.get(0x010F, "")   # Make
@@ -336,6 +341,8 @@ def _extract_image_metadata(path: str) -> str:
                 )
                 if lat is not None and lon is not None:
                     parts.append(f"GPS: {lat:.6f}, {lon:.6f}")
+                    result["lat"] = lat
+                    result["lng"] = lon
                     place = _reverse_geocode_offline(lat, lon)
                     if place:
                         parts.append(f"Location: {place}")
@@ -343,7 +350,8 @@ def _extract_image_metadata(path: str) -> str:
     except Exception:
         pass
 
-    return " | ".join(parts)
+    result["text"] = " | ".join(parts)
+    return result
 
 
 def _gps_to_decimal(
@@ -453,7 +461,8 @@ def extract_content(path: str, ext: str) -> str:
     if ext in _SKIP_EXTENSIONS:
         return ""
     if ext in _IMAGE_EXTENSIONS:
-        return _extract_image_metadata(path)
+        meta = _extract_image_metadata(path)
+        return meta.get("text", "")
     if ext in (".csv", ".tsv"):
         return _extract_csv(path)
     if ext == ".pdf":
@@ -494,6 +503,8 @@ def _file_to_dataobject(
     stat_result: os.stat_result,
     content: str = "",
     home_dir: str = "",
+    lat: float | None = None,
+    lng: float | None = None,
 ) -> DataObject:
     """Convert a file path + stat to a DataObject."""
     name = os.path.basename(path)
@@ -516,6 +527,18 @@ def _file_to_dataobject(
         if snippet:
             body_parts.append(f"Content: {snippet}")
 
+    raw = {
+            "path": path,
+            "name": name,
+            "extension": ext,
+            "size": size,
+            "modified": mtime.isoformat(),
+            "directory": os.path.dirname(path),
+        }
+    if lat is not None and lng is not None:
+        raw["lat"] = lat
+        raw["lng"] = lng
+
     return DataObject(
         source="local_files",
         source_id=path,  # Full path is unique ID
@@ -525,14 +548,7 @@ def _file_to_dataobject(
         timestamp=mtime,
         labels=[ext] if ext else [],
         url=_path_to_url(path),
-        raw={
-            "path": path,
-            "name": name,
-            "extension": ext,
-            "size": size,
-            "modified": mtime.isoformat(),
-            "directory": os.path.dirname(path),
-        },
+        raw=raw,
     )
 
 
@@ -843,17 +859,27 @@ class LocalFileScanner:
             # Extract content in thread pool (blocking I/O)
             ext = os.path.splitext(path)[1].lower()
             content = ""
+            img_lat = None
+            img_lng = None
             if ext not in _SKIP_EXTENSIONS:
                 try:
-                    content = await loop.run_in_executor(
-                        None, extract_content, path, ext
-                    )
+                    if ext in _IMAGE_EXTENSIONS:
+                        meta = await loop.run_in_executor(
+                            None, _extract_image_metadata, path
+                        )
+                        content = meta.get("text", "")
+                        img_lat = meta.get("lat")
+                        img_lng = meta.get("lng")
+                    else:
+                        content = await loop.run_in_executor(
+                            None, extract_content, path, ext
+                        )
                     if content:
                         self._progress.files_with_content += 1
                 except Exception:
                     self._progress.errors += 1
 
-            obj = _file_to_dataobject(path, st, content=content, home_dir=self._home)
+            obj = _file_to_dataobject(path, st, content=content, home_dir=self._home, lat=img_lat, lng=img_lng)
             obj.checksum = checksum
             batch.append(obj)
 
@@ -1004,14 +1030,24 @@ class LocalFileScanner:
             else:
                 ext = os.path.splitext(path)[1].lower()
                 content = ""
+                img_lat = None
+                img_lng = None
                 if self._settings.extract_content and ext not in _SKIP_EXTENSIONS:
                     try:
-                        content = await loop.run_in_executor(
-                            None, extract_content, path, ext
-                        )
+                        if ext in _IMAGE_EXTENSIONS:
+                            meta = await loop.run_in_executor(
+                                None, _extract_image_metadata, path
+                            )
+                            content = meta.get("text", "")
+                            img_lat = meta.get("lat")
+                            img_lng = meta.get("lng")
+                        else:
+                            content = await loop.run_in_executor(
+                                None, extract_content, path, ext
+                            )
                     except Exception:
                         pass
-                obj = _file_to_dataobject(path, st, content=content, home_dir=self._home)
+                obj = _file_to_dataobject(path, st, content=content, home_dir=self._home, lat=img_lat, lng=img_lng)
                 obj.checksum = _file_checksum(path, st.st_size)
                 to_upsert.append(obj)
 

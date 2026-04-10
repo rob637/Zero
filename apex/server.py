@@ -399,6 +399,77 @@ async def trigger_file_rescan():
     return JSONResponse({"status": "rescan started", "progress": state._file_scanner.status})
 
 
+@app.get("/files/photos")
+async def get_geotagged_photos():
+    """Return all photos with GPS coordinates for the map view."""
+    if not state._data_index:
+        return JSONResponse({"photos": []})
+
+    try:
+        rows = state._data_index._conn.execute(
+            "SELECT source_id, title, raw, timestamp FROM data_objects "
+            "WHERE source = 'local_files' AND raw LIKE '%\"lat\"%' AND raw LIKE '%\"lng\"%' "
+            "ORDER BY timestamp DESC"
+        ).fetchall()
+
+        photos = []
+        for row in rows:
+            raw = json.loads(row[2]) if isinstance(row[2], str) else row[2]
+            lat = raw.get("lat")
+            lng = raw.get("lng")
+            if lat is not None and lng is not None:
+                photos.append({
+                    "path": row[0],
+                    "name": row[1],
+                    "lat": lat,
+                    "lng": lng,
+                    "date": row[3] or "",
+                })
+        return JSONResponse({"photos": photos, "count": len(photos)})
+    except Exception as e:
+        return JSONResponse({"photos": [], "error": str(e)})
+
+
+@app.get("/files/thumb")
+async def get_file_thumbnail(path: str = ""):
+    """Serve a photo thumbnail for the map popup."""
+    import os
+    from pathlib import Path as P
+
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "File not found")
+
+    # Security: only serve image files from indexed directories
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tiff", ".heic", ".heif"}:
+        raise HTTPException(400, "Not an image file")
+
+    # Verify the file is in an indexed directory
+    if state._file_scanner and state._file_scanner._settings.scan_directories:
+        allowed = False
+        for d in state._file_scanner._settings.scan_directories:
+            if path.startswith(d):
+                allowed = True
+                break
+        if not allowed:
+            raise HTTPException(403, "File not in indexed directories")
+
+    # Generate thumbnail on the fly (max 400px)
+    try:
+        from PIL import Image
+        import io
+
+        with Image.open(path) as img:
+            img.thumbnail((400, 400))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80)
+            buf.seek(0)
+            from starlette.responses import StreamingResponse
+            return StreamingResponse(buf, media_type="image/jpeg")
+    except Exception:
+        raise HTTPException(500, "Failed to generate thumbnail")
+
+
 @app.get("/capabilities")
 async def get_capabilities():
     """

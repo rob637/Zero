@@ -13,6 +13,8 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
             --bg-primary: #0a0a0f;
@@ -2924,6 +2926,10 @@
                 <div class="sidebar-item" onclick="openFileIndexSettings()" style="margin-top: 2px;">
                     <span class="sidebar-item-icon">📁</span>
                     <span>File Index Settings</span>
+                </div>
+                <div class="sidebar-item" onclick="openPhotoMap()" style="margin-top: 2px;">
+                    <span class="sidebar-item-icon">🗺️</span>
+                    <span>Photo Map</span>
                 </div>
                 <div class="sidebar-item" onclick="openAppDiscovery()" style="margin-top: 2px;">
                     <span class="sidebar-item-icon">🔍</span>
@@ -6426,6 +6432,74 @@
             localStorage.setItem('ziggy-theme', next);
             document.getElementById('themeToggle').textContent = next === 'light' ? '🌙' : '☀️';
         }
+        // ====== PHOTO MAP ======
+        let _photoMap = null;
+        async function openPhotoMap() {
+            // Create fullscreen overlay
+            let overlay = document.getElementById('photoMapOverlay');
+            if (overlay) { overlay.style.display = 'flex'; if (_photoMap) _photoMap.invalidateSize(); loadPhotoMarkers(); return; }
+
+            overlay = document.createElement('div');
+            overlay.id = 'photoMapOverlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;display:flex;flex-direction:column;background:var(--bg-primary);';
+            overlay.innerHTML = `
+                <div style="display:flex;align-items:center;padding:8px 16px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);gap:12px;">
+                    <button onclick="closePhotoMap()" style="background:none;border:none;color:var(--text-primary);font-size:1.2rem;cursor:pointer;padding:4px 8px;">✕</button>
+                    <span style="font-weight:600;font-size:1rem;color:var(--text-primary);">🗺️ Photo Map</span>
+                    <span id="photoMapCount" style="font-size:0.8rem;color:var(--text-muted);"></span>
+                </div>
+                <div id="photoMapContainer" style="flex:1;"></div>
+            `;
+            document.body.appendChild(overlay);
+
+            // Init Leaflet
+            _photoMap = L.map('photoMapContainer').setView([20, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap',
+                maxZoom: 19,
+            }).addTo(_photoMap);
+
+            await loadPhotoMarkers();
+        }
+
+        async function loadPhotoMarkers() {
+            if (!_photoMap) return;
+            try {
+                const resp = await fetch('/files/photos');
+                const data = await resp.json();
+                const photos = data.photos || [];
+                document.getElementById('photoMapCount').textContent = `${photos.length} geotagged photos`;
+
+                // Clear existing markers
+                _photoMap.eachLayer(l => { if (l instanceof L.Marker) _photoMap.removeLayer(l); });
+
+                if (photos.length === 0) return;
+
+                const bounds = [];
+                for (const p of photos) {
+                    const marker = L.marker([p.lat, p.lng]).addTo(_photoMap);
+                    const thumbUrl = '/files/thumb?path=' + encodeURIComponent(p.path);
+                    const date = p.date ? new Date(p.date).toLocaleDateString() : '';
+                    marker.bindPopup(
+                        `<div style="text-align:center;min-width:200px;">` +
+                        `<img src="${thumbUrl}" style="max-width:300px;max-height:250px;border-radius:6px;margin-bottom:6px;cursor:pointer;" ` +
+                        `onclick="window.open('${thumbUrl}','_blank')" loading="lazy"/>` +
+                        `<div style="font-weight:600;font-size:0.85rem;">${p.name}</div>` +
+                        (date ? `<div style="font-size:0.75rem;color:#888;">${date}</div>` : '') +
+                        `</div>`,
+                        { maxWidth: 350 }
+                    );
+                    bounds.push([p.lat, p.lng]);
+                }
+                if (bounds.length) _photoMap.fitBounds(bounds, { padding: [30, 30] });
+            } catch (e) { console.error('Photo map error:', e); }
+        }
+
+        function closePhotoMap() {
+            const overlay = document.getElementById('photoMapOverlay');
+            if (overlay) overlay.style.display = 'none';
+        }
+
         (function initTheme() {
             const saved = localStorage.getItem('ziggy-theme') || 'dark';
             if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
