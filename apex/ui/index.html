@@ -6487,6 +6487,18 @@
                         data = await resp2.json();
                         photos = data.photos || [];
                     }
+
+                    // If still empty, re-read EXIF GPS from already indexed images (no full rescan)
+                    if (photos.length === 0) {
+                        document.getElementById('photoMapCount').textContent = 'Re-reading EXIF GPS from indexed photos...';
+                        const rexResp = await fetch('/files/reextract-gps', { method: 'POST' });
+                        const rexData = await rexResp.json();
+                        if ((rexData.updated || 0) > 0) {
+                            const resp3 = await fetch('/files/photos');
+                            data = await resp3.json();
+                            photos = data.photos || [];
+                        }
+                    }
                 }
 
                 document.getElementById('photoMapCount').textContent = `${photos.length} geotagged photos`;

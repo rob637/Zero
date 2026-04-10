@@ -471,6 +471,74 @@ async def migrate_gps_to_raw():
     return JSONResponse({"migrated": updated, "total_with_gps": len(rows)})
 
 
+@app.post("/files/reextract-gps")
+async def reextract_gps_from_images(limit: int = 5000):
+    """Backfill GPS by re-reading EXIF for indexed image files missing lat/lng.
+
+    This avoids a full filesystem rescan and only touches already indexed images.
+    """
+    if not state._data_index:
+        raise HTTPException(400, "Index not available")
+
+    from local_files import _extract_image_metadata
+    import os
+
+    exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tiff", ".heic", ".heif"}
+    lim = max(1, min(limit, 20000))
+
+    rows = state._data_index._conn.execute(
+        "SELECT id, source_id, raw FROM data_objects "
+        "WHERE source = 'local_files' "
+        "AND (raw NOT LIKE '%\"lat\"%' OR raw NOT LIKE '%\"lng\"%') "
+        "LIMIT ?",
+        (lim,),
+    ).fetchall()
+
+    scanned = 0
+    updated = 0
+    missing = 0
+    skipped_non_image = 0
+
+    for row in rows:
+        obj_id, path, raw_str = row
+        scanned += 1
+
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in exts:
+            skipped_non_image += 1
+            continue
+        if not os.path.isfile(path):
+            missing += 1
+            continue
+
+        raw = json.loads(raw_str) if isinstance(raw_str, str) else (raw_str or {})
+        if "lat" in raw and "lng" in raw:
+            continue
+
+        meta = _extract_image_metadata(path)
+        lat = meta.get("lat")
+        lng = meta.get("lng")
+        if lat is None or lng is None:
+            continue
+
+        raw["lat"] = lat
+        raw["lng"] = lng
+        state._data_index._conn.execute(
+            "UPDATE data_objects SET raw = ? WHERE id = ?",
+            (json.dumps(raw), obj_id),
+        )
+        updated += 1
+
+    state._data_index._conn.commit()
+    return JSONResponse({
+        "scanned": scanned,
+        "updated": updated,
+        "missing": missing,
+        "skipped_non_image": skipped_non_image,
+        "limit": lim,
+    })
+
+
 @app.get("/files/thumb")
 async def get_file_thumbnail(path: str = ""):
     """Serve a photo thumbnail for the map popup."""
