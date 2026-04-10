@@ -360,10 +360,25 @@ def _gps_to_decimal(
     """Convert EXIF GPS coordinates (degrees, minutes, seconds) to decimal."""
     if not coords or not ref:
         return None
+
+    def _to_float(v) -> float:
+        # Pillow may return IFDRational objects or (num, den) tuples.
+        if isinstance(v, tuple) and len(v) == 2:
+            num, den = v
+            den_f = float(den)
+            if den_f == 0:
+                raise ZeroDivisionError()
+            return float(num) / den_f
+        return float(v)
+
     try:
-        d, m, s = [float(c) for c in coords]
+        d, m, s = [_to_float(c) for c in coords]
         decimal = d + m / 60 + s / 3600
-        if ref in ("S", "W"):
+
+        if isinstance(ref, bytes):
+            ref = ref.decode(errors="ignore")
+
+        if str(ref).upper() in ("S", "W"):
             decimal = -decimal
         return decimal
     except (ValueError, TypeError, ZeroDivisionError):
