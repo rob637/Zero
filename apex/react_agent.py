@@ -453,6 +453,21 @@ When you have completed the task, respond with a summary of what was done."""
             if _cr or _ch:
                 _cache_info = f" | cache: created={_cr} read={_ch}"
         logger.info(f"LLM call: {_elapsed:.1f}s | context: {_ctx_size:,} chars | usage: {response.usage}{_cache_info}")
+
+        # Audit log: record what was sent to the LLM
+        try:
+            from src.privacy.audit_log import audit_logger, TransmissionDestination
+            _user_msg = self.state.messages[-1].get("content", "")[:200] if self.state.messages else ""
+            audit_logger.log_outbound(
+                destination=TransmissionDestination.ANTHROPIC,
+                content=json.dumps(self.state.messages[-2:], default=str)[:2000],
+                triggering_request=_user_msg,
+                model="claude-sonnet-4-20250514",
+                endpoint="messages.create",
+            )
+        except Exception:
+            pass  # Non-fatal
+
         return response
     
     async def _call_openai(self) -> Any:

@@ -185,7 +185,7 @@ async def discover_apps():
     found locally. Apps not found are still listed — users may use
     web versions.
     """
-    from apex.app_discovery import get_all_available_connectors, scan_apps
+    from app_discovery import get_all_available_connectors, scan_apps
     result = scan_apps()
     connectors = get_all_available_connectors()
     return JSONResponse({
@@ -264,7 +264,7 @@ _file_scanner = None  # Optional[LocalFileScanner]
 @app.get("/files/settings")
 async def get_file_index_settings():
     """Get current local file indexing settings."""
-    from apex.local_files import load_settings, FileIndexSettings
+    from local_files import load_settings, FileIndexSettings
     if not state._data_index:
         return JSONResponse({"enabled": False, "error": "Index not available"})
     settings = load_settings(state._data_index)
@@ -279,7 +279,7 @@ async def get_file_index_settings():
 async def update_file_index_settings(request: Request):
     """Update local file indexing settings. User opts in/out here."""
     # _file_scanner in state module
-    from apex.local_files import (
+    from local_files import (
         FileIndexSettings, LocalFileScanner, load_settings, save_settings,
     )
     if not state._data_index:
@@ -327,7 +327,7 @@ async def get_file_index_status():
 async def trigger_file_rescan():
     """Force a full rescan of local files."""
     # _file_scanner in state module
-    from apex.local_files import LocalFileScanner, load_settings
+    from local_files import LocalFileScanner, load_settings
     if not state._data_index:
         raise HTTPException(400, "Index not available")
 

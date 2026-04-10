@@ -263,12 +263,10 @@ async def classify(message: str, today: Optional[datetime] = None) -> Intent:
         today = datetime.now()
     msg_lower = message.lower().strip()
 
-    # Try LLM-based domain detection first, fall back to keywords
-    detected_domains = None
-    if _llm_client and len(msg_lower) >= 3:
-        detected_domains = await _detect_domains_llm(msg_lower)
-    if detected_domains is None:
-        detected_domains = _detect_domains_keyword(msg_lower)
+    # Try keywords first (instant), only call LLM if keywords find nothing
+    detected_domains = _detect_domains_keyword(msg_lower)
+    if not detected_domains and _llm_client and len(msg_lower) >= 3:
+        detected_domains = await _detect_domains_llm(msg_lower) or []
 
     return _classify_core(msg_lower, today, detected_domains)
 

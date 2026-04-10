@@ -635,6 +635,36 @@ async def startup_event():
     except Exception as e:
         print(f"[STARTUP] Google reconnect failed: {e}")
 
+    # Reconnect Microsoft services if MSAL token cache exists
+    try:
+        from connectors.microsoft_auth import get_microsoft_auth
+        ms_auth = get_microsoft_auth()
+        if ms_auth.has_credentials() and ms_auth._token_cache_file.exists():
+            print("[STARTUP] Found Microsoft token cache, attempting reconnect...")
+            from connectors.microsoft_graph import GraphClient
+            ms_client = GraphClient(auth=ms_auth)
+            if await ms_client.connect():
+                print("[STARTUP] Microsoft Graph reconnected!")
+                # Rebuild engine so Microsoft connectors pick up the live auth
+                get_telic_engine(force_rebuild=True)
+            else:
+                print("[STARTUP] Microsoft token cache expired - user needs to re-authenticate")
+    except Exception as e:
+        print(f"[STARTUP] Microsoft reconnect failed (non-fatal): {e}")
+
+    # Reconnect Spotify if credentials exist in store
+    try:
+        store = get_cred_store()
+        spotify_token = store.get_token("spotify")
+        if spotify_token or os.environ.get("SPOTIFY_CLIENT_ID"):
+            print("[STARTUP] Found Spotify credentials, will reconnect on engine build")
+            # Spotify connector is auto-wired by _build_connectors_from_registry
+            # Just ensure the engine is built (force rebuild if not yet done)
+            if not _telic_engine:
+                get_telic_engine(force_rebuild=True)
+    except Exception as e:
+        print(f"[STARTUP] Spotify reconnect check failed (non-fatal): {e}")
+
     # Start ProactiveMonitor with any connected services
     try:
         monitor = get_proactive_monitor()
@@ -713,7 +743,7 @@ async def startup_event():
                 ("onedrive", "onedrive"):          ("list_files",     {"max_results": 100}, 600),
                 ("contacts_microsoft", "microsoft_contacts"): ("list_contacts", {"max_results": 500}, 900),
                 ("slack", "slack"):                ("list_messages",  {"max_results": 50}, 300),
-                ("github", "github"):              ("list_notifications", {"max_results": 50}, 600),
+                ("github", "github"):              ("list_notifications", {"per_page": 50}, 600),
                 ("notion", "notion"):              ("list_pages",     {"max_results": 100}, 600),
                 ("trello", "trello"):              ("list_cards",     {}, 600),
                 ("linear", "linear"):              ("list_issues",    {}, 600),
@@ -758,7 +788,7 @@ async def startup_event():
         print("[STARTUP] Skipping semantic search (data index not available)")
     else:
         try:
-            from apex.semantic_search import SemanticSearch
+            from semantic_search import SemanticSearch
             _semantic_search = SemanticSearch(_data_index)
             if await _semantic_search.initialize():
                 # Wire into sync engine so new data gets embedded automatically
@@ -782,7 +812,7 @@ async def startup_event():
 
     # Initialize webhooks + smart prefetch
     try:
-        from apex.webhooks import get_webhook_manager
+        from webhooks import get_webhook_manager
         _webhook_manager = get_webhook_manager(_sync_engine)
         if _webhook_manager:
             _webhook_manager.register_routes(app)
@@ -802,7 +832,7 @@ async def startup_event():
     global _file_scanner
     try:
         if _data_index:
-            from apex.local_files import load_settings, LocalFileScanner
+            from local_files import load_settings, LocalFileScanner
             file_settings = load_settings(_data_index)
             if file_settings.enabled:
                 _file_scanner = LocalFileScanner(

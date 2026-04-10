@@ -12,8 +12,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 import server_state as ss
-from server_state import ReactRequest, ReactApproveRequest
+from server_state import ReactRequest, ReactApproveRequest, get_intelligence_hub
 from react_agent import Step, StepStatus, AgentState
+from src.control.action_history import ActionStatus
 import sessions as session_store
 
 router = APIRouter()
@@ -177,15 +178,15 @@ Remember: References like "the first one", "send it to him", "the information ab
 
     # Save original tools in case we filter them (agent is session-persistent)
     _original_tools = agent.tools
-    _original_schemas = agent._tool_schemas
+    _original_schemas = agent.tool_schemas
     try:
-        from apex.intent_router import classify, handle_index_direct, filter_tools as router_filter_tools, IntentType
+        from intent_router import classify, handle_index_direct, filter_tools as router_filter_tools, IntentType
         intent = await classify(req.message)
         print(f"[ROUTER] {intent}")
 
         # Fast path: INDEX_DIRECT — answer from local index, no LLM call
         if intent.type == IntentType.INDEX_DIRECT:
-            index_result = handle_index_direct(intent, _data_index)
+            index_result = handle_index_direct(intent, ss._data_index)
             if index_result:
                 print(f"[ROUTER] Index direct hit — skipping LLM entirely")
                 async def index_direct_generator():
@@ -205,9 +206,10 @@ Remember: References like "the first one", "send it to him", "the information ab
         # Filtered path: reduce tool set for focused queries
         if intent.type == IntentType.FILTERED and intent.domains:
             original_count = len(agent.tools)
-            agent.tools = router_filter_tools(agent.tools, intent.domains)
+            filtered_list = router_filter_tools(list(agent.tools.values()), intent.domains)
+            agent.tools = {t.name: t for t in filtered_list}
             # Rebuild tool schemas for the filtered set
-            agent._tool_schemas = agent._build_tool_schemas()
+            agent.tool_schemas = agent._build_tool_schemas(filtered_list)
             print(f"[ROUTER] Filtered tools: {original_count} → {len(agent.tools)} (domains: {intent.domains})")
     except Exception as e:
         print(f"[ROUTER] Intent classification failed (falling through to FULL): {e}")
@@ -223,6 +225,21 @@ Remember: References like "the first one", "send it to him", "the information ab
             await queue.put({"event": "tool_start", "step": data})
         elif step.status == StepStatus.COMPLETED:
             await queue.put({"event": "tool_complete", "step": data})
+
+            # Record in action history so the Action History panel shows data
+            try:
+                ss.action_history.record_action(
+                    action_type=step.tool_call.name,
+                    payload=step.tool_call.params or {},
+                    preview={"title": step.tool_call.name, "result": str(step.result)[:200] if step.result else ""},
+                    status=ActionStatus.COMPLETED,
+                    triggered_by="user",
+                    session_id=session.session_id if session else None,
+                    request_text=req.message[:200],
+                )
+            except Exception:
+                pass  # Non-fatal
+
             # Record observation for intelligence learning
             try:
                 # Map tool names to preference analyzer keys
@@ -247,6 +264,19 @@ Remember: References like "the first one", "send it to him", "the information ab
                 pass  # Non-fatal
         elif step.status == StepStatus.FAILED:
             await queue.put({"event": "tool_failed", "step": data})
+            # Record failed actions too
+            try:
+                ss.action_history.record_action(
+                    action_type=step.tool_call.name,
+                    payload=step.tool_call.params or {},
+                    preview={"title": step.tool_call.name, "error": str(step.error)[:200] if step.error else ""},
+                    status=ActionStatus.FAILED,
+                    triggered_by="user",
+                    session_id=session.session_id if session else None,
+                    request_text=req.message[:200],
+                )
+            except Exception:
+                pass
         elif step.status == StepStatus.PENDING_APPROVAL:
             await queue.put({"event": "approval_needed", "step": data})
 
@@ -401,7 +431,7 @@ User request: {req.message}"""
             agent.on_token = prev_on_token
             # Restore full tool set if it was filtered for this request
             agent.tools = _original_tools
-            agent._tool_schemas = _original_schemas
+            agent.tool_schemas = _original_schemas
 
     return StreamingResponse(
         event_generator(),

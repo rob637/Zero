@@ -848,7 +848,7 @@ class Index:
             obj.source_id,
             obj.kind.value if isinstance(obj.kind, ObjectKind) else obj.kind,
             obj.title,
-            obj.body,
+            obj.body or "",
             obj.timestamp.isoformat() if obj.timestamp else None,
             obj.timestamp_end.isoformat() if obj.timestamp_end else None,
             json.dumps(obj.participants),

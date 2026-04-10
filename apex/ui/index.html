@@ -2562,6 +2562,202 @@
             border-color: var(--accent-primary);
             color: white;
         }
+
+        /* PC Index & File Settings */
+        .file-index-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+        .file-index-toggle-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .file-index-toggle-desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: var(--bg-hover);
+            border-radius: 24px;
+            transition: 0.2s;
+            border: 1px solid var(--border-light);
+        }
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--accent-primary);
+            border-color: var(--accent-primary);
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+            background: white;
+        }
+        .dir-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .dir-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        .dir-item-path {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+        }
+        .dir-item-remove {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.8rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+        .dir-item-remove:hover {
+            color: var(--error);
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .dir-add-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px dashed var(--border-light);
+            background: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+            transition: all 0.15s;
+        }
+        .dir-add-btn:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        .scan-progress {
+            padding: 14px;
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            margin-top: 16px;
+        }
+        .scan-progress-bar {
+            height: 6px;
+            background: var(--bg-hover);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .scan-progress-fill {
+            height: 100%;
+            background: var(--accent-primary);
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        .scan-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .scan-stat {
+            text-align: center;
+            font-size: 0.75rem;
+        }
+        .scan-stat-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent-primary);
+        }
+        .scan-stat-label {
+            color: var(--text-muted);
+            font-size: 0.65rem;
+            text-transform: uppercase;
+        }
+        /* App Discovery */
+        .app-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 10px;
+        }
+        .app-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            transition: all 0.15s;
+        }
+        .app-card.detected {
+            border-color: var(--accent-primary);
+            background: rgba(139, 92, 246, 0.06);
+        }
+        .app-card-icon {
+            font-size: 1.3rem;
+            flex-shrink: 0;
+        }
+        .app-card-info {
+            min-width: 0;
+        }
+        .app-card-name {
+            font-size: 0.82rem;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .app-card-status {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+        .app-card-status.detected {
+            color: var(--success);
+        }
     </style>
 </head>
 <body>
@@ -2611,6 +2807,26 @@
                 <div class="sidebar-item" onclick="window.location.href='/setup'" style="margin-top: 4px;">
                     <span class="sidebar-item-icon">➕</span>
                     <span>Manage Connections</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar-section session-list">
+            <div class="sidebar-section-title collapsible" onclick="toggleSection('pcindex')">
+                <span>PC Index</span>
+                <span class="chevron collapsed" id="pcindexChevron">▼</span>
+            </div>
+            <div class="sidebar-collapsible-content collapsed" id="pcindexCollapsible">
+                <div id="pcIndexStatus" style="padding: 4px 12px;">
+                    <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.8rem;">Loading...</div>
+                </div>
+                <div class="sidebar-item" onclick="openFileIndexSettings()" style="margin-top: 2px;">
+                    <span class="sidebar-item-icon">📁</span>
+                    <span>File Index Settings</span>
+                </div>
+                <div class="sidebar-item" onclick="openAppDiscovery()" style="margin-top: 2px;">
+                    <span class="sidebar-item-icon">🔍</span>
+                    <span>Detected Apps</span>
                 </div>
             </div>
         </div>
@@ -2757,14 +2973,8 @@
         // ============================================
 
         const DEFAULT_QUICK_ACTIONS = [
-            { id: 'schedule', icon: '📅', label: "Today's schedule", prompt: "What's on my calendar today?", group: 'quick' },
-            { id: 'email', icon: '📧', label: 'Check email', prompt: 'Check my email for anything important', group: 'quick' },
-            { id: 'tasks', icon: '✅', label: 'My tasks', prompt: 'What tasks do I have pending?', group: 'quick' },
             { id: 'brief', icon: '☀️', label: 'Morning Brief', prompt: 'Give me a morning briefing — check my calendar, email, and tasks for today and give me a summary', group: 'cross' },
-            { id: 'meetprep', icon: '🎯', label: 'Meeting Prep', prompt: 'Look at my calendar for today. If I have any meetings coming up, find the attendees in my contacts and pull any recent emails from them so I can prepare', group: 'cross' },
-            { id: 'smartsend', icon: '⚡', label: 'Smart Send', prompt: 'Check my email for anything that needs a reply. Draft responses in Slack or email as appropriate', group: 'cross' },
-            { id: 'travel', icon: '🗺️', label: 'Travel Recap', prompt: 'Look through my recent photos and files from the last week. Create a summary of what I was up to — like a travel recap or weekly review', group: 'cross' },
-            { id: 'life', icon: '🧠', label: 'Life Automate', prompt: 'Be my life assistant — check what I have today, remind me of overdue tasks, tell me the weather, and suggest what music to play while I work', group: 'cross' },
+            { id: 'recap', icon: '📊', label: 'Last 7 Day Recap', prompt: 'Look back at the last 7 days — summarize my calendar events, emails, and tasks. Highlight anything I might have missed or still need to follow up on.', group: 'cross' },
         ];
 
         let _quickActionsEditing = false;
@@ -2791,17 +3001,7 @@
                 <button class="sidebar-actions-edit-btn" onclick="toggleActionsEdit()" title="${editing ? 'Done' : 'Customize'}">${editing ? '✓ Done' : '✏️'}</button>
             </div>`;
 
-            const quickActions = actions.filter(a => a.group === 'quick');
-            const crossActions = actions.filter(a => a.group === 'cross');
-
-            if (quickActions.length > 0) {
-                quickActions.forEach(a => { html += renderSidebarActionBtn(a, editing); });
-            }
-
-            if (crossActions.length > 0) {
-                html += `<div class="sidebar-action-group-label">Cross-Service</div>`;
-                crossActions.forEach(a => { html += renderSidebarActionBtn(a, editing); });
-            }
+            actions.forEach(a => { html += renderSidebarActionBtn(a, editing); });
 
             if (editing) {
                 html += `<button class="sidebar-actions-add" onclick="showAddActionForm()">＋ Add action</button>`;
@@ -2863,14 +3063,6 @@
                 <input type="text" id="actionFormIcon" value="${icon}" placeholder="Emoji icon" maxlength="4" style="width: 50px; text-align: center; display: inline-block;">
                 <input type="text" id="actionFormLabel" value="${label.replace(/"/g, '&quot;')}" placeholder="Button label">
                 <textarea id="actionFormPrompt" placeholder="What should Ziggy do?">${prompt.replace(/</g, '&lt;')}</textarea>
-                <div style="margin-bottom: 6px;">
-                    <label style="font-size: 0.72rem; color: var(--text-muted); cursor: pointer;">
-                        <input type="radio" name="actionGroup" value="quick" ${group === 'quick' ? 'checked' : ''}> Quick
-                    </label>
-                    <label style="font-size: 0.72rem; color: var(--text-muted); cursor: pointer; margin-left: 8px;">
-                        <input type="radio" name="actionGroup" value="cross" ${group === 'cross' ? 'checked' : ''}> Cross-Service
-                    </label>
-                </div>
                 <div class="action-edit-form-btns">
                     <button onclick="closeActionForm()">Cancel</button>
                     <button class="save" onclick="saveActionForm('${id}')">${isNew ? 'Add' : 'Save'}</button>
@@ -2887,7 +3079,7 @@
             const icon = document.getElementById('actionFormIcon').value.trim() || '⭐';
             const label = document.getElementById('actionFormLabel').value.trim();
             const prompt = document.getElementById('actionFormPrompt').value.trim();
-            const group = document.querySelector('input[name="actionGroup"]:checked')?.value || 'quick';
+            const group = 'cross';
 
             if (!label || !prompt) return;
 
@@ -2905,6 +3097,365 @@
             saveQuickActions(actions);
             closeActionForm();
             renderSidebarActions();
+        }
+
+        // ============================================
+        // PC Index — File Indexing & App Discovery
+        // ============================================
+
+        let _fileIndexSettings = null;
+        let _fileIndexStatus = null;
+        let _fileIndexPollTimer = null;
+
+        async function loadPCIndexStatus() {
+            const container = document.getElementById('pcIndexStatus');
+            if (!container) return;
+            try {
+                const res = await fetch(`${API}/files/settings`);
+                const data = await res.json();
+                _fileIndexSettings = data.settings;
+                _fileIndexStatus = data.scanner_status;
+                const enabled = data.settings?.enabled;
+                const running = data.scanner_status?.running;
+                const progress = data.scanner_status?.progress;
+                const indexed = progress?.files_indexed || 0;
+
+                if (enabled && running) {
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--success);">● Scanning... ${indexed} files indexed</div>`;
+                } else if (enabled && indexed > 0) {
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">✓ ${indexed} files indexed</div>`;
+                } else if (enabled) {
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">Enabled — no files scanned yet</div>`;
+                } else {
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">Disabled — <a href="#" onclick="event.preventDefault();openFileIndexSettings()" style="color:var(--accent-primary);">Enable</a></div>`;
+                }
+            } catch (e) {
+                container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">Not available</div>`;
+            }
+        }
+
+        async function openFileIndexSettings() {
+            let modal = document.getElementById('fileIndexModal');
+            if (modal) modal.remove();
+
+            // Fetch current settings
+            let settings, defaults, scannerStatus;
+            try {
+                const res = await fetch(`${API}/files/settings`);
+                const data = await res.json();
+                settings = data.settings || {};
+                defaults = data.default_directories || [];
+                scannerStatus = data.scanner_status || {};
+            } catch (e) {
+                settings = { enabled: false, scan_directories: [] };
+                defaults = [];
+                scannerStatus = {};
+            }
+
+            const dirs = settings.scan_directories?.length > 0 ? settings.scan_directories : defaults;
+            const progress = scannerStatus.progress || {};
+            const isRunning = scannerStatus.running || false;
+
+            modal = document.createElement('div');
+            modal.id = 'fileIndexModal';
+            modal.className = 'modal-overlay active';
+            modal.innerHTML = `
+                <div class="modal" style="max-width:560px;" onclick="event.stopPropagation()">
+                    <div class="modal-header">
+                        <span>📁</span>
+                        <span class="modal-title">PC File Index Settings</span>
+                        <button class="modal-close" onclick="closeFileIndexModal()">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="file-index-toggle">
+                            <div>
+                                <div class="file-index-toggle-label">Index Local Files</div>
+                                <div class="file-index-toggle-desc">Scan your PC so Ziggy can search and reference your files</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="fileIndexEnabled" ${settings.enabled ? 'checked' : ''} onchange="toggleFileIndex(this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <div style="font-size:0.85rem;font-weight:600;margin-bottom:8px;">Directories to scan</div>
+                        <ul class="dir-list" id="dirList">
+                            ${dirs.map((d, i) => `
+                                <li class="dir-item">
+                                    <span>📂</span>
+                                    <span class="dir-item-path" title="${escapeHtml(d)}">${escapeHtml(d)}</span>
+                                    <button class="dir-item-remove" onclick="removeDir(${i})" title="Remove">✕</button>
+                                </li>
+                            `).join('')}
+                        </ul>
+                        <button class="dir-add-btn" onclick="promptAddDir()">＋ Add directory</button>
+
+                        <div class="scan-progress" id="scanProgressSection">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span style="font-size:0.85rem;font-weight:600;">Scan Progress</span>
+                                <span style="font-size:0.7rem;color:var(--text-muted);" id="scanPhase">${isRunning ? '● Scanning' : progress.files_indexed > 0 ? 'Complete' : 'Not started'}</span>
+                            </div>
+                            <div class="scan-progress-bar">
+                                <div class="scan-progress-fill" id="scanProgressFill" style="width: ${progress.files_found > 0 ? Math.round((progress.files_indexed / progress.files_found) * 100) : 0}%"></div>
+                            </div>
+                            <div class="scan-stats">
+                                <div class="scan-stat">
+                                    <div class="scan-stat-value" id="scanFilesFound">${progress.files_found || 0}</div>
+                                    <div class="scan-stat-label">Found</div>
+                                </div>
+                                <div class="scan-stat">
+                                    <div class="scan-stat-value" id="scanFilesIndexed">${progress.files_indexed || 0}</div>
+                                    <div class="scan-stat-label">Indexed</div>
+                                </div>
+                                <div class="scan-stat">
+                                    <div class="scan-stat-value" id="scanDirsScanned">${progress.directories_scanned || 0}</div>
+                                    <div class="scan-stat-label">Directories</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-reject" onclick="triggerRescan()" style="margin-right:auto;">↻ Rescan</button>
+                        <button class="btn btn-reject" onclick="closeFileIndexModal()">Close</button>
+                        <button class="btn btn-approve" onclick="saveFileIndexSettings()">Save</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', (e) => { if (e.target === modal) closeFileIndexModal(); });
+            document.body.appendChild(modal);
+
+            // Start polling progress if running
+            if (isRunning) startScanPoll();
+        }
+
+        function closeFileIndexModal() {
+            stopScanPoll();
+            document.getElementById('fileIndexModal')?.remove();
+        }
+
+        async function toggleFileIndex(enabled) {
+            try {
+                await fetch(`${API}/files/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled }),
+                });
+                if (enabled) startScanPoll();
+                loadPCIndexStatus();
+            } catch (e) {
+                console.error('Toggle file index failed:', e);
+            }
+        }
+
+        function getCurrentDirs() {
+            const items = document.querySelectorAll('#dirList .dir-item-path');
+            return Array.from(items).map(el => el.textContent.trim());
+        }
+
+        function removeDir(index) {
+            const dirs = getCurrentDirs();
+            dirs.splice(index, 1);
+            renderDirList(dirs);
+        }
+
+        function promptAddDir() {
+            const path = prompt('Enter the full path to a directory to scan:');
+            if (path && path.trim()) {
+                const dirs = getCurrentDirs();
+                dirs.push(path.trim());
+                renderDirList(dirs);
+            }
+        }
+
+        function renderDirList(dirs) {
+            const list = document.getElementById('dirList');
+            if (!list) return;
+            list.innerHTML = dirs.map((d, i) => `
+                <li class="dir-item">
+                    <span>📂</span>
+                    <span class="dir-item-path" title="${escapeHtml(d)}">${escapeHtml(d)}</span>
+                    <button class="dir-item-remove" onclick="removeDir(${i})" title="Remove">✕</button>
+                </li>
+            `).join('');
+        }
+
+        async function saveFileIndexSettings() {
+            const enabled = document.getElementById('fileIndexEnabled')?.checked || false;
+            const dirs = getCurrentDirs();
+            try {
+                await fetch(`${API}/files/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled, scan_directories: dirs }),
+                });
+                loadPCIndexStatus();
+                closeFileIndexModal();
+            } catch (e) {
+                console.error('Save file index settings failed:', e);
+            }
+        }
+
+        async function triggerRescan() {
+            try {
+                await fetch(`${API}/files/rescan`, { method: 'POST' });
+                startScanPoll();
+            } catch (e) {
+                console.error('Rescan failed:', e);
+            }
+        }
+
+        function startScanPoll() {
+            stopScanPoll();
+            _fileIndexPollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch(`${API}/files/status`);
+                    const status = await res.json();
+                    const p = status.progress || {};
+                    const pct = p.files_found > 0 ? Math.round((p.files_indexed / p.files_found) * 100) : 0;
+                    const fillEl = document.getElementById('scanProgressFill');
+                    if (fillEl) fillEl.style.width = pct + '%';
+                    const phaseEl = document.getElementById('scanPhase');
+                    if (phaseEl) phaseEl.textContent = status.running ? `● ${p.phase || 'Scanning'}` : 'Complete';
+                    const foundEl = document.getElementById('scanFilesFound');
+                    if (foundEl) foundEl.textContent = p.files_found || 0;
+                    const indexedEl = document.getElementById('scanFilesIndexed');
+                    if (indexedEl) indexedEl.textContent = p.files_indexed || 0;
+                    const dirsEl = document.getElementById('scanDirsScanned');
+                    if (dirsEl) dirsEl.textContent = p.directories_scanned || 0;
+                    loadPCIndexStatus();
+                    if (!status.running) stopScanPoll();
+                } catch (e) {
+                    stopScanPoll();
+                }
+            }, 2000);
+        }
+
+        function stopScanPoll() {
+            if (_fileIndexPollTimer) {
+                clearInterval(_fileIndexPollTimer);
+                _fileIndexPollTimer = null;
+            }
+        }
+
+        // ============================================
+        // App Discovery
+        // ============================================
+
+        async function openAppDiscovery() {
+            const existing = document.getElementById('appDiscoveryModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'appDiscoveryModal';
+            modal.className = 'modal-overlay active';
+            modal.innerHTML = `
+                <div class="modal" style="max-width:620px;" onclick="event.stopPropagation()">
+                    <div class="modal-header">
+                        <span>🔍</span>
+                        <span class="modal-title">Detected Apps on Your PC</span>
+                        <button class="modal-close" onclick="closeAppDiscovery()">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div style="text-align:center;padding:30px;color:var(--text-muted);">
+                            <div style="font-size:1.5rem;margin-bottom:8px;">🔍</div>
+                            Scanning your system...
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-reject" onclick="closeAppDiscovery()">Close</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', (e) => { if (e.target === modal) closeAppDiscovery(); });
+            document.body.appendChild(modal);
+
+            // Fetch app discovery data
+            try {
+                const res = await fetch(`${API}/discovery/apps`);
+                const data = await res.json();
+                renderAppDiscovery(data, modal);
+            } catch (e) {
+                modal.querySelector('.modal-body').innerHTML = `
+                    <div style="text-align:center;padding:30px;">
+                        <div style="font-size:1.5rem;margin-bottom:8px;">⚠️</div>
+                        <div style="font-size:0.85rem;color:var(--text-muted);">Could not scan apps. Make sure the server is running on your PC (not in Codespaces).</div>
+                    </div>
+                `;
+            }
+        }
+
+        function closeAppDiscovery() {
+            document.getElementById('appDiscoveryModal')?.remove();
+        }
+
+        function renderAppDiscovery(data, modal) {
+            const body = modal.querySelector('.modal-body');
+
+            const connectorIcons = {
+                slack: '💬', discord: '🎮', teams: '👥', zoom: '📹',
+                outlook: '📧', outlook_calendar: '📅',
+                spotify: '🎵', github: '💻', notion: '📝',
+                todoist: '✅', telegram: '✈️', onedrive: '☁️',
+                dropbox: '📦', jira: '🎯', linear: '📐',
+                trello: '📋', default: '🔌'
+            };
+
+            const suggestions = data.suggestions || [];
+            const allConnectors = data.all_connectors || [];
+            const detectedNames = new Set(suggestions.map(s => s.connector));
+
+            let html = `
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:16px;">
+                    Scanned <strong>${data.platform}</strong> in ${data.scan_time_ms}ms — found <strong>${data.apps_found}</strong> apps
+                </div>
+            `;
+
+            if (suggestions.length > 0) {
+                html += `<div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">🎯 Suggested Connections (found on your PC)</div>`;
+                html += `<div class="app-grid" style="margin-bottom:20px;">`;
+                suggestions.sort((a, b) => b.priority - a.priority);
+                suggestions.forEach(s => {
+                    const icon = connectorIcons[s.connector] || connectorIcons.default;
+                    html += `
+                        <div class="app-card detected">
+                            <span class="app-card-icon">${icon}</span>
+                            <div class="app-card-info">
+                                <div class="app-card-name">${escapeHtml(s.display)}</div>
+                                <div class="app-card-status detected">✓ Detected</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            // Show all connectors
+            const others = allConnectors.filter(c => !detectedNames.has(c.name) && c.name);
+            if (others.length > 0) {
+                html += `<div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">All Available Connectors</div>`;
+                html += `<div class="app-grid">`;
+                others.forEach(c => {
+                    const icon = connectorIcons[c.name] || connectorIcons.default;
+                    html += `
+                        <div class="app-card">
+                            <span class="app-card-icon">${icon}</span>
+                            <div class="app-card-info">
+                                <div class="app-card-name">${escapeHtml(c.display || c.name)}</div>
+                                <div class="app-card-status">Available</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            if (suggestions.length === 0 && others.length === 0) {
+                html += `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.85rem;">
+                    No apps detected. This works best when running on your local PC.
+                </div>`;
+            }
+
+            body.innerHTML = html;
         }
 
         // ============================================
@@ -4894,6 +5445,7 @@
                         <div class="empty-state">
                             <div class="empty-state-icon">✅</div>
                             <div class="empty-state-text">No external transmissions recorded</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">Every time Ziggy sends data to an AI model, it will be logged here with full details of what was sent.</div>
                         </div>
                     `;
                 } else {
@@ -4976,6 +5528,7 @@
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
                             <div class="empty-state-text">No actions recorded yet</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">Tool calls like searching your calendar, reading emails, or creating tasks will appear here as you chat with Ziggy.</div>
                         </div>
                     `;
                 } else {
@@ -5038,6 +5591,10 @@
         // ============================================
         
         async function openIntelDashboard() {
+            // Remove existing dashboard if any
+            const existing = document.getElementById('intelDashboard');
+            if (existing) existing.remove();
+
             try {
                 const [statsRes, patternsRes, memoryRes] = await Promise.all([
                     fetch(`${API}/intelligence/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -5082,6 +5639,16 @@
                                     </div>
                                 </div>
                 `;
+
+                const totalData = (mem.total_facts || 0) + (mem.total_entities || 0) + (pats.detected_patterns || 0) + (prefs.learned_preferences || 0);
+                
+                if (totalData === 0) {
+                    html += `<div style="text-align:center;padding:16px;background:var(--bg-tertiary);border-radius:10px;margin-bottom:16px;">
+                        <div style="font-size:1.5rem;margin-bottom:8px;">🌱</div>
+                        <div style="font-size:0.85rem;font-weight:500;margin-bottom:4px;">Ziggy is still learning</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted);">As you chat, Ziggy will remember facts, learn your preferences, and detect patterns in how you work. The more you use it, the smarter it gets.</div>
+                    </div>`;
+                }
                 
                 // Top entities
                 const topEntities = mem.top_entities || [];
@@ -5156,9 +5723,9 @@
                                 <button class="modal-close" onclick="closeIntelDashboard()">✕</button>
                             </div>
                             <div style="padding:30px;text-align:center;">
-                                <div style="font-size:2rem;margin-bottom:12px;">⚠️</div>
-                                <div style="font-weight:600;margin-bottom:6px;">Dashboard unavailable</div>
-                                <div style="color:var(--text-muted);font-size:0.8rem;">Could not load intelligence data. Make sure the server is running.</div>
+                                <div style="font-size:2rem;margin-bottom:12px;">🌱</div>
+                                <div style="font-weight:600;margin-bottom:6px;">Intelligence is initializing</div>
+                                <div style="color:var(--text-muted);font-size:0.8rem;">Start a conversation with Ziggy first. The intelligence layer activates after your first chat and learns over time.</div>
                                 <button class="btn btn-reject" onclick="closeIntelDashboard()" style="margin-top:16px;">Close</button>
                             </div>
                         </div>
@@ -5359,6 +5926,7 @@
             loadProviders();
             loadSessions();
             renderSidebarActions();
+            loadPCIndexStatus();
         }, 500);
         
         // Periodic refresh — pause when tab hidden
