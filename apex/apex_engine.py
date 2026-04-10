@@ -68,6 +68,8 @@ from primitives import (
     WebPrimitive, BrowserPrimitive, WeatherPrimitive, NewsPrimitive, MediaPrimitive, PhotoPrimitive,
     # Third-Party Services
     NotionPrimitive, LinearPrimitive, TrelloPrimitive, AirtablePrimitive, ZoomPrimitive, LinkedInPrimitive, RedditPrimitive, HubSpotPrimitive, StripePrimitive, DevToolsPrimitive, CloudStoragePrimitive,
+    # Skills — local compute primitives that create things
+    PhotoBookSkill, ReportSkill, DataVizSkill, FileConverterSkill, ExpenseReportSkill,
     # Lifestyle
     FinancePrimitive, HomePrimitive, ShoppingPrimitive,
 )
@@ -391,6 +393,13 @@ class Apex:
         if c.get("icloud_photos"):
             photo_providers["icloud_photos"] = c["icloud_photos"]
         self._primitives["PHOTO"] = PhotoPrimitive(providers=photo_providers)
+        
+        # Skills — local compute primitives that create things (no external APIs)
+        self._primitives["PHOTO_BOOK"] = PhotoBookSkill(self._llm_complete)
+        self._primitives["REPORT"] = ReportSkill(self._llm_complete)
+        self._primitives["DATA_VIZ"] = DataVizSkill(self._llm_complete)
+        self._primitives["CONVERT"] = FileConverterSkill()
+        self._primitives["EXPENSE_REPORT"] = ExpenseReportSkill(self._llm_complete)
     
     async def _llm_complete(self, prompt: str, triggering_request: str = "") -> str:
         """Call LLM for completion — with PII redaction and audit logging when safety is enabled."""
