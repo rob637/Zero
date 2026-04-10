@@ -152,8 +152,10 @@ class CalendarConnector:
         all_day = 'date' in start
         
         if all_day:
-            start_dt = datetime.fromisoformat(start['date'])
-            end_dt = datetime.fromisoformat(end['date'])
+            # All-day events: make timezone-aware so they can be sorted
+            # alongside timed events without TypeError
+            start_dt = datetime.fromisoformat(start['date']).replace(tzinfo=timezone.utc)
+            end_dt = datetime.fromisoformat(end['date']).replace(tzinfo=timezone.utc)
         else:
             start_str = start.get('dateTime', '')
             end_str = end.get('dateTime', '')
