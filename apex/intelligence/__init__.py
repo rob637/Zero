@@ -98,6 +98,17 @@ class IntelligenceHub:
         self._proactive.set_memory(self._memory)
         self._proactive.set_patterns(self._patterns)
         self._proactive.set_intel(self._intel)
+
+        # Sweep expired facts on startup (fire-and-forget)
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self._memory.sweep_expired())
+            else:
+                loop.run_until_complete(self._memory.sweep_expired())
+        except RuntimeError:
+            pass  # No event loop — sweep will happen on next init
     
     def set_services(self, unified_services):
         """

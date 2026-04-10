@@ -663,7 +663,51 @@ class SemanticMemory:
         self._save()
         
         return len(to_forget)
-    
+
+    async def sweep_expired(self) -> int:
+        """Delete facts past their TTL. Call periodically (e.g., on startup).
+
+        TTL by temporal class:
+            PERMANENT  → never expires
+            LONG_TERM  → 730 days (2 years)
+            MEDIUM_TERM → 90 days
+            SHORT_TERM  → 14 days
+            EPHEMERAL   → 3 days
+
+        Returns number of facts swept.
+        """
+        ttl_days = {
+            TemporalRelevance.LONG_TERM: 730,
+            TemporalRelevance.MEDIUM_TERM: 90,
+            TemporalRelevance.SHORT_TERM: 14,
+            TemporalRelevance.EPHEMERAL: 3,
+        }
+        now = datetime.now()
+        to_remove = set()
+        for fid, fact in self._facts.items():
+            if fact.temporal == TemporalRelevance.PERMANENT:
+                continue
+            max_days = ttl_days.get(fact.temporal, 90)
+            if (now - fact.created_at).days > max_days:
+                to_remove.add(fid)
+
+        if not to_remove:
+            return 0
+
+        for fid in to_remove:
+            del self._facts[fid]
+
+        # Rebuild indexes
+        self._entity_index.clear()
+        self._category_index.clear()
+        self._tag_index.clear()
+        for fact in self._facts.values():
+            self._index_fact(fact)
+
+        self._save()
+        logger.info(f"[Memory] Swept {len(to_remove)} expired facts")
+        return len(to_remove)
+
     async def connect_entities(
         self,
         entity1: str,

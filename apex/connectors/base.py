@@ -311,6 +311,11 @@ class Connector(ABC):
         self._operation_count = 0
         self._error_count = 0
         self._latency_sum = 0.0
+        # Circuit breaker state
+        self._cb_failures = 0
+        self._cb_open_until: Optional[float] = None
+        self._CB_THRESHOLD = 5       # consecutive failures to trip
+        self._CB_COOLDOWN = 60.0     # seconds before retrying
     
     # -------------------------------------------------------------------------
     # Abstract methods (must implement)
@@ -445,6 +450,9 @@ class Connector(ABC):
     async def _retry_with_backoff(self, coro_factory, max_retries: int = 3):
         """Execute an async callable with exponential backoff on transient errors.
 
+        Includes circuit breaker (stop hammering dead services) and
+        transparent auth refresh (catch 401 → refresh → retry once).
+
         Args:
             coro_factory: A zero-arg callable that returns a new coroutine each
                           call (e.g., ``lambda: self._client.get(url)``).
@@ -454,11 +462,23 @@ class Connector(ABC):
             The result of the successful coroutine.
 
         Raises:
-            AuthError: Immediately (not retried).
+            AuthError: After refresh + reconnect both fail.
             RateLimitError: After exhausting retries or if no retry_after.
             ConnectorTimeoutError: After exhausting retries.
             ConnectorError: After exhausting retries for other transient errors.
         """
+        # --- Circuit breaker: if tripped, fail fast ---
+        if self._cb_open_until is not None:
+            if time.monotonic() < self._cb_open_until:
+                raise ConnectorError(
+                    f"{self.name} circuit breaker open — backing off for "
+                    f"{self._cb_open_until - time.monotonic():.0f}s",
+                    connector=self.name,
+                )
+            # Cooldown elapsed, allow one probe
+            self._cb_open_until = None
+            logger.info(f"[{self.name}] Circuit breaker half-open, probing...")
+
         last_exc: Optional[Exception] = None
         for attempt in range(max_retries + 1):
             try:
@@ -466,9 +486,39 @@ class Connector(ABC):
                 result = await coro_factory()
                 latency = (time.monotonic() - start) * 1000
                 self.record_operation(latency, success=True)
+                self._cb_failures = 0  # reset on success
                 return result
-            except AuthError:
-                raise  # Never retry auth failures
+            except AuthError as e:
+                # Transparent auth refresh: try refresh → retry once
+                logger.warning(f"[{self.name}] Auth error, attempting token refresh...")
+                try:
+                    refreshed = await self.refresh_credentials()
+                    if refreshed:
+                        logger.info(f"[{self.name}] Token refreshed, retrying...")
+                        result = await coro_factory()
+                        self._cb_failures = 0
+                        return result
+                except Exception:
+                    pass
+                # Refresh failed — try disconnect + reconnect
+                logger.warning(f"[{self.name}] Refresh failed, attempting reconnect...")
+                try:
+                    await self.disconnect()
+                    connected = await self.connect()
+                    if connected:
+                        logger.info(f"[{self.name}] Reconnected, retrying...")
+                        result = await coro_factory()
+                        self._cb_failures = 0
+                        return result
+                except Exception:
+                    pass
+                # All recovery failed
+                self._cb_failures += 1
+                if self._cb_failures >= self._CB_THRESHOLD:
+                    self._cb_open_until = time.monotonic() + self._CB_COOLDOWN
+                    logger.error(f"[{self.name}] Circuit breaker OPEN after {self._cb_failures} failures")
+                self.record_error(str(e))
+                raise
             except RateLimitError as e:
                 last_exc = e
                 delay = e.retry_after if e.retry_after else 2 ** attempt
@@ -479,6 +529,7 @@ class Connector(ABC):
                     )
                     await asyncio.sleep(delay)
                     continue
+                self._cb_failures += 1
                 self.record_error(str(e))
                 raise
             except (ConnectorTimeoutError, asyncio.TimeoutError) as e:
@@ -491,11 +542,13 @@ class Connector(ABC):
                     )
                     await asyncio.sleep(delay)
                     continue
+                self._cb_failures += 1
                 self.record_error(str(e))
                 raise ConnectorTimeoutError(
                     str(e), connector=self.name
                 ) from e
             except ConnectorError:
+                self._cb_failures += 1
                 raise  # Don't retry unknown connector errors
             except Exception as e:
                 last_exc = e
@@ -507,10 +560,17 @@ class Connector(ABC):
                     )
                     await asyncio.sleep(delay)
                     continue
+                self._cb_failures += 1
                 self.record_error(str(e))
                 raise ConnectorError(
                     str(e), connector=self.name
                 ) from e
+
+        # Trip breaker if enough consecutive failures
+        if self._cb_failures >= self._CB_THRESHOLD:
+            self._cb_open_until = time.monotonic() + self._CB_COOLDOWN
+            logger.error(f"[{self.name}] Circuit breaker OPEN after {self._cb_failures} failures")
+
         # Should not reach here, but just in case
         raise ConnectorError(str(last_exc), connector=self.name)  # pragma: no cover
 
