@@ -278,6 +278,7 @@ class JiraConnector:
         self._email = email or os.environ.get("JIRA_EMAIL", "")
         self._api_token = api_token or os.environ.get("JIRA_API_TOKEN", "")
         self._client: Optional[httpx.AsyncClient] = None
+        self._agile_client: Optional[httpx.AsyncClient] = None
         self._user: Optional[JiraUser] = None
         self._connected = False
     

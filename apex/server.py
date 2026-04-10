@@ -71,6 +71,42 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
+# Rate limiting — simple in-memory token bucket per IP
+import time as _time
+from collections import defaultdict
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse as StarletteJSONResponse
+
+class _RateLimitMiddleware(BaseHTTPMiddleware):
+    """Token bucket rate limiter. 30 req/min for chat, 120 req/min for everything else."""
+    def __init__(self, app):
+        super().__init__(app)
+        self._buckets: Dict[str, list] = defaultdict(lambda: [0.0, 0])  # [last_refill, tokens]
+        self._chat_paths = {"/react/chat", "/react/chat/stream"}
+
+    async def dispatch(self, request, call_next):
+        client_ip = request.client.host if request.client else "unknown"
+        path = request.url.path
+        is_chat = any(path.startswith(p) for p in self._chat_paths)
+        limit = 30 if is_chat else 120
+        key = f"{client_ip}:{'chat' if is_chat else 'api'}"
+
+        bucket = self._buckets[key]
+        now = _time.time()
+        elapsed = now - bucket[0]
+        bucket[0] = now
+        bucket[1] = min(limit, bucket[1] + elapsed * (limit / 60.0))
+        if bucket[1] < 1:
+            return StarletteJSONResponse(
+                {"error": "Rate limit exceeded. Try again shortly."},
+                status_code=429,
+                headers={"Retry-After": "5"},
+            )
+        bucket[1] -= 1
+        return await call_next(request)
+
+app.add_middleware(_RateLimitMiddleware)
+
 # Include route modules
 app.include_router(oauth_router)
 app.include_router(react_router)

@@ -8,6 +8,7 @@ The AI calls tools one at a time, sees results, and decides next steps.
 import json
 import asyncio
 import logging
+import os
 import random
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Callable, Dict, List, Optional, Awaitable
@@ -250,11 +251,25 @@ When you have completed the task, respond with a summary of what was done."""
         self.state.messages.append({"role": "user", "content": user_input})
         return await self._execute_loop()
     
+    # Max cost per request (USD). Agent stops gracefully if exceeded.
+    MAX_REQUEST_COST_USD = float(os.environ.get("TELIC_MAX_REQUEST_COST", "2.00"))
+
     async def _execute_loop(self) -> AgentState:
         """Main execution loop."""
         max_iterations = 40  # Safety limit
         
         for _ in range(max_iterations):
+            # Budget guard — stop before burning too much
+            if self.state.estimated_cost_usd >= self.MAX_REQUEST_COST_USD:
+                self.state.is_complete = True
+                self.state.final_response = (
+                    f"I've reached the cost limit for this request "
+                    f"(${self.state.estimated_cost_usd:.3f} / ${self.MAX_REQUEST_COST_USD:.2f}). "
+                    f"The work so far is shown above. You can continue with a follow-up message."
+                )
+                logger.warning(f"Cost budget exceeded: ${self.state.estimated_cost_usd:.4f}")
+                return self.state
+
             # Trim context window if too large to prevent exceeding token limits.
             # ~4 chars/token average; 180k tokens ≈ 720k chars. Trim at 600k to leave room.
             self._trim_context_window(max_chars=600_000)

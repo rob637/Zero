@@ -3579,10 +3579,13 @@
             });
         }
 
+        let _lastUserMessage = '';
+
         async function sendMessage(text) {
             const input = document.getElementById('input');
             const message = text || input.value.trim();
             if (!message) return;
+            _lastUserMessage = message;
 
             input.value = '';
             input.style.height = 'auto';
@@ -3634,7 +3637,8 @@
             } catch (e) {
                 setThinking(false);
                 activityEl?.remove();
-                addMessage('Cannot connect to Ziggy. Is the server running?', 'system');
+                const retryBtn = `<button onclick="sendMessage(_lastUserMessage)" style="margin-top:6px;padding:4px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text);cursor:pointer;font-size:0.8rem;">↻ Retry</button>`;
+                addMessage('Cannot connect to Ziggy. Is the server running?', 'system', retryBtn);
             }
         }
 
@@ -4255,7 +4259,13 @@
 
                 case 'error':
                     finalizeActivityFeed(activityEl, 'error');
-                    addMessage('Error: ' + (event.message || 'Unknown error'), 'system');
+                    const errMsg = event.message || 'Unknown error';
+                    const friendlyErr = errMsg.includes('Rate limit') ? 'Too many requests — please wait a moment.'
+                        : errMsg.includes('overloaded') ? 'The AI service is busy. Try again in a few seconds.'
+                        : errMsg.includes('cancelled') ? 'Request was cancelled.'
+                        : 'Something went wrong: ' + errMsg;
+                    const retryBtn = `<button onclick="sendMessage(_lastUserMessage)" style="margin-top:6px;padding:4px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text);cursor:pointer;font-size:0.8rem;">↻ Retry</button>`;
+                    addMessage(friendlyErr, 'system', retryBtn);
                     break;
             }
 
