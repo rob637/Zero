@@ -143,26 +143,6 @@ class CalendarConnector:
         except Exception:
             return []
     
-    async def list_calendars(self) -> List[Dict]:
-        """
-        List all calendars the user has access to.
-        
-        Returns list of dicts with: id, summary (name), primary, accessRole
-        """
-        if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
-        
-        return [
-            {
-                'id': cal.get('id'),
-                'name': cal.get('summary'),
-                'primary': cal.get('primary', False),
-                'accessRole': cal.get('accessRole'),
-                'backgroundColor': cal.get('backgroundColor'),
-            }
-            for cal in self._calendars
-        ]
-
     @property
     def connected(self) -> bool:
         return self._service is not None
@@ -263,16 +243,26 @@ class CalendarConnector:
         else:
             calendar_ids = ['primary']
         
-        # Format time bounds — let the Google API handle timezone conversion
-        # by passing timeZone parameter instead of converting to UTC ourselves.
-        # This avoids ZoneInfo/tzdata dependency issues on Windows.
+        # Format time bounds as RFC 3339 (required by Google Calendar API).
+        # For naive datetimes (date-only queries like "2026-04-10"), use the
+        # calendar's own timezone so the window aligns with the user's local day.
         if time_min.tzinfo:
-            t_min = time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
-            t_max = time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+            t_min = time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            t_max = time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         else:
-            # Naive datetimes — treat as local time in the calendar's timezone
-            t_min = time_min.strftime('%Y-%m-%dT%H:%M:%S')
-            t_max = time_max.strftime('%Y-%m-%dT%H:%M:%S')
+            # Attach calendar timezone so midnight means local midnight, not UTC
+            cal_tz = self._calendar_timezone or 'America/New_York'
+            if ZoneInfo:
+                try:
+                    tz = ZoneInfo(cal_tz)
+                    t_min = time_min.replace(tzinfo=tz).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+                    t_max = time_max.replace(tzinfo=tz).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+                except Exception:
+                    t_min = time_min.strftime('%Y-%m-%dT%H:%M:%SZ')
+                    t_max = time_max.strftime('%Y-%m-%dT%H:%M:%SZ')
+            else:
+                t_min = time_min.strftime('%Y-%m-%dT%H:%M:%SZ')
+                t_max = time_max.strftime('%Y-%m-%dT%H:%M:%SZ')
 
         errors = []
 
@@ -287,9 +277,6 @@ class CalendarConnector:
                     orderBy='startTime',
                     q=query,
                 )
-                # If times are naive (no 'Z' suffix), tell Google API the timezone
-                if self._calendar_timezone and not t_min.endswith('Z'):
-                    list_kwargs['timeZone'] = self._calendar_timezone
                 print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={self._calendar_timezone})")
                 request = self._service.events().list(**list_kwargs)
                 result = await asyncio.to_thread(request.execute)
@@ -594,20 +581,25 @@ class CalendarConnector:
             raise RuntimeError(f"Failed to query free/busy: {e}")
     
     async def list_calendars(self) -> List[Dict]:
-        """List all calendars."""
+        """List all calendars.
+        
+        Returns list of dicts with: id, summary (name), primary, accessRole
+        """
         if not self._service:
             raise RuntimeError("Not connected. Call connect() first.")
         
-        request = self._service.calendarList().list()
-        result = await asyncio.to_thread(request.execute)
+        # Use cached calendars from connect() instead of making another API call
+        if not self._calendars:
+            self._calendars = await self._fetch_calendars()
         
         return [
             {
-                'id': cal['id'],
+                'id': cal.get('id'),
+                'name': cal.get('summary'),
                 'summary': cal.get('summary'),
-                'description': cal.get('description'),
                 'primary': cal.get('primary', False),
+                'accessRole': cal.get('accessRole'),
                 'access_role': cal.get('accessRole'),
             }
-            for cal in result.get('items', [])
+            for cal in self._calendars
         ]

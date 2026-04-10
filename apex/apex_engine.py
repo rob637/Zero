@@ -1933,9 +1933,10 @@ class CalendarPrimitive(Primitive):
                     print(f"[CALENDAR] Cached {len(self._calendars_cache)} calendars")
                 
                 # Search for matching calendar by name (case insensitive)
-                search_name = calendar_id.lower()
+                # list_calendars() may return 'name' or 'summary' depending on connector
+                search_name = calendar_id.lower().strip()
                 for cal in self._calendars_cache:
-                    cal_name = (cal.get("summary") or "").lower()
+                    cal_name = (cal.get("name") or cal.get("summary") or "").lower()
                     if search_name in cal_name or cal_name in search_name:
                         real_id = cal.get("id")
                         print(f"[CALENDAR] Resolved '{calendar_id}' -> '{real_id}'")
@@ -4356,11 +4357,24 @@ class TaskPrimitive(Primitive):
             
             if operation == "create":
                 if provider and hasattr(provider, "create_task"):
-                    result = await provider.create_task(
-                        content=params.get("title", "Untitled"),
-                        description=params.get("description", ""),
-                        due_date=params.get("due"),
-                    )
+                    title = params.get("title", "Untitled")
+                    description = params.get("description", "")
+                    due = params.get("due")
+                    # Todoist uses 'content', Microsoft To-Do uses 'title'
+                    import inspect
+                    sig = inspect.signature(provider.create_task)
+                    if "content" in sig.parameters:
+                        result = await provider.create_task(
+                            content=title,
+                            description=description,
+                            due_date=due,
+                        )
+                    else:
+                        result = await provider.create_task(
+                            title=title,
+                            body=description or None,
+                            due_date=due,
+                        )
                     return StepResult(True, data={"id": getattr(result, "id", str(result)), "title": params.get("title"), "status": "created"})
                 
                 task = {
