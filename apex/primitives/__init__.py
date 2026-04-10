@@ -9,7 +9,7 @@ from .productivity import CalendarPrimitive, TaskPrimitive, NotesPrimitive, Spre
 from .web import WebPrimitive, BrowserPrimitive, WeatherPrimitive, NewsPrimitive, MediaPrimitive, PhotoPrimitive
 from .services import NotionPrimitive, LinearPrimitive, TrelloPrimitive, AirtablePrimitive, ZoomPrimitive, LinkedInPrimitive, RedditPrimitive, HubSpotPrimitive, StripePrimitive, DevToolsPrimitive, CloudStoragePrimitive
 from .lifestyle import FinancePrimitive, HomePrimitive, ShoppingPrimitive
-from .skills import PhotoBookSkill, ReportSkill, DataVizSkill, FileConverterSkill, ExpenseReportSkill
+from .skills import PhotoBookSkill, ReportSkill, DataVizSkill, FileConverterSkill, ExpenseReportSkill, PresentationBuilderSkill, InvoiceSkill, MeetingPrepSkill, TravelItinerarySkill, SocialMediaKitSkill
 
 __all__ = [
     "StepResult", "Primitive", "get_data_index", "set_data_index",
@@ -64,4 +64,9 @@ __all__ = [
     "DataVizSkill",
     "FileConverterSkill",
     "ExpenseReportSkill",
+    "PresentationBuilderSkill",
+    "InvoiceSkill",
+    "MeetingPrepSkill",
+    "TravelItinerarySkill",
+    "SocialMediaKitSkill",
 ]

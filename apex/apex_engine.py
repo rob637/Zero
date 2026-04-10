@@ -70,6 +70,7 @@ from primitives import (
     NotionPrimitive, LinearPrimitive, TrelloPrimitive, AirtablePrimitive, ZoomPrimitive, LinkedInPrimitive, RedditPrimitive, HubSpotPrimitive, StripePrimitive, DevToolsPrimitive, CloudStoragePrimitive,
     # Skills — local compute primitives that create things
     PhotoBookSkill, ReportSkill, DataVizSkill, FileConverterSkill, ExpenseReportSkill,
+    PresentationBuilderSkill, InvoiceSkill, MeetingPrepSkill, TravelItinerarySkill, SocialMediaKitSkill,
     # Lifestyle
     FinancePrimitive, HomePrimitive, ShoppingPrimitive,
 )
@@ -400,6 +401,11 @@ class Apex:
         self._primitives["DATA_VIZ"] = DataVizSkill(self._llm_complete)
         self._primitives["CONVERT"] = FileConverterSkill()
         self._primitives["EXPENSE_REPORT"] = ExpenseReportSkill(self._llm_complete)
+        self._primitives["SLIDE_DECK"] = PresentationBuilderSkill(self._llm_complete)
+        self._primitives["INVOICE"] = InvoiceSkill(self._llm_complete)
+        self._primitives["MEETING_PREP"] = MeetingPrepSkill(self._llm_complete)
+        self._primitives["ITINERARY"] = TravelItinerarySkill(self._llm_complete)
+        self._primitives["SOCIAL_KIT"] = SocialMediaKitSkill(self._llm_complete)
     
     async def _llm_complete(self, prompt: str, triggering_request: str = "") -> str:
         """Call LLM for completion — with PII redaction and audit logging when safety is enabled."""

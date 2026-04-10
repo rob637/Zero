@@ -773,3 +773,901 @@ class ExpenseReportSkill(Primitive):
             "categories": categories,
             "message": f"Expense report generated: {len(expenses)} items, ${total:,.2f} total → {path}"
         })
+
+
+# ============================================================
+#  PRESENTATION BUILDER SKILL
+# ============================================================
+
+class PresentationBuilderSkill(Primitive):
+    """Generate PPTX slide decks locally from a topic or outline.
+
+    AI generates slide content, python-pptx renders it.
+    No cloud API needed — works fully offline.
+    """
+
+    def __init__(self, llm_complete: Optional[Callable] = None):
+        self._llm = llm_complete
+
+    @property
+    def name(self) -> str:
+        return "SLIDE_DECK"
+
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Generate a PowerPoint slide deck from a topic, outline, or data. AI writes the content for each slide.",
+        }
+
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "create": {
+                "topic": {"type": "str", "required": True, "description": "Presentation topic or title (e.g. 'Q1 Sales Review', 'Project Kickoff')"},
+                "slides": {"type": "int", "required": False, "description": "Number of slides (default: 8)"},
+                "outline": {"type": "list", "required": False, "description": "Optional list of slide titles/topics to cover"},
+                "audience": {"type": "str", "required": False, "description": "Target audience (e.g. 'executive team', 'engineering', 'customers')"},
+            },
+        }
+
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if operation != "create":
+            return StepResult(False, error=f"Unknown operation: {operation}")
+
+        try:
+            from pptx import Presentation
+            from pptx.util import Inches, Pt
+            from pptx.enum.text import PP_ALIGN
+        except ImportError:
+            return StepResult(False, error="Requires python-pptx. Run: pip install python-pptx")
+
+        topic = params.get("topic", "")
+        if not topic:
+            return StepResult(False, error="Please provide a presentation topic")
+
+        num_slides = min(params.get("slides", 8), 30)
+        outline = params.get("outline", [])
+        audience = params.get("audience", "general")
+
+        # Generate slide content via LLM
+        slide_data = await self._generate_slides(topic, num_slides, outline, audience)
+        if not slide_data:
+            return StepResult(False, error="Failed to generate slide content")
+
+        # Build PPTX
+        try:
+            prs = Presentation()
+            prs.slide_width = Inches(13.333)
+            prs.slide_height = Inches(7.5)
+
+            for i, slide_info in enumerate(slide_data):
+                slide_title = slide_info.get("title", f"Slide {i+1}")
+                bullets = slide_info.get("bullets", [])
+                notes = slide_info.get("notes", "")
+
+                if i == 0:
+                    # Title slide
+                    layout = prs.slide_layouts[0]
+                    slide = prs.slides.add_slide(layout)
+                    slide.shapes.title.text = slide_title
+                    if slide.placeholders[1]:
+                        slide.placeholders[1].text = slide_info.get("subtitle", "")
+                else:
+                    # Content slide
+                    layout = prs.slide_layouts[1]
+                    slide = prs.slides.add_slide(layout)
+                    slide.shapes.title.text = slide_title
+                    body = slide.placeholders[1]
+                    tf = body.text_frame
+                    tf.clear()
+                    for j, bullet in enumerate(bullets):
+                        if j == 0:
+                            tf.text = bullet
+                        else:
+                            p = tf.add_paragraph()
+                            p.text = bullet
+                            p.level = 0
+
+                # Speaker notes
+                if notes:
+                    slide.notes_slide.notes_text_frame.text = notes
+
+            out_dir = _output_dir()
+            safe = "".join(c if c.isalnum() or c in " -_" else "" for c in topic).strip()
+            path = str(out_dir / f"{safe or 'Presentation'}.pptx")
+            prs.save(path)
+
+            _try_open(path)
+
+            return StepResult(True, data={
+                "file": path,
+                "title": topic,
+                "slide_count": len(slide_data),
+                "message": f"Presentation '{topic}' created with {len(slide_data)} slides → {path}"
+            })
+        except Exception as e:
+            return StepResult(False, error=f"PPTX generation failed: {e}")
+
+    async def _generate_slides(self, topic, num_slides, outline, audience):
+        if not self._llm:
+            # Fallback without LLM
+            slides = [{"title": topic, "subtitle": datetime.now().strftime("%B %Y"), "bullets": [], "notes": ""}]
+            for i in range(1, num_slides):
+                title = outline[i-1] if i-1 < len(outline) else f"Section {i}"
+                slides.append({"title": title, "bullets": ["Content here"], "notes": ""})
+            return slides
+
+        outline_text = ""
+        if outline:
+            outline_text = f"\nThe slides should cover these topics in order:\n" + "\n".join(f"- {t}" for t in outline)
+
+        prompt = f"""Create a {num_slides}-slide presentation about: {topic}
+Audience: {audience}{outline_text}
+
+Return a JSON array of slide objects. Each object has:
+- "title": slide title
+- "subtitle": (first slide only) subtitle text
+- "bullets": list of 3-5 bullet point strings (not for the title slide)
+- "notes": 1-2 sentences of speaker notes
+
+Slide 1 should be the title slide. Last slide should be a summary or Q&A.
+Make content specific, actionable, and professional.
+Return ONLY the JSON array."""
+
+        try:
+            response = await self._llm(prompt)
+            response = response.strip()
+            if response.startswith("```"):
+                response = response.split("\n", 1)[1] if "\n" in response else response[3:]
+                response = response.rsplit("```", 1)[0]
+            return json.loads(response)
+        except Exception as e:
+            logger.warning(f"Slide generation failed: {e}")
+            return None
+
+
+# ============================================================
+#  INVOICE SKILL
+# ============================================================
+
+class InvoiceSkill(Primitive):
+    """Generate professional PDF invoices."""
+
+    def __init__(self, llm_complete: Optional[Callable] = None):
+        self._llm = llm_complete
+
+    @property
+    def name(self) -> str:
+        return "INVOICE"
+
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Generate a professional PDF invoice with line items, tax, and totals.",
+        }
+
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "create": {
+                "client": {"type": "str", "required": True, "description": "Client/company name"},
+                "items": {"type": "list", "required": True, "description": "List of dicts with 'description', 'quantity', 'unit_price'"},
+                "invoice_number": {"type": "str", "required": False, "description": "Invoice number (auto-generated if omitted)"},
+                "from_name": {"type": "str", "required": False, "description": "Your name/company name"},
+                "due_date": {"type": "str", "required": False, "description": "Payment due date"},
+                "tax_rate": {"type": "float", "required": False, "description": "Tax rate as percentage (e.g. 8.5 for 8.5%)"},
+                "notes": {"type": "str", "required": False, "description": "Additional notes or payment instructions"},
+                "currency": {"type": "str", "required": False, "description": "Currency symbol (default: $)"},
+            },
+        }
+
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if operation != "create":
+            return StepResult(False, error=f"Unknown operation: {operation}")
+
+        try:
+            from fpdf import FPDF
+        except ImportError:
+            return StepResult(False, error="Requires fpdf2. Run: pip install fpdf2")
+
+        client = params.get("client", "")
+        items = params.get("items", [])
+        if not client or not items:
+            return StepResult(False, error="Provide 'client' name and 'items' list")
+
+        inv_num = params.get("invoice_number", f"INV-{datetime.now().strftime('%Y%m%d-%H%M')}")
+        from_name = params.get("from_name", "")
+        due_date = params.get("due_date", "")
+        tax_rate = float(params.get("tax_rate", 0))
+        notes = params.get("notes", "")
+        currency = params.get("currency", "$")
+
+        # Calculate totals
+        subtotal = 0
+        for item in items:
+            qty = float(item.get("quantity", 1))
+            price = float(item.get("unit_price", 0))
+            item["_total"] = qty * price
+            subtotal += item["_total"]
+
+        tax = subtotal * (tax_rate / 100) if tax_rate else 0
+        total = subtotal + tax
+
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+
+            # Header
+            pdf.set_font("Helvetica", "B", 28)
+            pdf.set_text_color(40, 40, 40)
+            pdf.cell(0, 15, "INVOICE", new_x="LMARGIN", new_y="NEXT")
+
+            # Invoice details
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(100, 6, f"Invoice #: {inv_num}", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(100, 6, f"Date: {datetime.now().strftime('%B %d, %Y')}", new_x="LMARGIN", new_y="NEXT")
+            if due_date:
+                pdf.cell(100, 6, f"Due: {due_date}", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(5)
+
+            # From / To
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", "B", 10)
+            if from_name:
+                pdf.cell(95, 6, "From:", new_x="RIGHT")
+            else:
+                pdf.cell(95, 6, "", new_x="RIGHT")
+            pdf.cell(95, 6, "Bill To:", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 10)
+            if from_name:
+                pdf.cell(95, 6, from_name, new_x="RIGHT")
+            else:
+                pdf.cell(95, 6, "", new_x="RIGHT")
+            pdf.cell(95, 6, client, new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(10)
+
+            # Line items table header
+            pdf.set_fill_color(45, 55, 72)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(90, 8, "  Description", border=0, fill=True)
+            pdf.cell(25, 8, "Qty", border=0, fill=True, align="C")
+            pdf.cell(35, 8, "Unit Price", border=0, fill=True, align="R")
+            pdf.cell(35, 8, "Total  ", border=0, fill=True, align="R", new_x="LMARGIN", new_y="NEXT")
+
+            # Line items
+            pdf.set_text_color(40, 40, 40)
+            pdf.set_font("Helvetica", "", 10)
+            for i, item in enumerate(items):
+                bg = (248, 249, 250) if i % 2 == 0 else (255, 255, 255)
+                pdf.set_fill_color(*bg)
+                desc = str(item.get("description", ""))[:50]
+                qty = float(item.get("quantity", 1))
+                price = float(item.get("unit_price", 0))
+                line_total = item["_total"]
+                pdf.cell(90, 7, f"  {desc}", fill=True)
+                pdf.cell(25, 7, f"{qty:g}", fill=True, align="C")
+                pdf.cell(35, 7, f"{currency}{price:,.2f}", fill=True, align="R")
+                pdf.cell(35, 7, f"{currency}{line_total:,.2f}  ", fill=True, align="R", new_x="LMARGIN", new_y="NEXT")
+
+            pdf.ln(3)
+
+            # Totals
+            pdf.set_font("Helvetica", "", 11)
+            x_label = 115
+            x_val = 150
+            pdf.set_x(x_label)
+            pdf.cell(35, 7, "Subtotal:", align="R")
+            pdf.cell(35, 7, f"{currency}{subtotal:,.2f}  ", align="R", new_x="LMARGIN", new_y="NEXT")
+            if tax_rate:
+                pdf.set_x(x_label)
+                pdf.cell(35, 7, f"Tax ({tax_rate}%):", align="R")
+                pdf.cell(35, 7, f"{currency}{tax:,.2f}  ", align="R", new_x="LMARGIN", new_y="NEXT")
+
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_x(x_label)
+            pdf.cell(35, 10, "Total:", align="R")
+            pdf.cell(35, 10, f"{currency}{total:,.2f}  ", align="R", new_x="LMARGIN", new_y="NEXT")
+
+            # Notes
+            if notes:
+                pdf.ln(10)
+                pdf.set_font("Helvetica", "B", 10)
+                pdf.set_text_color(100, 100, 100)
+                pdf.cell(0, 6, "Notes:", new_x="LMARGIN", new_y="NEXT")
+                pdf.set_font("Helvetica", "", 9)
+                pdf.multi_cell(0, 5, notes)
+
+            out_dir = _output_dir()
+            safe = "".join(c if c.isalnum() or c in " -_" else "" for c in client).strip()
+            path = str(out_dir / f"Invoice {inv_num} - {safe}.pdf")
+            pdf.output(path)
+
+            _try_open(path)
+
+            return StepResult(True, data={
+                "file": path,
+                "invoice_number": inv_num,
+                "client": client,
+                "subtotal": subtotal,
+                "tax": tax,
+                "total": total,
+                "items": len(items),
+                "message": f"Invoice {inv_num} for {client}: {currency}{total:,.2f} → {path}"
+            })
+        except Exception as e:
+            return StepResult(False, error=f"Invoice generation failed: {e}")
+
+
+# ============================================================
+#  MEETING PREP SKILL
+# ============================================================
+
+class MeetingPrepSkill(Primitive):
+    """Generate meeting preparation documents.
+
+    Pulls calendar events, related emails, and tasks to create
+    a briefing document for an upcoming meeting.
+    """
+
+    def __init__(self, llm_complete: Optional[Callable] = None):
+        self._llm = llm_complete
+
+    @property
+    def name(self) -> str:
+        return "MEETING_PREP"
+
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Generate a meeting prep document. Searches indexed emails, calendar, and tasks for context, then creates a briefing PDF.",
+        }
+
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "create": {
+                "meeting": {"type": "str", "required": True, "description": "Meeting title, topic, or attendee name to prep for"},
+                "context": {"type": "str", "required": False, "description": "Additional context or specific questions to address"},
+                "include_emails": {"type": "bool", "required": False, "description": "Search indexed emails for related threads (default: true)"},
+                "include_tasks": {"type": "bool", "required": False, "description": "Include related open tasks (default: true)"},
+            },
+        }
+
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if operation != "create":
+            return StepResult(False, error=f"Unknown operation: {operation}")
+
+        try:
+            from fpdf import FPDF
+        except ImportError:
+            return StepResult(False, error="Requires fpdf2. Run: pip install fpdf2")
+
+        meeting = params.get("meeting", "")
+        if not meeting:
+            return StepResult(False, error="Specify the meeting title or topic")
+
+        context = params.get("context", "")
+        include_emails = params.get("include_emails", True)
+        include_tasks = params.get("include_tasks", True)
+
+        # Gather context from index
+        gathered = await self._gather_context(meeting, include_emails, include_tasks)
+
+        # Generate briefing via LLM
+        briefing = await self._generate_briefing(meeting, context, gathered)
+
+        # Build PDF
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_auto_page_break(auto=True, margin=20)
+
+            # Header
+            pdf.set_font("Helvetica", "B", 22)
+            pdf.set_text_color(30, 30, 30)
+            pdf.cell(0, 12, "Meeting Prep", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.set_text_color(60, 60, 60)
+            pdf.cell(0, 8, meeting, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(120, 120, 120)
+            pdf.cell(0, 6, f"Prepared: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(8)
+
+            # Briefing sections
+            pdf.set_text_color(0, 0, 0)
+            for section in briefing:
+                pdf.set_font("Helvetica", "B", 13)
+                pdf.cell(0, 9, section.get("heading", ""), new_x="LMARGIN", new_y="NEXT")
+                pdf.set_font("Helvetica", "", 10)
+                content = section.get("content", "")
+                if isinstance(content, list):
+                    for item in content:
+                        pdf.cell(5, 6, "•")
+                        pdf.multi_cell(0, 6, f" {item}")
+                else:
+                    pdf.multi_cell(0, 6, content)
+                pdf.ln(4)
+
+            out_dir = _output_dir()
+            safe = "".join(c if c.isalnum() or c in " -_" else "" for c in meeting).strip()
+            path = str(out_dir / f"Meeting Prep - {safe or 'Meeting'}.pdf")
+            pdf.output(path)
+
+            _try_open(path)
+
+            return StepResult(True, data={
+                "file": path,
+                "meeting": meeting,
+                "sections": len(briefing),
+                "context_items": len(gathered),
+                "message": f"Meeting prep for '{meeting}' → {path}"
+            })
+        except Exception as e:
+            return StepResult(False, error=f"Meeting prep failed: {e}")
+
+    async def _gather_context(self, meeting: str, include_emails: bool, include_tasks: bool) -> List[Dict]:
+        """Search the data index for related content."""
+        items = []
+        index = get_data_index()
+        if not index:
+            return items
+
+        # Search for related emails
+        if include_emails:
+            try:
+                results = index.search(meeting, source="gmail", limit=10)
+                results += index.search(meeting, source="outlook", limit=10)
+                for r in results[:10]:
+                    items.append({
+                        "type": "email",
+                        "title": r.get("title", ""),
+                        "body": (r.get("body", "") or "")[:300],
+                        "timestamp": r.get("timestamp", ""),
+                    })
+            except Exception:
+                pass
+
+        # Search for related tasks
+        if include_tasks:
+            try:
+                results = index.search(meeting, source="todoist", limit=5)
+                results += index.search(meeting, source="microsoft_todo", limit=5)
+                results += index.search(meeting, source="jira", limit=5)
+                for r in results[:8]:
+                    items.append({
+                        "type": "task",
+                        "title": r.get("title", ""),
+                        "body": (r.get("body", "") or "")[:200],
+                    })
+            except Exception:
+                pass
+
+        # Search local files for related docs
+        try:
+            results = index.search(meeting, source="local_files", limit=5)
+            for r in results[:5]:
+                items.append({
+                    "type": "file",
+                    "title": r.get("title", ""),
+                    "body": (r.get("body", "") or "")[:200],
+                })
+        except Exception:
+            pass
+
+        return items
+
+    async def _generate_briefing(self, meeting: str, context: str, gathered: List[Dict]) -> List[Dict]:
+        """Generate the meeting briefing via LLM."""
+        if not self._llm:
+            sections = [{"heading": "Meeting Overview", "content": f"Briefing for: {meeting}"}]
+            if gathered:
+                sections.append({"heading": "Related Items", "content": [g["title"] for g in gathered]})
+            return sections
+
+        gathered_text = ""
+        if gathered:
+            gathered_text = "\n\nRelated context found:\n"
+            for g in gathered:
+                gathered_text += f"- [{g['type']}] {g['title']}: {g.get('body', '')[:150]}\n"
+
+        context_text = f"\nAdditional context: {context}" if context else ""
+
+        prompt = f"""Create a concise meeting prep briefing for: {meeting}{context_text}{gathered_text}
+
+Return a JSON array of sections. Each section has:
+- "heading": section title
+- "content": either a string paragraph or a list of bullet point strings
+
+Include these sections:
+1. Meeting Objective — what this meeting aims to accomplish
+2. Key Context — relevant background from related emails/files/tasks
+3. Discussion Points — 3-5 topics to cover
+4. Potential Questions — questions that may come up
+5. Action Items to Raise — things to propose or follow up on
+
+Be specific and actionable based on the context provided. Keep it to 1 page.
+Return ONLY the JSON array."""
+
+        try:
+            response = await self._llm(prompt)
+            response = response.strip()
+            if response.startswith("```"):
+                response = response.split("\n", 1)[1] if "\n" in response else response[3:]
+                response = response.rsplit("```", 1)[0]
+            return json.loads(response)
+        except Exception as e:
+            logger.warning(f"Briefing generation failed: {e}")
+            return [{"heading": "Meeting Overview", "content": f"Briefing for: {meeting}"}]
+
+
+# ============================================================
+#  TRAVEL ITINERARY SKILL
+# ============================================================
+
+class TravelItinerarySkill(Primitive):
+    """Generate travel itinerary PDFs.
+
+    Combines calendar events, flight/hotel info, and local recommendations
+    into a printable day-by-day itinerary.
+    """
+
+    def __init__(self, llm_complete: Optional[Callable] = None):
+        self._llm = llm_complete
+
+    @property
+    def name(self) -> str:
+        return "ITINERARY"
+
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Generate a travel itinerary PDF. Provide destination, dates, and preferences. AI fills in activities, dining, and logistics.",
+        }
+
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "create": {
+                "destination": {"type": "str", "required": True, "description": "Travel destination (e.g. 'Tokyo', 'Paris, France')"},
+                "dates": {"type": "str", "required": True, "description": "Travel dates (e.g. 'June 15-22, 2026')"},
+                "travelers": {"type": "int", "required": False, "description": "Number of travelers (default: 1)"},
+                "interests": {"type": "str", "required": False, "description": "Interests/preferences (e.g. 'food, history, hiking')"},
+                "flights": {"type": "list", "required": False, "description": "Flight details if known (list of dicts with airline, number, time)"},
+                "hotel": {"type": "str", "required": False, "description": "Hotel name and address if booked"},
+                "budget": {"type": "str", "required": False, "description": "Budget level: budget, moderate, luxury"},
+            },
+        }
+
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if operation != "create":
+            return StepResult(False, error=f"Unknown operation: {operation}")
+
+        try:
+            from fpdf import FPDF
+        except ImportError:
+            return StepResult(False, error="Requires fpdf2. Run: pip install fpdf2")
+
+        destination = params.get("destination", "")
+        dates = params.get("dates", "")
+        if not destination or not dates:
+            return StepResult(False, error="Provide 'destination' and 'dates'")
+
+        interests = params.get("interests", "sightseeing, food, culture")
+        travelers = params.get("travelers", 1)
+        flights = params.get("flights", [])
+        hotel = params.get("hotel", "")
+        budget = params.get("budget", "moderate")
+
+        # Generate itinerary via LLM
+        itinerary = await self._generate_itinerary(
+            destination, dates, interests, travelers, flights, hotel, budget
+        )
+
+        if not itinerary:
+            return StepResult(False, error="Failed to generate itinerary")
+
+        try:
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=20)
+
+            # Title page
+            pdf.add_page()
+            pdf.set_fill_color(30, 58, 95)
+            pdf.rect(0, 0, 210, 297, "F")
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 32)
+            pdf.set_y(100)
+            pdf.cell(0, 16, destination, align="C", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 16)
+            pdf.set_text_color(200, 210, 230)
+            pdf.cell(0, 10, dates, align="C", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(5)
+            pdf.set_font("Helvetica", "", 12)
+            details = []
+            if travelers > 1:
+                details.append(f"{travelers} travelers")
+            details.append(budget.title())
+            pdf.cell(0, 8, " · ".join(details), align="C")
+
+            # Logistics page
+            if flights or hotel:
+                pdf.add_page()
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font("Helvetica", "B", 18)
+                pdf.cell(0, 12, "Travel Logistics", new_x="LMARGIN", new_y="NEXT")
+                pdf.ln(4)
+
+                if flights:
+                    pdf.set_font("Helvetica", "B", 12)
+                    pdf.cell(0, 8, "Flights", new_x="LMARGIN", new_y="NEXT")
+                    pdf.set_font("Helvetica", "", 10)
+                    for f in flights:
+                        line = f"{f.get('airline', '')} {f.get('number', '')} — {f.get('time', '')}"
+                        pdf.cell(0, 6, line.strip(), new_x="LMARGIN", new_y="NEXT")
+                    pdf.ln(4)
+
+                if hotel:
+                    pdf.set_font("Helvetica", "B", 12)
+                    pdf.cell(0, 8, "Accommodation", new_x="LMARGIN", new_y="NEXT")
+                    pdf.set_font("Helvetica", "", 10)
+                    pdf.multi_cell(0, 6, hotel)
+
+            # Day-by-day pages
+            for day in itinerary:
+                pdf.add_page()
+                pdf.set_text_color(30, 58, 95)
+                pdf.set_font("Helvetica", "B", 18)
+                pdf.cell(0, 12, day.get("day", ""), new_x="LMARGIN", new_y="NEXT")
+                pdf.set_text_color(100, 100, 100)
+                pdf.set_font("Helvetica", "I", 10)
+                pdf.cell(0, 6, day.get("theme", ""), new_x="LMARGIN", new_y="NEXT")
+                pdf.ln(4)
+
+                pdf.set_text_color(0, 0, 0)
+                for activity in day.get("activities", []):
+                    pdf.set_font("Helvetica", "B", 10)
+                    time_str = activity.get("time", "")
+                    name_str = activity.get("name", "")
+                    pdf.cell(25, 7, time_str)
+                    pdf.cell(0, 7, name_str, new_x="LMARGIN", new_y="NEXT")
+                    desc = activity.get("description", "")
+                    if desc:
+                        pdf.set_font("Helvetica", "", 9)
+                        pdf.set_text_color(80, 80, 80)
+                        pdf.set_x(35)
+                        pdf.multi_cell(0, 5, desc)
+                        pdf.set_text_color(0, 0, 0)
+                    pdf.ln(2)
+
+                # Tips
+                tips = day.get("tips", "")
+                if tips:
+                    pdf.ln(3)
+                    pdf.set_font("Helvetica", "I", 9)
+                    pdf.set_text_color(100, 100, 100)
+                    pdf.multi_cell(0, 5, f"Tip: {tips}")
+
+            out_dir = _output_dir()
+            safe = "".join(c if c.isalnum() or c in " -_" else "" for c in destination).strip()
+            path = str(out_dir / f"Itinerary - {safe or 'Trip'}.pdf")
+            pdf.output(path)
+
+            _try_open(path)
+
+            return StepResult(True, data={
+                "file": path,
+                "destination": destination,
+                "dates": dates,
+                "days": len(itinerary),
+                "message": f"Travel itinerary for {destination} ({dates}) → {path}"
+            })
+        except Exception as e:
+            return StepResult(False, error=f"Itinerary generation failed: {e}")
+
+    async def _generate_itinerary(self, destination, dates, interests, travelers, flights, hotel, budget):
+        if not self._llm:
+            return [{"day": "Day 1", "theme": "Arrival", "activities": [{"time": "Morning", "name": f"Arrive in {destination}", "description": ""}], "tips": ""}]
+
+        prompt = f"""Create a day-by-day travel itinerary for {destination}.
+Dates: {dates}
+Travelers: {travelers}
+Interests: {interests}
+Budget: {budget}
+{"Hotel: " + hotel if hotel else ""}
+
+Return a JSON array with one object per day. Each day has:
+- "day": "Day 1 — Monday, June 15"
+- "theme": short theme for the day (e.g. "Historic Old Town")
+- "activities": list of activities, each with "time" (e.g. "9:00 AM"), "name", "description" (1 sentence)
+- "tips": one practical tip for the day
+
+Include 4-6 activities per day: morning, lunch, afternoon, dinner, evening.
+Include specific restaurant/cafe names and real attractions.
+Return ONLY the JSON array."""
+
+        try:
+            response = await self._llm(prompt)
+            response = response.strip()
+            if response.startswith("```"):
+                response = response.split("\n", 1)[1] if "\n" in response else response[3:]
+                response = response.rsplit("```", 1)[0]
+            return json.loads(response)
+        except Exception as e:
+            logger.warning(f"Itinerary generation failed: {e}")
+            return None
+
+
+# ============================================================
+#  SOCIAL MEDIA KIT SKILL
+# ============================================================
+
+class SocialMediaKitSkill(Primitive):
+    """Generate social media post packages.
+
+    Creates optimized images (resized for each platform) and
+    AI-generated captions with hashtags for multiple platforms.
+    """
+
+    def __init__(self, llm_complete: Optional[Callable] = None):
+        self._llm = llm_complete
+
+    @property
+    def name(self) -> str:
+        return "SOCIAL_KIT"
+
+    def get_operations(self) -> Dict[str, str]:
+        return {
+            "create": "Create a social media kit: resize an image for multiple platforms and generate platform-specific captions with hashtags.",
+        }
+
+    def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "create": {
+                "image": {"type": "str", "required": False, "description": "Path to source image. If omitted, creates text-only posts."},
+                "topic": {"type": "str", "required": True, "description": "What the post is about"},
+                "platforms": {"type": "list", "required": False, "description": "Target platforms (default: ['instagram', 'twitter', 'linkedin', 'facebook']). Options: instagram, twitter, linkedin, facebook, tiktok, pinterest"},
+                "tone": {"type": "str", "required": False, "description": "Tone: professional, casual, humorous, inspirational (default: professional)"},
+                "hashtag_count": {"type": "int", "required": False, "description": "Number of hashtags per post (default: 5)"},
+            },
+        }
+
+    # Platform image sizes (width x height in pixels)
+    PLATFORM_SIZES = {
+        "instagram": (1080, 1080),
+        "twitter": (1200, 675),
+        "linkedin": (1200, 627),
+        "facebook": (1200, 630),
+        "tiktok": (1080, 1920),
+        "pinterest": (1000, 1500),
+    }
+
+    async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
+        if operation != "create":
+            return StepResult(False, error=f"Unknown operation: {operation}")
+
+        topic = params.get("topic", "")
+        if not topic:
+            return StepResult(False, error="Specify a topic for the social media post")
+
+        image_path = params.get("image", "")
+        platforms = params.get("platforms", ["instagram", "twitter", "linkedin", "facebook"])
+        tone = params.get("tone", "professional")
+        hashtag_count = params.get("hashtag_count", 5)
+
+        out_dir = _output_dir() / "social_kit"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        results = {"platforms": {}, "files": []}
+
+        # Resize images for each platform
+        if image_path and os.path.isfile(image_path):
+            try:
+                from PIL import Image
+                for plat in platforms:
+                    size = self.PLATFORM_SIZES.get(plat, (1200, 630))
+                    with Image.open(image_path) as img:
+                        resized = self._smart_resize(img, size)
+                        safe_topic = "".join(c if c.isalnum() or c == " " else "" for c in topic)[:30].strip()
+                        filename = f"{safe_topic} - {plat}.jpg"
+                        save_path = str(out_dir / filename)
+                        resized.save(save_path, "JPEG", quality=92)
+                        results["files"].append(save_path)
+                        if plat not in results["platforms"]:
+                            results["platforms"][plat] = {}
+                        results["platforms"][plat]["image"] = save_path
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.warning(f"Image resize failed: {e}")
+
+        # Generate captions
+        captions = await self._generate_captions(topic, platforms, tone, hashtag_count)
+        for plat, caption in captions.items():
+            if plat not in results["platforms"]:
+                results["platforms"][plat] = {}
+            results["platforms"][plat]["caption"] = caption
+
+        # Save captions to text file
+        caption_file = str(out_dir / "captions.txt")
+        with open(caption_file, "w", encoding="utf-8") as f:
+            for plat in platforms:
+                info = results["platforms"].get(plat, {})
+                f.write(f"{'='*40}\n")
+                f.write(f"{plat.upper()}\n")
+                f.write(f"{'='*40}\n")
+                f.write(info.get("caption", "") + "\n\n")
+        results["files"].append(caption_file)
+
+        _try_open(str(out_dir))
+
+        return StepResult(True, data={
+            **results,
+            "topic": topic,
+            "platform_count": len(platforms),
+            "message": f"Social media kit for '{topic}': {len(platforms)} platforms, {len(results['files'])} files → {out_dir}"
+        })
+
+    def _smart_resize(self, img, target_size):
+        """Resize with center crop to fill target aspect ratio."""
+        from PIL import Image
+        target_w, target_h = target_size
+        target_ratio = target_w / target_h
+        img_ratio = img.width / img.height
+
+        if img_ratio > target_ratio:
+            # Image is wider — crop sides
+            new_w = int(img.height * target_ratio)
+            left = (img.width - new_w) // 2
+            img = img.crop((left, 0, left + new_w, img.height))
+        elif img_ratio < target_ratio:
+            # Image is taller — crop top/bottom
+            new_h = int(img.width / target_ratio)
+            top = (img.height - new_h) // 2
+            img = img.crop((0, top, img.width, top + new_h))
+
+        return img.resize(target_size, Image.LANCZOS)
+
+    async def _generate_captions(self, topic, platforms, tone, hashtag_count):
+        if not self._llm:
+            return {p: f"Check out {topic}! #{'#'.join(topic.split()[:3])}" for p in platforms}
+
+        platforms_str = ", ".join(platforms)
+        prompt = f"""Write social media captions for each platform about: {topic}
+
+Platforms: {platforms_str}
+Tone: {tone}
+Include {hashtag_count} relevant hashtags per post.
+
+Platform guidelines:
+- Instagram: engaging, emoji-rich, up to 2200 chars, hashtags at the end
+- Twitter/X: concise, under 280 chars total including hashtags
+- LinkedIn: professional, thought-leadership, 1-2 paragraphs
+- Facebook: conversational, medium length, question to drive engagement
+- TikTok: trendy, Gen-Z friendly, short and punchy
+- Pinterest: descriptive, keyword-rich for search
+
+Return a JSON object where keys are platform names and values are the caption strings.
+Return ONLY the JSON object."""
+
+        try:
+            response = await self._llm(prompt)
+            response = response.strip()
+            if response.startswith("```"):
+                response = response.split("\n", 1)[1] if "\n" in response else response[3:]
+                response = response.rsplit("```", 1)[0]
+            return json.loads(response)
+        except Exception as e:
+            logger.warning(f"Caption generation failed: {e}")
+            return {p: topic for p in platforms}
+
+
+# ============================================================
+#  HELPER
+# ============================================================
+
+def _try_open(path: str):
+    """Try to open a file with the system default application."""
+    try:
+        if platform.system() == "Windows":
+            os.startfile(path)
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception:
+        pass

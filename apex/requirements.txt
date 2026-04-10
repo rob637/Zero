@@ -14,6 +14,7 @@ python-docx>=0.8.11
 Pillow>=10.0.0             # Image metadata (EXIF/GPS) reading
 fpdf2>=2.7.0               # PDF generation for skills (photo books, reports)
 matplotlib>=3.7.0           # Charts and data visualization
+python-pptx>=0.6.21         # PowerPoint generation for presentation skill
 
 # Google API for Gmail/Calendar/Drive/Contacts
 google-auth>=2.25.0
