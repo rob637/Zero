@@ -125,6 +125,9 @@ class TodoistConnector:
             params["filter"] = filter_str
 
         resp = await self._http.get("/tasks", params=params)
+        if resp.status_code == 410:
+            logger.warning("Todoist API returned 410 Gone — API may have changed. Returning empty task list.")
+            return []
         resp.raise_for_status()
         return [TodoistTask.from_api(t) for t in resp.json()]
 

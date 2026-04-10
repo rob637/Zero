@@ -251,6 +251,9 @@ When you have completed the task, respond with a summary of what was done."""
         self.state.messages.append({"role": "user", "content": user_input})
         return await self._execute_loop()
     
+    # Configurable model name
+    ANTHROPIC_MODEL = os.environ.get("TELIC_MODEL", "claude-sonnet-4-20250514")
+
     # Max cost per request (USD). Agent stops gracefully if exceeded.
     MAX_REQUEST_COST_USD = float(os.environ.get("TELIC_MAX_REQUEST_COST", "2.00"))
 
@@ -457,7 +460,7 @@ When you have completed the task, respond with a summary of what was done."""
             on_token = self.on_token
             def _stream_sync():
                 with self.llm_client.messages.stream(
-                    model="claude-sonnet-4-20250514",
+                    model=self.ANTHROPIC_MODEL,
                     max_tokens=4096,
                     system=system_blocks,
                     tools=cached_tools,
@@ -470,7 +473,7 @@ When you have completed the task, respond with a summary of what was done."""
         else:
             response = await _retry_with_backoff(lambda: asyncio.to_thread(
                 self.llm_client.messages.create,
-                model="claude-sonnet-4-20250514",
+                model=self.ANTHROPIC_MODEL,
                 max_tokens=4096,
                 system=system_blocks,
                 tools=cached_tools,
@@ -499,7 +502,7 @@ When you have completed the task, respond with a summary of what was done."""
                 destination=TransmissionDestination.ANTHROPIC,
                 content=json.dumps(self.state.messages[-2:], default=str)[:2000],
                 triggering_request=_user_msg,
-                model="claude-sonnet-4-20250514",
+                model=self.ANTHROPIC_MODEL,
                 endpoint="messages.create",
             )
         except Exception:

@@ -552,6 +552,13 @@ class Connector(ABC):
                 raise  # Don't retry unknown connector errors
             except Exception as e:
                 last_exc = e
+                # SSL errors won't self-heal — fail fast
+                err_str = str(e)
+                if "SSL" in err_str or "WRONG_VERSION_NUMBER" in err_str or "CERTIFICATE" in err_str.upper():
+                    logger.error(f"[{self.name}] SSL error (not retryable): {e}")
+                    self._cb_failures += 1
+                    self.record_error(err_str)
+                    raise ConnectorError(err_str, connector=self.name) from e
                 delay = 2 ** attempt
                 if attempt < max_retries:
                     logger.warning(
@@ -750,6 +757,10 @@ async def retry_with_backoff(
             raise
         except Exception as e:
             last_exc = e
+            # SSL errors won't self-heal — fail fast
+            err_str = str(e)
+            if "SSL" in err_str or "WRONG_VERSION_NUMBER" in err_str or "CERTIFICATE" in err_str.upper():
+                raise
             delay = 2 ** attempt
 
         if attempt < max_retries:
