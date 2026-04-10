@@ -281,6 +281,7 @@ class SyncEngine:
         self._tick_interval = 30  # Check every 30s which sources need syncing
         self._semantic_search = None  # Set externally after init
         self._consecutive_failures: Dict[str, int] = {}  # source → failure count
+        self._last_attempt: Dict[str, float] = {}  # source → monotonic timestamp of last attempt
 
     def set_semantic_search(self, ss) -> None:
         """Attach semantic search for post-sync embedding."""
@@ -372,11 +373,17 @@ class SyncEngine:
                         adapter.default_interval * (2 ** fails),
                         1800,  # 30 minute cap
                     )
-                    if self._index.is_stale(
+                    # If source has failures, check time since last attempt (not last success)
+                    if fails > 0:
+                        last = self._last_attempt.get(source, 0)
+                        if (time.monotonic() - last) < effective_interval:
+                            continue  # Still in backoff window, skip
+                    elif not self._index.is_stale(
                         source,
                         max_age=timedelta(seconds=effective_interval)
                     ):
-                        asyncio.create_task(self._sync_source(source))
+                        continue  # Not stale yet, skip
+                    asyncio.create_task(self._sync_source(source))
 
                 # Periodic stale data cleanup — every ~100 cycles (~50 min)
                 if cycles % 100 == 0:
@@ -392,6 +399,9 @@ class SyncEngine:
         """Sync a single source. Returns summary dict."""
         adapter = self._adapters[source]
         state = self._index.get_sync_state(source) or SyncState(source=source)
+
+        # Record attempt time for backoff
+        self._last_attempt[source] = time.monotonic()
 
         # Mark as syncing
         state.status = SyncStatus.SYNCING
@@ -437,6 +447,7 @@ class SyncEngine:
 
             logger.info(f"Synced {source}: {count} objects in {elapsed_ms}ms")
             self._consecutive_failures.pop(source, None)  # Reset on success
+            self._last_attempt.pop(source, None)  # Back to normal staleness check
 
             # Embed new/updated objects for semantic search (non-blocking)
             if self._semantic_search and self._semantic_search.ready and to_upsert:

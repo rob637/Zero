@@ -86,6 +86,13 @@ class DropboxConnector:
             f"{self.API_BASE}/files/list_folder",
             json={"path": path, "limit": min(limit, 2000)},
         )
+        if resp.status_code == 400:
+            detail = resp.text[:200] if resp.text else "no details"
+            logger.error(f"Dropbox list_folder 400: {detail}")
+            return []
+        if resp.status_code == 401:
+            logger.error("Dropbox token expired or revoked — re-authenticate via OAuth")
+            return []
         resp.raise_for_status()
         entries = resp.json().get("entries", [])
         return [DropboxFile.from_api(e) for e in entries]
