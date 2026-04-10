@@ -280,6 +280,7 @@ class SyncEngine:
         self._running = False
         self._tick_interval = 30  # Check every 30s which sources need syncing
         self._semantic_search = None  # Set externally after init
+        self._consecutive_failures: Dict[str, int] = {}  # source → failure count
 
     def set_semantic_search(self, ss) -> None:
         """Attach semantic search for post-sync embedding."""
@@ -365,9 +366,15 @@ class SyncEngine:
                 await asyncio.sleep(self._tick_interval)
                 cycles += 1
                 for source, adapter in self._adapters.items():
+                    # Back off on repeated failures: double interval per failure, max 30 min
+                    fails = self._consecutive_failures.get(source, 0)
+                    effective_interval = min(
+                        adapter.default_interval * (2 ** fails),
+                        1800,  # 30 minute cap
+                    )
                     if self._index.is_stale(
                         source,
-                        max_age=timedelta(seconds=adapter.default_interval)
+                        max_age=timedelta(seconds=effective_interval)
                     ):
                         asyncio.create_task(self._sync_source(source))
 
@@ -429,6 +436,7 @@ class SyncEngine:
             self._index.set_sync_state(state)
 
             logger.info(f"Synced {source}: {count} objects in {elapsed_ms}ms")
+            self._consecutive_failures.pop(source, None)  # Reset on success
 
             # Embed new/updated objects for semantic search (non-blocking)
             if self._semantic_search and self._semantic_search.ready and to_upsert:
@@ -448,6 +456,11 @@ class SyncEngine:
             state.sync_duration_ms = elapsed_ms
             self._index.set_sync_state(state)
             logger.error(f"Sync failed for {source}: {e}")
+            fails = self._consecutive_failures.get(source, 0) + 1
+            self._consecutive_failures[source] = fails
+            next_try_s = min(adapter.default_interval * (2 ** fails), 1800)
+            if fails >= 3:
+                logger.warning(f"Sync {source}: {fails} consecutive failures, backing off to {next_try_s}s")
             return {"status": "error", "error": str(e), "duration_ms": elapsed_ms}
 
     async def _cleanup_stale(self) -> None:

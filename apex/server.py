@@ -370,14 +370,17 @@ async def get_file_index_status():
 @app.post("/files/rescan")
 async def trigger_file_rescan():
     """Force a full rescan of local files."""
-    # _file_scanner in state module
     from local_files import LocalFileScanner, load_settings
     if not state._data_index:
         raise HTTPException(400, "Index not available")
 
     settings = load_settings(state._data_index)
     if not settings.enabled:
-        raise HTTPException(400, "Local file indexing is not enabled. Enable it via POST /files/settings")
+        # Auto-enable if user clicked rescan
+        settings.enabled = True
+
+    if not settings.scan_directories:
+        raise HTTPException(400, "No directories configured. Add directories first, then rescan.")
 
     # Stop existing scanner and start fresh
     if state._file_scanner:
