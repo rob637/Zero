@@ -33,6 +33,19 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# LLM response cache — avoids repeat API calls for similar messages
+# ---------------------------------------------------------------------------
+
+_domain_cache: Dict[str, tuple] = {}  # msg_key → (domains, timestamp)
+_CACHE_TTL = 300  # 5 minutes
+
+
+def _cache_key(msg: str) -> str:
+    """Normalize message for cache lookup (lowercase, strip, truncate)."""
+    return msg.lower().strip()[:200]
+
+
+# ---------------------------------------------------------------------------
 # LLM client for AI-based domain classification
 # ---------------------------------------------------------------------------
 
@@ -305,11 +318,21 @@ def _get_valid_domains() -> frozenset:
 async def _detect_domains_llm(msg: str) -> Optional[List[str]]:
     """Classify message into domains using a fast LLM call.
 
-    Returns a list of 1-3 domain names, or None on failure (triggering
-    keyword fallback).
+    Results are cached for 5 minutes to avoid duplicate API calls.
     """
     if not _llm_client:
         return None
+
+    # Check cache first
+    import time as _time
+    key = _cache_key(msg)
+    cached = _domain_cache.get(key)
+    if cached:
+        domains, ts = cached
+        if _time.monotonic() - ts < _CACHE_TTL:
+            logger.info(f"Domain cache hit for '{msg[:40]}' → {domains}")
+            return domains
+        del _domain_cache[key]
 
     valid = _get_valid_domains()
     domain_list = ", ".join(sorted(valid))
@@ -321,7 +344,6 @@ async def _detect_domains_llm(msg: str) -> Optional[List[str]]:
 
     try:
         if hasattr(_llm_client, "messages"):
-            # Anthropic
             response = await asyncio.to_thread(
                 _llm_client.messages.create,
                 model="claude-3-5-haiku-20241022",
@@ -330,7 +352,6 @@ async def _detect_domains_llm(msg: str) -> Optional[List[str]]:
             )
             text = response.content[0].text.strip()
         else:
-            # OpenAI
             response = await asyncio.to_thread(
                 _llm_client.chat.completions.create,
                 model="gpt-4o-mini",
@@ -342,6 +363,12 @@ async def _detect_domains_llm(msg: str) -> Optional[List[str]]:
         domains = [d.strip().upper() for d in text.split(",")]
         result = [d for d in domains if d in valid]
         if result:
+            _domain_cache[key] = (result, _time.monotonic())
+            # Evict old entries if cache gets large
+            if len(_domain_cache) > 200:
+                cutoff = _time.monotonic() - _CACHE_TTL
+                for k in [k for k, (_, t) in _domain_cache.items() if t < cutoff]:
+                    del _domain_cache[k]
             logger.info(f"LLM domains for '{msg[:60]}' → {result}")
             return result
         return None

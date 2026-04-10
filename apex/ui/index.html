@@ -4233,6 +4233,22 @@
                         const canvasHtml = renderCanvasCards(event.data.steps || []);
                         addMessage(event.data.response, 'assistant', canvasHtml);
                     }
+                    // Show cost if available
+                    if (event.data?.usage) {
+                        const u = event.data.usage;
+                        const costStr = u.estimated_cost_usd < 0.01
+                            ? `<$0.01`
+                            : `$${u.estimated_cost_usd.toFixed(3)}`;
+                        const tokens = u.input_tokens + u.output_tokens;
+                        const cacheHit = u.cache_read_tokens || 0;
+                        const parts = [`${tokens.toLocaleString()} tokens`, costStr];
+                        if (cacheHit > 0) parts.push(`${Math.round(cacheHit / Math.max(1, u.input_tokens) * 100)}% cached`);
+                        const costEl = document.createElement('div');
+                        costEl.style.cssText = 'text-align:right;font-size:0.65rem;color:var(--text-muted);opacity:0.6;padding:2px 12px 0;';
+                        costEl.textContent = parts.join(' · ') + ` · ${u.llm_calls} call${u.llm_calls > 1 ? 's' : ''}`;
+                        const chat = document.getElementById('chatMessages');
+                        if (chat) chat.appendChild(costEl);
+                    }
                     loadSessions();
                     fetchAlerts();
                     break;
@@ -5944,6 +5960,8 @@
             if (document.hidden) { stopPolling(); } else { startPolling(); fetchAlerts(); }
         });
         startPolling();
+        // Warm cache on app open
+        fetch('/prefetch', { method: 'POST' }).catch(() => {});
     </script>
 </body>
 </html>

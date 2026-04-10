@@ -7,10 +7,13 @@ circular imports between server.py and route modules.
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 # Load .env FIRST before any other imports that might use env vars
 try:
@@ -148,7 +151,7 @@ class UserSession:
                 title = m["content"][:80].strip()
                 break
         session_store.save_session(self.session_id, title, self.messages)
-        print(f"[SESSION] Auto-saved session {self.session_id}: {title[:50]}")
+        logger.info(f"Auto-saved session {self.session_id}: {title[:50]}")
 
 
 _sessions: Dict[str, UserSession] = {}
@@ -167,7 +170,7 @@ def _evict_stale_sessions() -> None:
     for sid in stale:
         session = _sessions.pop(sid)
         session.auto_save()
-        print(f"[SESSION] Evicted idle session {sid}")
+        logger.info(f"Evicted idle session {sid}")
 
 
 def get_user_session(session_id: Optional[str] = None) -> UserSession:
@@ -250,7 +253,7 @@ def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     connectors = _build_connectors_from_registry()
     
     _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
-    print(f"[ENGINE] Initialized with {len(connectors)} connectors: {list(connectors.keys())}")
+    logger.info(f"Initialized with {len(connectors)} connectors: {list(connectors.keys())}")
     return _telic_engine
 
 
@@ -411,9 +414,9 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
             
             instance = metadata.connector_class(**kwargs)
             connectors[engine_key] = instance
-            print(f"[ENGINE] Auto-wired: {metadata.display_name} -> {engine_key}")
+            logger.info(f"Auto-wired: {metadata.display_name} -> {engine_key}")
         except Exception as e:
-            print(f"[ENGINE] Failed to instantiate {metadata.name}: {e}")
+            logger.warning(f"Failed to instantiate {metadata.name}: {e}")
     
     return connectors
 
@@ -438,9 +441,9 @@ async def _connect_engine_connectors(engine: TelicEngine):
             if not is_connected:
                 try:
                     await connector.connect()
-                    print(f"[ENGINE] Connected: {key}")
+                    logger.info(f"Connected: {key}")
                 except Exception as e:
-                    print(f"[ENGINE] Connect failed for {key}: {e}")
+                    logger.warning(f"Connect failed for {key}: {e}")
 
 
 _connectors_initialized = False
@@ -467,7 +470,7 @@ def get_react_agent() -> Optional[ReActAgent]:
     
     # Convert ALL primitives to tools - selection happens per-request now
     tools = primitives_to_tools(engine._primitives)
-    print(f"[REACT] Loaded {len(tools)} tools from {len(engine._primitives)} primitives")
+    logger.info(f"Loaded {len(tools)} tools from {len(engine._primitives)} primitives")
     
     # Create LLM client
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -548,7 +551,7 @@ async def startup_event(app=None):
     global _google_calendar, _gmail_connector, _google_connected_services
     
     if not HAS_GOOGLE_CALENDAR:
-        print("[STARTUP] Google API libraries not available")
+        logger.info("Google API libraries not available")
         return
     
     try:
@@ -556,7 +559,7 @@ async def startup_event(app=None):
         
         # Check if we have existing tokens (no OAuth prompt)
         if auth._token_file.exists():
-            print("[STARTUP] Found existing Google tokens, attempting reconnect...")
+            logger.info("Found existing Google tokens, attempting reconnect...")
             
             # Load existing credentials without triggering OAuth flow
             from google.oauth2.credentials import Credentials
@@ -601,13 +604,13 @@ async def startup_event(app=None):
                 has_calendar = 'calendar' in _google_connected_services
                 has_gmail = 'gmail' in _google_connected_services
                 
-                print(f"[STARTUP] Token scopes: {_google_connected_services}")
+                logger.info(f"Token scopes: {_google_connected_services}")
                 
                 # Connect Calendar
                 if has_calendar:
                     _google_calendar = CalendarConnector(auth)
                     await _google_calendar.connect()
-                    print(f"[STARTUP] Google Calendar reconnected!")
+                    logger.info("Google Calendar reconnected!")
                 
                 # Connect Gmail
                 if has_gmail:
@@ -615,55 +618,55 @@ async def startup_event(app=None):
                         from connectors.gmail import GmailConnector
                         _gmail_connector = GmailConnector(auth)
                         if await _gmail_connector.connect():
-                            print("[STARTUP] Gmail reconnected!")
+                            logger.info("Gmail reconnected!")
                         else:
-                            print("[STARTUP] Gmail connection failed")
+                            logger.warning("Gmail connection failed")
                             _gmail_connector = None
                     except Exception as gmail_err:
-                        print(f"[STARTUP] Gmail reconnect failed: {gmail_err}")
+                        logger.warning(f"Gmail reconnect failed: {gmail_err}")
                         _gmail_connector = None
                 else:
-                    print("[STARTUP] Gmail scopes not in token - user needs to re-authenticate with Gmail access")
+                    logger.info("Gmail scopes not in token - user needs to re-authenticate with Gmail access")
             else:
-                print("[STARTUP] Google tokens expired or invalid")
+                logger.warning("Google tokens expired or invalid")
                 
             # Rebuild engine with connectors
             get_telic_engine(force_rebuild=True)
         else:
-            print("[STARTUP] No Google tokens found - user needs to connect")
+            logger.info("No Google tokens found - user needs to connect")
             
     except Exception as e:
-        print(f"[STARTUP] Google reconnect failed: {e}")
+        logger.warning(f"Google reconnect failed: {e}")
 
     # Reconnect Microsoft services if MSAL token cache exists
     try:
         from connectors.microsoft_auth import get_microsoft_auth
         ms_auth = get_microsoft_auth()
         if ms_auth.has_credentials() and ms_auth._token_cache_file.exists():
-            print("[STARTUP] Found Microsoft token cache, attempting reconnect...")
+            logger.info("Found Microsoft token cache, attempting reconnect...")
             from connectors.microsoft_graph import GraphClient
             ms_client = GraphClient(auth=ms_auth)
             if await ms_client.connect():
-                print("[STARTUP] Microsoft Graph reconnected!")
+                logger.info("Microsoft Graph reconnected!")
                 # Rebuild engine so Microsoft connectors pick up the live auth
                 get_telic_engine(force_rebuild=True)
             else:
-                print("[STARTUP] Microsoft token cache expired - user needs to re-authenticate")
+                logger.warning("Microsoft token cache expired - user needs to re-authenticate")
     except Exception as e:
-        print(f"[STARTUP] Microsoft reconnect failed (non-fatal): {e}")
+        logger.warning(f"Microsoft reconnect failed (non-fatal): {e}")
 
     # Reconnect Spotify if credentials exist in store
     try:
         store = get_cred_store()
         spotify_token = store.get_token("spotify")
         if spotify_token or os.environ.get("SPOTIFY_CLIENT_ID"):
-            print("[STARTUP] Found Spotify credentials, will reconnect on engine build")
+            logger.info("Found Spotify credentials, will reconnect on engine build")
             # Spotify connector is auto-wired by _build_connectors_from_registry
             # Just ensure the engine is built (force rebuild if not yet done)
             if not _telic_engine:
                 get_telic_engine(force_rebuild=True)
     except Exception as e:
-        print(f"[STARTUP] Spotify reconnect check failed (non-fatal): {e}")
+        logger.warning(f"Spotify reconnect check failed (non-fatal): {e}")
 
     # Start ProactiveMonitor with any connected services
     try:
@@ -695,9 +698,9 @@ async def startup_event(app=None):
                 pass
         
         await monitor.start()
-        print(f"[STARTUP] ProactiveMonitor started with services: {list(monitor._service_adapters.keys())}")
+        logger.info(f"ProactiveMonitor started with services: {list(monitor._service_adapters.keys())}")
     except Exception as e:
-        print(f"[STARTUP] ProactiveMonitor start failed (non-fatal): {e}")
+        logger.warning(f"ProactiveMonitor start failed (non-fatal): {e}")
 
     # Initialize IntelligenceHub and wire to connected services
     try:
@@ -706,9 +709,9 @@ async def startup_event(app=None):
         mem_facts = stats.get("memory", {}).get("total_facts", 0)
         pref_count = stats.get("preferences", {}).get("learned_preferences", 0)
         pat_count = stats.get("patterns", {}).get("detected_patterns", 0)
-        print(f"[STARTUP] IntelligenceHub ready: {mem_facts} facts, {pref_count} preferences, {pat_count} patterns")
+        logger.info(f"IntelligenceHub ready: {mem_facts} facts, {pref_count} preferences, {pat_count} patterns")
     except Exception as e:
-        print(f"[STARTUP] IntelligenceHub init failed (non-fatal): {e}")
+        logger.warning(f"IntelligenceHub init failed (non-fatal): {e}")
 
     # Start local data index + background sync engine
     global _data_index, _sync_engine
@@ -756,13 +759,27 @@ async def startup_event(app=None):
             for (engine_key, index_source), (method, kwargs, interval) in _sync_recipes.items():
                 connector = engine._connectors.get(engine_key)
                 if connector and hasattr(connector, method):
-                    _sync_engine.register(ConnectorSyncAdapter(
-                        source=index_source,
-                        connector=connector,
-                        fetch_method=method,
-                        fetch_kwargs=kwargs,
-                        default_interval=interval,
-                    ))
+                    # Only register if actually connected — don't sync dead services
+                    is_conn = False
+                    if hasattr(connector, 'connected'):
+                        val = getattr(connector, 'connected')
+                        is_conn = val() if callable(val) else val
+                    elif hasattr(connector, 'is_connected'):
+                        val = getattr(connector, 'is_connected')
+                        is_conn = val() if callable(val) else val
+                    else:
+                        is_conn = True  # No check available, assume connected
+
+                    if is_conn:
+                        _sync_engine.register(ConnectorSyncAdapter(
+                            source=index_source,
+                            connector=connector,
+                            fetch_method=method,
+                            fetch_kwargs=kwargs,
+                            default_interval=interval,
+                        ))
+                    else:
+                        logger.debug(f"Skipping sync for {engine_key}: not connected")
 
         # Also register globals that might not be in engine._connectors yet
         if _google_calendar and _google_calendar.connected and "google_calendar" not in _sync_engine._adapters:
@@ -778,14 +795,14 @@ async def startup_event(app=None):
 
         # Start background sync loop
         await _sync_engine.start()
-        print(f"[STARTUP] Data index + sync engine started ({len(_sync_engine._adapters)} sources)")
+        logger.info(f"Data index + sync engine started ({len(_sync_engine._adapters)} sources)")
     except Exception as e:
-        print(f"[STARTUP] Data index/sync failed (non-fatal): {e}")
+        logger.warning(f"Data index/sync failed (non-fatal): {e}")
 
     # Initialize semantic search (vector embeddings)
     global _semantic_search
     if _data_index is None:
-        print("[STARTUP] Skipping semantic search (data index not available)")
+        logger.info("Skipping semantic search (data index not available)")
     else:
         try:
             from semantic_search import SemanticSearch
@@ -802,12 +819,12 @@ async def startup_event(app=None):
                     pass
                 # Embed any existing un-embedded objects in background
                 asyncio.create_task(_semantic_search.embed_all())
-                print(f"[STARTUP] Semantic search ready: {_semantic_search.stats}")
+                logger.info(f"Semantic search ready: {_semantic_search.stats}")
             else:
-                print("[STARTUP] Semantic search: no embedding backend available (non-fatal)")
+                logger.info("Semantic search: no embedding backend available (non-fatal)")
                 _semantic_search = None
         except Exception as e:
-            print(f"[STARTUP] Semantic search init failed (non-fatal): {e}")
+            logger.warning(f"Semantic search init failed (non-fatal): {e}")
             _semantic_search = None
 
     # Initialize webhooks + smart prefetch
@@ -824,10 +841,10 @@ async def startup_event(app=None):
             )
             # Always start smart prefetch (works without public URL)
             await _webhook_manager.start_prefetch()
-            print(f"[STARTUP] Webhooks: {webhook_result}")
-            print("[STARTUP] Smart prefetch started")
+            logger.info(f"Webhooks: {webhook_result}")
+            logger.info("Smart prefetch started")
     except Exception as e:
-        print(f"[STARTUP] Webhooks/prefetch init failed (non-fatal): {e}")
+        logger.warning(f"Webhooks/prefetch init failed (non-fatal): {e}")
 
     # Auto-start local file scanner if user previously opted in
     global _file_scanner
@@ -843,13 +860,13 @@ async def startup_event(app=None):
                 )
                 started = await _file_scanner.start()
                 if started:
-                    print(f"[STARTUP] Local file scanner started ({len(file_settings.scan_directories)} dirs)")
+                    logger.info(f"Local file scanner started ({len(file_settings.scan_directories)} dirs)")
                 else:
-                    print("[STARTUP] Local file scanner enabled but failed to start")
+                    logger.warning("Local file scanner enabled but failed to start")
             else:
-                print("[STARTUP] Local file scanner: not enabled (opt-in via POST /files/settings)")
+                logger.info("Local file scanner: not enabled (opt-in via POST /files/settings)")
     except Exception as e:
-        print(f"[STARTUP] Local file scanner init failed (non-fatal): {e}")
+        logger.warning(f"Local file scanner init failed (non-fatal): {e}")
 
 
 
@@ -1003,12 +1020,22 @@ def step_to_sse_dict(step: Step) -> Dict[str, Any]:
 
 def state_to_response(state: AgentState) -> Dict[str, Any]:
     """Convert AgentState to API response."""
-    return {
+    resp = {
         "steps": [step_to_dict(s) for s in state.steps],
         "pending_approval": step_to_dict(state.pending_approval) if state.pending_approval else None,
         "is_complete": state.is_complete,
         "response": state.final_response,
     }
+    if state.llm_calls > 0:
+        resp["usage"] = {
+            "input_tokens": state.input_tokens,
+            "output_tokens": state.output_tokens,
+            "cache_read_tokens": state.cache_read_tokens,
+            "cache_creation_tokens": state.cache_creation_tokens,
+            "llm_calls": state.llm_calls,
+            "estimated_cost_usd": round(state.estimated_cost_usd, 6),
+        }
+    return resp
 
 
 async def select_primitives_for_request(message: str, all_primitives: dict) -> dict:
@@ -1057,7 +1084,7 @@ async def get_session_agent(session: Optional[UserSession] = None, force_new: bo
     
     # Use ALL primitives - let the LLM decide what's relevant
     tools = primitives_to_tools(engine._primitives)
-    print(f"[SESSION] Created agent with {len(tools)} tools")
+    logger.info(f"Created agent with {len(tools)} tools")
     
     # Create LLM client
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -1104,7 +1131,7 @@ This week:
         if parts:
             intel_section = "\n\n" + "\n\n".join(parts) + "\n"
     except Exception as e:
-        print(f"[INTEL] System prompt enrichment failed (non-fatal): {e}")
+        logger.warning(f"System prompt enrichment failed (non-fatal): {e}")
     
     system_prompt = f"""You are Ziggy, an AI assistant that helps users get things done.
 

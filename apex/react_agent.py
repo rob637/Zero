@@ -105,6 +105,22 @@ class AgentState:
     pending_approval: Optional[Step] = None
     is_complete: bool = False
     final_response: Optional[str] = None
+    # Cost tracking
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    llm_calls: int = 0
+
+    @property
+    def estimated_cost_usd(self) -> float:
+        """Estimate cost (Sonnet 4 pricing: $3/$15 per MTok, cache read $0.30)."""
+        return (
+            (self.input_tokens * 3.0 / 1_000_000)
+            + (self.output_tokens * 15.0 / 1_000_000)
+            + (self.cache_read_tokens * 0.30 / 1_000_000)
+            + (self.cache_creation_tokens * 3.75 / 1_000_000)
+        )
 
 
 class ReActAgent:
@@ -448,8 +464,14 @@ When you have completed the task, respond with a summary of what was done."""
         _elapsed = _time.perf_counter() - _t0
         _cache_info = ""
         if hasattr(response, 'usage'):
-            _cr = getattr(response.usage, 'cache_creation_input_tokens', 0) or 0
-            _ch = getattr(response.usage, 'cache_read_input_tokens', 0) or 0
+            u = response.usage
+            self.state.input_tokens += getattr(u, 'input_tokens', 0) or 0
+            self.state.output_tokens += getattr(u, 'output_tokens', 0) or 0
+            _cr = getattr(u, 'cache_creation_input_tokens', 0) or 0
+            _ch = getattr(u, 'cache_read_input_tokens', 0) or 0
+            self.state.cache_creation_tokens += _cr
+            self.state.cache_read_tokens += _ch
+            self.state.llm_calls += 1
             if _cr or _ch:
                 _cache_info = f" | cache: created={_cr} read={_ch}"
         logger.info(f"LLM call: {_elapsed:.1f}s | context: {_ctx_size:,} chars | usage: {response.usage}{_cache_info}")
@@ -599,15 +621,26 @@ When you have completed the task, respond with a summary of what was done."""
         logger.info(f"Context trimmed: {total:,} chars -> {sum(len(json.dumps(m)) for m in self.state.messages):,} chars ({trimmed_count} messages dropped)")
 
 
-def primitives_to_tools(primitives: Dict[str, Any]) -> List[Tool]:
+def primitives_to_tools(primitives: Dict[str, Any], connected_only: bool = True) -> List[Tool]:
     """
     Convert Apex primitives to ReAct tools.
     
     Each primitive operation becomes a tool.
-    Tool descriptions are enriched with connected provider info
-    so the LLM knows what services are available.
+    When connected_only=True (default), skip primitives that have no
+    connected providers — don't send 353 tools when only 12 are live.
+    Built-in primitives (search, weather, compute, etc.) are always included.
     """
+    # Primitives that work without an external provider connection
+    ALWAYS_INCLUDE = {
+        "search", "web", "compute", "file", "shell", "clipboard",
+        "screenshot", "automation", "document", "data", "database",
+        "translate", "knowledge", "intelligence", "patterns", "notify",
+        "browser", "weather", "news", "finance", "home", "shopping",
+        "devtools",
+    }
+
     tools = []
+    skipped = 0
     
     for prim_name, primitive in primitives.items():
         available_ops = primitive.get_available_operations()
@@ -617,6 +650,12 @@ def primitives_to_tools(primitives: Dict[str, Any]) -> List[Tool]:
         connected = []
         if hasattr(primitive, 'get_connected_providers'):
             connected = primitive.get_connected_providers()
+        
+        # Skip unconnected external service primitives
+        if connected_only and not connected and prim_name.lower() not in ALWAYS_INCLUDE:
+            skipped += len(available_ops)
+            continue
+
         provider_suffix = f" [via {', '.join(connected)}]" if connected else ""
         
         for op_name, description in available_ops.items():
@@ -660,4 +699,6 @@ def primitives_to_tools(primitives: Dict[str, Any]) -> List[Tool]:
             
             tools.append(tool)
     
+    if skipped:
+        logger.info(f"Tools: {len(tools)} active, {skipped} skipped (no connected provider)")
     return tools

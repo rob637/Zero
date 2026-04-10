@@ -10,6 +10,7 @@ Then open http://localhost:8000 in your browser.
 
 import os
 import json
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
@@ -31,6 +32,13 @@ from server_state import (
     create_client_from_env,
     get_credential_store, get_resolver,
     ConnectorRegistry,
+)
+
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
 )
 
 # Route modules

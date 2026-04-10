@@ -6,6 +6,8 @@ Handles chat, streaming, session management, and approval flows.
 import asyncio
 import json
 import os
+import logging
+import time as _time
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException
@@ -17,7 +19,15 @@ from react_agent import Step, StepStatus, AgentState
 from src.control.action_history import ActionStatus
 import sessions as session_store
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Blueprint cache — same request pattern → same plan, skip LLM call
+# ---------------------------------------------------------------------------
+_blueprint_cache: Dict[str, tuple] = {}  # key → (plan_steps, timestamp)
+_BLUEPRINT_TTL = 300  # 5 minutes
 
 
 @router.post("/react/chat")
@@ -41,8 +51,8 @@ async def react_chat(req: ReactRequest):
         })
     
     try:
-        print(f"[SESSION] User: {req.message[:80]}...")
-        print(f"[SESSION] Conversation history: {len(session.messages)} messages")
+        logger.info(f"User: {req.message[:80]}...")
+        logger.info(f"Conversation history: {len(session.messages)} messages")
         
         # Build context from conversation history for the agent
         if session.messages:
@@ -80,19 +90,18 @@ Remember: References like "the first one", "send it to him", "the information ab
         # Log what happened
         for step in state.steps:
             status = "✓" if step.status == StepStatus.COMPLETED else "⏸" if step.status == StepStatus.PENDING_APPROVAL else "✗"
-            print(f"[SESSION] {status} {step.tool_call.name}")
+            logger.info(f"{status} {step.tool_call.name}")
         
         if state.pending_approval:
-            print(f"[SESSION] Waiting for approval: {state.pending_approval.tool_call.name}")
+            logger.info(f"Waiting for approval: {state.pending_approval.tool_call.name}")
         
         if state.is_complete:
-            print(f"[SESSION] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
+            logger.info(f"Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
         
         return JSONResponse(ss.state_to_response(state))
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Request error")
         return JSONResponse({
             "error": str(e),
             "steps": [],
@@ -120,8 +129,8 @@ async def react_chat_stream(req: ReactRequest):
         return StreamingResponse(err(), media_type="text/event-stream")
 
     # Build message with conversation context (same logic as react_chat)
-    print(f"[STREAM] User: {req.message[:80]}...")
-    print(f"[STREAM] Conversation history: {len(session.messages)} messages")
+    logger.info(f"User: {req.message[:80]}...")
+    logger.info(f"Conversation history: {len(session.messages)} messages")
 
     if session.messages:
         context_lines = []
@@ -168,9 +177,9 @@ Remember: References like "the first one", "send it to him", "the information ab
 
         if intel_parts:
             intel_context = "\n\n".join(intel_parts) + "\n\n"
-            print(f"[INTEL] Injected {len(intel_parts)} intelligence sections")
+            logger.info(f"Injected {len(intel_parts)} intelligence sections")
     except Exception as e:
-        print(f"[INTEL] Context gathering failed (non-fatal): {e}")
+        logger.warning(f"Context gathering failed (non-fatal): {e}")
 
     # Prepend intelligence context to message
     if intel_context:
@@ -182,13 +191,13 @@ Remember: References like "the first one", "send it to him", "the information ab
     try:
         from intent_router import classify, handle_index_direct, filter_tools as router_filter_tools, IntentType
         intent = await classify(req.message)
-        print(f"[ROUTER] {intent}")
+        logger.info(f"{intent}")
 
         # Fast path: INDEX_DIRECT — answer from local index, no LLM call
         if intent.type == IntentType.INDEX_DIRECT:
             index_result = handle_index_direct(intent, ss._data_index)
             if index_result:
-                print(f"[ROUTER] Index direct hit — skipping LLM entirely")
+                logger.info("Index direct hit — skipping LLM entirely")
                 async def index_direct_generator():
                     yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
                     response_text = index_result["response"]
@@ -210,9 +219,9 @@ Remember: References like "the first one", "send it to him", "the information ab
             agent.tools = {t.name: t for t in filtered_list}
             # Rebuild tool schemas for the filtered set
             agent.tool_schemas = agent._build_tool_schemas(filtered_list)
-            print(f"[ROUTER] Filtered tools: {original_count} → {len(agent.tools)} (domains: {intent.domains})")
+            logger.info(f"Filtered tools: {original_count} → {len(agent.tools)} (domains: {intent.domains})")
     except Exception as e:
-        print(f"[ROUTER] Intent classification failed (falling through to FULL): {e}")
+        logger.warning(f"Intent classification failed (falling through to FULL): {e}")
 
     # Event queue for SSE
     queue = asyncio.Queue()
@@ -305,7 +314,15 @@ Remember: References like "the first one", "send it to him", "the information ab
         yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
 
         # Generate execution blueprint (plan) before running
-        try:
+        # Check cache first to avoid redundant LLM calls
+        bp_key = req.message.lower().strip()[:200]
+        cached_bp = _blueprint_cache.get(bp_key)
+        if cached_bp and (_time.monotonic() - cached_bp[1]) < _BLUEPRINT_TTL:
+            plan_steps = cached_bp[0]
+            yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
+            logger.info(f"Blueprint cache hit: {len(plan_steps)} steps")
+        else:
+          try:
             engine = ss.get_telic_engine()
             # Build a compact list of available capabilities
             available_tools = []
@@ -364,12 +381,12 @@ User request: {req.message}"""
             
             plan_steps = json.loads(plan_text)
             if isinstance(plan_steps, list) and len(plan_steps) > 0:
+                _blueprint_cache[bp_key] = (plan_steps, _time.monotonic())
                 yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
-                print(f"[STREAM] Blueprint: {len(plan_steps)} planned steps")
-        except Exception as e:
-            import traceback
-            print(f"[STREAM] Blueprint generation skipped: {e}")
-            traceback.print_exc()
+                logger.info(f"Blueprint: {len(plan_steps)} planned steps")
+          except Exception as e:
+            logger.warning(f"Blueprint generation skipped: {e}")
+            logger.exception("Request error")
 
         # Run agent as background task
         task = asyncio.create_task(agent.run(full_message))
@@ -414,15 +431,14 @@ User request: {req.message}"""
             # Log
             for s in state.steps:
                 icon = "✓" if s.status == StepStatus.COMPLETED else "⏸" if s.status == StepStatus.PENDING_APPROVAL else "✗"
-                print(f"[STREAM] {icon} {s.tool_call.name}")
+                logger.info(f"{icon} {s.tool_call.name}")
             if state.is_complete:
-                print(f"[STREAM] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
+                logger.info(f"Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
 
             yield f"data: {json.dumps({'event': 'complete', 'data': ss.state_to_response(state)})}\n\n"
 
         except (Exception, asyncio.CancelledError) as e:
-            import traceback
-            traceback.print_exc()
+            logger.exception("Request error")
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
@@ -443,7 +459,7 @@ User request: {req.message}"""
 async def react_new_conversation():
     """Start a fresh conversation - saves current session, then clears."""
     session = ss.new_user_session()
-    print(f"[SESSION] Started new conversation: {session.session_id}")
+    logger.info(f"Started new conversation: {session.session_id}")
     return JSONResponse({"status": "ok", "message": "New conversation started", "session_id": session.session_id})
 
 
@@ -469,7 +485,7 @@ async def react_approve(req: ReactApproveRequest):
     try:
         action = "Approved" if req.approved else "Rejected"
         if session.react_state.pending_approval:
-            print(f"[SESSION] {action}: {session.react_state.pending_approval.tool_call.name}")
+            logger.info(f"{action}: {session.react_state.pending_approval.tool_call.name}")
         
         # Continue with approval decision
         state = await agent.continue_with_approval(req.approved)
@@ -482,8 +498,7 @@ async def react_approve(req: ReactApproveRequest):
         return JSONResponse(ss.state_to_response(state))
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Request error")
         return JSONResponse({
             "error": str(e),
             "steps": [],
@@ -510,7 +525,7 @@ async def react_approve_stream(req: ReactApproveRequest):
 
     action = "Approved" if req.approved else "Rejected"
     if session.react_state.pending_approval:
-        print(f"[STREAM-APPROVE] {action}: {session.react_state.pending_approval.tool_call.name}")
+        logger.info(f"{action}: {session.react_state.pending_approval.tool_call.name}")
 
     if not req.approved:
         # Rejection is instant — no streaming needed
@@ -563,8 +578,7 @@ async def react_approve_stream(req: ReactApproveRequest):
             session.auto_save()
             yield f"data: {json.dumps({'event': 'complete', 'data': ss.state_to_response(state)})}\n\n"
         except (Exception, asyncio.CancelledError) as e:
-            import traceback
-            traceback.print_exc()
+            logger.exception("Request error")
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
@@ -625,7 +639,7 @@ async def load_session(session_id: str):
     us.agent = None  # Force agent recreation to pick up new context
     us.react_state = None
     ss._current_session_id = session_id
-    print(f"[SESSION] Loaded session {session_id} with {len(us.messages)} messages")
+    logger.info(f"Loaded session {session_id} with {len(us.messages)} messages")
     return JSONResponse({"status": "ok", "session": session})
 
 
@@ -636,4 +650,22 @@ async def delete_session(session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return JSONResponse({"status": "ok"})
+
+
+@router.post("/prefetch")
+async def prefetch():
+    """Warm cache on app open — sync connected services in background."""
+    sync_engine = ss._sync_engine
+    if not sync_engine or not hasattr(sync_engine, '_adapters'):
+        return JSONResponse({"status": "ok", "triggered": []})
+
+    triggered = []
+    for source in list(sync_engine._adapters.keys()):
+        try:
+            asyncio.create_task(sync_engine.sync_now(source=source))
+            triggered.append(source)
+        except Exception:
+            pass
+    logger.info(f"Prefetch triggered for: {triggered}")
+    return JSONResponse({"status": "ok", "triggered": triggered})
 
