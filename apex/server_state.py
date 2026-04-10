@@ -543,7 +543,7 @@ def get_devtools() -> UnifiedDevTools:
     return _devtools
 
 
-async def startup_event():
+async def startup_event(app=None):
     """Try to reconnect Google services if tokens exist from previous session."""
     global _google_calendar, _gmail_connector, _google_connected_services
     
@@ -815,7 +815,8 @@ async def startup_event():
         from webhooks import get_webhook_manager
         _webhook_manager = get_webhook_manager(_sync_engine)
         if _webhook_manager:
-            _webhook_manager.register_routes(app)
+            if app:
+                _webhook_manager.register_routes(app)
             # Setup webhook subscriptions (only works with WEBHOOK_BASE_URL)
             webhook_result = await _webhook_manager.setup_all(
                 calendar_connector=_google_calendar,

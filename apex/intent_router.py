@@ -222,7 +222,9 @@ def _classify_core(msg_lower: str, today: datetime, detected_domains: List[str])
     has_action = bool(_ACTION_VERBS.search(msg_lower)) or bool(_SCHEDULE_VERB.search(msg_lower))
 
     # --- Phase 1: Check for direct index queries (read-only lookups only) ---
-    if not has_action:
+    # Only shortcut to index when the message targets a SINGLE domain.
+    # Multi-domain requests like "check calendar, email, and tasks" need the LLM.
+    if not has_action and len(detected_domains) <= 1:
         for pattern, kind, base_params in _INDEX_PATTERNS:
             if pattern.search(msg_lower):
                 params = dict(base_params)

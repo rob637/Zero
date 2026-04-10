@@ -41,7 +41,7 @@ from routes.intelligence import router as intelligence_router
 
 @asynccontextmanager
 async def _lifespan(app):
-    await startup_event()
+    await startup_event(app)
     yield
 
 
