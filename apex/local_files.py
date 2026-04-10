@@ -141,12 +141,17 @@ _RICH_EXTENSIONS: Set[str] = {
     ".odt", ".ods", ".odp", ".rtf", ".epub",
 }
 
+# Image extensions with potential EXIF metadata
+_IMAGE_EXTENSIONS: Set[str] = {
+    ".jpg", ".jpeg", ".png", ".tiff", ".heic", ".heif", ".webp",
+}
+
 # File extensions we know are binary/media — skip content extraction
 _SKIP_EXTENSIONS: Set[str] = {
     ".exe", ".dll", ".so", ".dylib", ".bin", ".dat", ".db", ".sqlite",
     ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
     ".mp3", ".mp4", ".avi", ".mov", ".mkv", ".flac", ".wav", ".aac",
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".ico", ".svg",
+    ".gif", ".bmp", ".ico", ".svg",
     ".iso", ".img", ".dmg", ".vmdk",
     ".pyc", ".pyo", ".class", ".o", ".obj", ".wasm",
 }
@@ -283,12 +288,172 @@ def _extract_xlsx(path: str) -> str:
         return ""
 
 
+def _extract_image_metadata(path: str) -> str:
+    """Extract EXIF metadata from images — GPS location, date, camera, dimensions."""
+    try:
+        from PIL import Image
+        from PIL.ExifTags import TAGS, GPSTAGS
+    except ImportError:
+        return ""
+
+    parts: list[str] = []
+    try:
+        with Image.open(path) as img:
+            w, h = img.size
+            parts.append(f"Image: {w}x{h} {img.format or ''}")
+
+            exif = img.getexif()
+            if not exif:
+                return " ".join(parts)
+
+            # Camera / device
+            make = exif.get(0x010F, "")   # Make
+            model = exif.get(0x0110, "")  # Model
+            if make or model:
+                parts.append(f"Camera: {make} {model}".strip())
+
+            # Date taken
+            date = exif.get(0x9003) or exif.get(0x0132)  # DateTimeOriginal or DateTime
+            if date:
+                parts.append(f"Date: {date}")
+
+            # Description / Title / Comments
+            desc = exif.get(0x010E, "")  # ImageDescription
+            if desc:
+                parts.append(f"Description: {desc}")
+            user_comment = exif.get(0x9286, "")  # UserComment
+            if user_comment and isinstance(user_comment, str):
+                parts.append(f"Comment: {user_comment}")
+
+            # GPS data
+            gps_ifd = exif.get_ifd(0x8825)  # GPSInfo IFD
+            if gps_ifd:
+                lat = _gps_to_decimal(
+                    gps_ifd.get(2), gps_ifd.get(1)  # GPSLatitude, GPSLatitudeRef
+                )
+                lon = _gps_to_decimal(
+                    gps_ifd.get(4), gps_ifd.get(3)  # GPSLongitude, GPSLongitudeRef
+                )
+                if lat is not None and lon is not None:
+                    parts.append(f"GPS: {lat:.6f}, {lon:.6f}")
+                    place = _reverse_geocode_offline(lat, lon)
+                    if place:
+                        parts.append(f"Location: {place}")
+
+    except Exception:
+        pass
+
+    return " | ".join(parts)
+
+
+def _gps_to_decimal(
+    coords: tuple | None, ref: str | None
+) -> float | None:
+    """Convert EXIF GPS coordinates (degrees, minutes, seconds) to decimal."""
+    if not coords or not ref:
+        return None
+    try:
+        d, m, s = [float(c) for c in coords]
+        decimal = d + m / 60 + s / 3600
+        if ref in ("S", "W"):
+            decimal = -decimal
+        return decimal
+    except (ValueError, TypeError, ZeroDivisionError):
+        return None
+
+
+def _reverse_geocode_offline(lat: float, lon: float) -> str:
+    """Best-effort offline reverse geocode using coarse lat/lon regions.
+
+    Returns continent/region + country-level name. No network calls.
+    """
+    # Coarse bounding-box lookup — covers major regions people photograph
+    _REGIONS = [
+        # Africa
+        ((-35, -20), (38, 52), "Africa"),
+        # Europe
+        ((35, -25), (72, 45), "Europe"),
+        # North America
+        ((15, -170), (72, -50), "North America"),
+        # South America
+        ((-56, -82), (13, -34), "South America"),
+        # Asia
+        ((1, 45), (55, 145), "Asia"),
+        # Middle East
+        ((12, 25), (42, 63), "Middle East"),
+        # Oceania / Australia
+        ((-50, 110), (0, 180), "Oceania"),
+        # Antarctica
+        ((-90, -180), (-60, 180), "Antarctica"),
+        # Caribbean
+        ((10, -90), (27, -58), "Caribbean"),
+    ]
+
+    # Finer country-level boxes for popular destinations
+    _COUNTRIES = [
+        ((25.0, -125.0), (50.0, -66.0), "United States"),
+        ((41.0, -5.5), (51.5, 10.0), "France"),
+        ((36.0, -9.5), (43.8, 3.4), "Spain"),
+        ((35.5, 6.6), (47.1, 18.5), "Italy"),
+        ((47.3, 5.9), (55.1, 15.0), "Germany"),
+        ((49.9, -8.2), (60.9, 1.8), "United Kingdom"),
+        ((24.4, 122.9), (45.6, 153.0), "Japan"),
+        ((18.2, 97.3), (53.6, 135.1), "China"),
+        ((-8.7, 95.0), (5.9, 141.0), "Indonesia"),
+        ((6.0, 68.0), (35.5, 97.4), "India"),
+        ((-34.8, 16.5), (-22.1, 32.9), "South Africa"),
+        ((-4.7, 29.0), (4.2, 35.0), "East Africa"),
+        ((4.0, -1.2), (11.2, 1.2), "Ghana"),
+        ((4.2, 2.7), (13.9, 14.7), "Nigeria"),
+        ((-1.5, 29.0), (1.5, 30.0), "Rwanda"),
+        ((-11.7, 25.0), (5.4, 31.3), "Congo"),
+        ((-26.9, -58.0), (5.3, -34.8), "Brazil"),
+        ((14.5, -92.0), (32.7, -86.7), "Mexico"),
+        ((-47.0, 166.0), (-34.0, 178.5), "New Zealand"),
+        ((-44.0, 113.0), (-10.0, 154.0), "Australia"),
+        ((33.0, 34.0), (37.3, 36.6), "Turkey"),
+        ((25.0, 51.0), (26.3, 56.4), "UAE"),
+        ((29.0, 34.2), (33.3, 39.2), "Jordan"),
+        ((51.0, -10.5), (55.4, -5.5), "Ireland"),
+        ((59.0, 4.5), (71.2, 31.2), "Norway"),
+        ((36.4, 19.4), (41.7, 29.7), "Greece"),
+        ((-18.3, 43.2), (-12.0, 50.5), "Madagascar"),
+        ((-17.8, 25.3), (-8.2, 33.7), "Zambia"),
+        ((-26.9, 20.0), (-17.8, 33.0), "Botswana"),
+        ((-15.0, 32.7), (-9.4, 35.9), "Malawi"),
+        ((-22.4, 29.4), (-15.6, 33.1), "Zimbabwe"),
+        ((-1.5, 33.9), (4.2, 41.9), "Kenya"),
+        ((-11.7, 29.3), (-1.0, 40.5), "Tanzania"),
+        ((-1.4, 29.6), (4.2, 35.0), "Uganda"),
+        ((9.4, -17.6), (15.0, -11.4), "Senegal"),
+        ((21.3, -17.1), (27.7, -1.0), "Western Sahara"),
+        ((27.7, -13.2), (35.9, -1.0), "Morocco"),
+        ((19.0, 9.4), (23.5, 16.0), "Niger"),
+        ((30.2, 24.7), (31.7, 34.9), "Egypt"),
+        ((8.0, -12.3), (15.0, -7.5), "Guinea"),
+    ]
+
+    # Try fine-grained first
+    for (lat1, lon1), (lat2, lon2), name in _COUNTRIES:
+        if lat1 <= lat <= lat2 and lon1 <= lon <= lon2:
+            return name
+
+    # Fall back to region
+    for (lat1, lon1), (lat2, lon2), name in _REGIONS:
+        if lat1 <= lat <= lat2 and lon1 <= lon <= lon2:
+            return name
+
+    return ""
+
+
 def extract_content(path: str, ext: str) -> str:
     """Extract text content from a file based on its extension."""
     ext = ext.lower()
 
     if ext in _SKIP_EXTENSIONS:
         return ""
+    if ext in _IMAGE_EXTENSIONS:
+        return _extract_image_metadata(path)
     if ext in (".csv", ".tsv"):
         return _extract_csv(path)
     if ext == ".pdf":

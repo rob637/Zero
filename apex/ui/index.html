@@ -3273,11 +3273,14 @@
                 const running = data.scanner_status?.running;
                 const progress = data.scanner_status?.progress;
                 const indexed = progress?.files_indexed || 0;
+                const phase = progress?.phase || '';
+                const isScanning = running && phase !== 'complete' && phase !== 'watching';
 
-                if (enabled && running) {
-                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--success);">● Scanning... ${indexed} files indexed</div>`;
+                if (enabled && isScanning) {
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--success);">● Scanning... ${indexed.toLocaleString()} files indexed</div>`;
                 } else if (enabled && indexed > 0) {
-                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">✓ ${indexed} files indexed</div>`;
+                    const watchLabel = phase === 'watching' ? ' · watching for changes' : '';
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">✓ ${indexed.toLocaleString()} files indexed${watchLabel}</div>`;
                 } else if (enabled) {
                     container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">Enabled — no files scanned yet</div>`;
                 } else {
@@ -3309,6 +3312,8 @@
             const dirs = settings.scan_directories?.length > 0 ? settings.scan_directories : defaults;
             const progress = scannerStatus.progress || {};
             const isRunning = scannerStatus.running || false;
+            const scanPhase = progress.phase || '';
+            const isActuallyScanning = isRunning && scanPhase !== 'complete' && scanPhase !== 'watching';
 
             modal = document.createElement('div');
             modal.id = 'fileIndexModal';
@@ -3347,7 +3352,7 @@
                         <div class="scan-progress" id="scanProgressSection">
                             <div style="display:flex;justify-content:space-between;align-items:center;">
                                 <span style="font-size:0.85rem;font-weight:600;">Scan Progress</span>
-                                <span style="font-size:0.7rem;color:var(--text-muted);" id="scanPhase">${isRunning ? '● Scanning' : progress.files_indexed > 0 ? 'Complete' : 'Not started'}</span>
+                                <span style="font-size:0.7rem;color:var(--text-muted);" id="scanPhase">${isActuallyScanning ? '● Scanning' : scanPhase === 'watching' ? '● watching' : progress.files_indexed > 0 ? 'Complete' : 'Not started'}</span>
                             </div>
                             <div class="scan-progress-bar">
                                 <div class="scan-progress-fill" id="scanProgressFill" style="width: ${progress.files_found > 0 ? Math.round((progress.files_indexed / progress.files_found) * 100) : 0}%"></div>
@@ -3469,7 +3474,9 @@
                     const fillEl = document.getElementById('scanProgressFill');
                     if (fillEl) fillEl.style.width = pct + '%';
                     const phaseEl = document.getElementById('scanPhase');
-                    if (phaseEl) phaseEl.textContent = status.running ? `● ${p.phase || 'Scanning'}` : 'Complete';
+                    const phase = p.phase || '';
+                    const scanning = status.running && phase !== 'complete' && phase !== 'watching';
+                    if (phaseEl) phaseEl.textContent = scanning ? `● ${phase || 'Scanning'}` : phase === 'watching' ? '● watching' : 'Complete';
                     const foundEl = document.getElementById('scanFilesFound');
                     if (foundEl) foundEl.textContent = p.files_found || 0;
                     const indexedEl = document.getElementById('scanFilesIndexed');
@@ -3477,7 +3484,7 @@
                     const dirsEl = document.getElementById('scanDirsScanned');
                     if (dirsEl) dirsEl.textContent = p.directories_scanned || 0;
                     loadPCIndexStatus();
-                    if (!status.running) stopScanPoll();
+                    if (!scanning) stopScanPoll();
                 } catch (e) {
                     stopScanPoll();
                 }
