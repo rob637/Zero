@@ -244,40 +244,39 @@ class CalendarConnector:
             calendar_ids = ['primary']
         
         # Format time bounds as RFC 3339 (required by Google Calendar API).
-        # For naive datetimes (date-only queries like "2026-04-10"), use the
-        # calendar's own timezone so the window aligns with the user's local day.
+        # For naive datetimes (date-only queries like "2026-04-10"), pass them
+        # as-is and use Google's timeZone parameter to let the API interpret
+        # them in the user's local timezone. This avoids fragile ZoneInfo
+        # conversion that can fail on Windows without tzdata.
+        cal_tz = self._calendar_timezone or 'America/New_York'
         if time_min.tzinfo:
             t_min = time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
             t_max = time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            cal_tz = None  # Already UTC, no need for timeZone param
         else:
-            # Attach calendar timezone so midnight means local midnight, not UTC
-            cal_tz = self._calendar_timezone or 'America/New_York'
-            if ZoneInfo:
-                try:
-                    tz = ZoneInfo(cal_tz)
-                    t_min = time_min.replace(tzinfo=tz).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-                    t_max = time_max.replace(tzinfo=tz).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-                except Exception:
-                    t_min = time_min.strftime('%Y-%m-%dT%H:%M:%SZ')
-                    t_max = time_max.strftime('%Y-%m-%dT%H:%M:%SZ')
-            else:
-                t_min = time_min.strftime('%Y-%m-%dT%H:%M:%SZ')
-                t_max = time_max.strftime('%Y-%m-%dT%H:%M:%SZ')
+            # Pass naive datetimes directly — Google will interpret them
+            # in the timeZone we specify in the API call
+            t_min = time_min.strftime('%Y-%m-%dT%H:%M:%S')
+            t_max = time_max.strftime('%Y-%m-%dT%H:%M:%S')
 
         errors = []
 
         async def _query_calendar(cal_id: str) -> List[CalendarEvent]:
             try:
-                list_kwargs = dict(
-                    calendarId=cal_id,
-                    timeMin=t_min,
-                    timeMax=t_max,
-                    maxResults=max_results,
-                    singleEvents=single_events,
-                    orderBy='startTime',
-                    q=query,
-                )
-                print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={self._calendar_timezone})")
+                list_kwargs = {
+                    'calendarId': cal_id,
+                    'timeMin': t_min,
+                    'timeMax': t_max,
+                    'maxResults': max_results,
+                    'singleEvents': single_events,
+                    'orderBy': 'startTime',
+                }
+                # Only include optional params when they have values
+                if query:
+                    list_kwargs['q'] = query
+                if cal_tz:
+                    list_kwargs['timeZone'] = cal_tz
+                print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={cal_tz})")
                 request = self._service.events().list(**list_kwargs)
                 result = await asyncio.to_thread(request.execute)
                 items = result.get('items', [])
