@@ -511,6 +511,165 @@ async def get_file_thumbnail(path: str = ""):
         raise HTTPException(500, "Failed to generate thumbnail")
 
 
+@app.get("/files/duplicates")
+async def get_duplicate_files():
+    """Find files with identical checksums (exact duplicates)."""
+    if not state._data_index:
+        return JSONResponse({"groups": [], "total_wasted": 0})
+
+    try:
+        rows = state._data_index._conn.execute(
+            "SELECT checksum, COUNT(*) as cnt FROM data_objects "
+            "WHERE source = 'local_files' AND checksum != '' "
+            "GROUP BY checksum HAVING cnt > 1 "
+            "ORDER BY cnt DESC LIMIT 500"
+        ).fetchall()
+
+        groups = []
+        total_wasted = 0
+        for row in rows:
+            cksum, count = row[0], row[1]
+            files = state._data_index._conn.execute(
+                "SELECT source_id, title, raw FROM data_objects "
+                "WHERE source = 'local_files' AND checksum = ?",
+                (cksum,)
+            ).fetchall()
+            file_list = []
+            group_size = 0
+            for f in files:
+                raw = json.loads(f[2]) if isinstance(f[2], str) else (f[2] or {})
+                size = raw.get("size", 0)
+                group_size = size
+                file_list.append({
+                    "path": f[0],
+                    "name": f[1],
+                    "size": size,
+                    "directory": raw.get("directory", ""),
+                })
+            wasted = group_size * (count - 1)
+            total_wasted += wasted
+            groups.append({
+                "checksum": cksum[:12],
+                "count": count,
+                "size": group_size,
+                "wasted": wasted,
+                "files": file_list,
+            })
+
+        # Sort by wasted space descending
+        groups.sort(key=lambda g: g["wasted"], reverse=True)
+        return JSONResponse({
+            "groups": groups,
+            "total_wasted": total_wasted,
+            "group_count": len(groups),
+        })
+    except Exception as e:
+        return JSONResponse({"groups": [], "error": str(e)})
+
+
+@app.get("/files/storage")
+async def get_storage_treemap():
+    """Get file size data grouped by directory and extension for treemap."""
+    if not state._data_index:
+        return JSONResponse({"tree": [], "total_size": 0, "total_files": 0})
+
+    try:
+        # Get all files with their directory and size
+        rows = state._data_index._conn.execute(
+            "SELECT raw FROM data_objects WHERE source = 'local_files'"
+        ).fetchall()
+
+        dir_stats = {}  # directory -> {size, count, types: {ext: {size, count}}}
+        total_size = 0
+        total_files = 0
+
+        for row in rows:
+            raw = json.loads(row[0]) if isinstance(row[0], str) else (row[0] or {})
+            size = raw.get("size", 0)
+            directory = raw.get("directory", "unknown")
+            ext = raw.get("extension", "") or "(no ext)"
+
+            total_size += size
+            total_files += 1
+
+            if directory not in dir_stats:
+                dir_stats[directory] = {"size": 0, "count": 0, "types": {}}
+            dir_stats[directory]["size"] += size
+            dir_stats[directory]["count"] += 1
+
+            if ext not in dir_stats[directory]["types"]:
+                dir_stats[directory]["types"][ext] = {"size": 0, "count": 0}
+            dir_stats[directory]["types"][ext]["size"] += size
+            dir_stats[directory]["types"][ext]["count"] += 1
+
+        # Build hierarchical tree: collapse into parent directories
+        # Group by top-level directories (2 levels deep from home)
+        import os
+        home = os.path.expanduser("~")
+        top_dirs = {}  # short_path -> {size, count, types, children}
+
+        for directory, stats in dir_stats.items():
+            # Get relative path from home
+            if directory.startswith(home):
+                rel = directory[len(home):].lstrip(os.sep)
+            else:
+                rel = directory
+
+            # Take first 2 path components as the group
+            parts = rel.split(os.sep) if rel else ["(root)"]
+            group = os.sep.join(parts[:2]) if len(parts) > 1 else parts[0]
+            if not group:
+                group = "(root)"
+
+            if group not in top_dirs:
+                top_dirs[group] = {"size": 0, "count": 0, "types": {}, "subdirs": 0}
+            top_dirs[group]["size"] += stats["size"]
+            top_dirs[group]["count"] += stats["count"]
+            top_dirs[group]["subdirs"] += 1
+
+            for ext, ext_stats in stats["types"].items():
+                if ext not in top_dirs[group]["types"]:
+                    top_dirs[group]["types"][ext] = {"size": 0, "count": 0}
+                top_dirs[group]["types"][ext]["size"] += ext_stats["size"]
+                top_dirs[group]["types"][ext]["count"] += ext_stats["count"]
+
+        # Convert to sorted list
+        tree = []
+        for name, stats in sorted(top_dirs.items(), key=lambda x: x[1]["size"], reverse=True):
+            # Top 5 file types in this directory
+            sorted_types = sorted(stats["types"].items(), key=lambda x: x[1]["size"], reverse=True)[:5]
+            tree.append({
+                "name": name,
+                "size": stats["size"],
+                "count": stats["count"],
+                "subdirs": stats["subdirs"],
+                "types": [{"ext": ext, "size": s["size"], "count": s["count"]} for ext, s in sorted_types],
+            })
+
+        # Also compute global type breakdown
+        global_types = {}
+        for stats in dir_stats.values():
+            for ext, ext_stats in stats["types"].items():
+                if ext not in global_types:
+                    global_types[ext] = {"size": 0, "count": 0}
+                global_types[ext]["size"] += ext_stats["size"]
+                global_types[ext]["count"] += ext_stats["count"]
+
+        type_breakdown = sorted(
+            [{"ext": ext, "size": s["size"], "count": s["count"]} for ext, s in global_types.items()],
+            key=lambda x: x["size"], reverse=True
+        )[:20]
+
+        return JSONResponse({
+            "tree": tree[:100],
+            "types": type_breakdown,
+            "total_size": total_size,
+            "total_files": total_files,
+        })
+    except Exception as e:
+        return JSONResponse({"tree": [], "error": str(e)})
+
+
 @app.get("/capabilities")
 async def get_capabilities():
     """
