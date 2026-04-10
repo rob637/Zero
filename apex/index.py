@@ -24,6 +24,7 @@ Architecture:
 import asyncio
 import hashlib
 import json
+import re
 import sqlite3
 import logging
 from dataclasses import dataclass, field, asdict
@@ -625,6 +626,19 @@ class Index:
         ).fetchall()
         return [self._row_to_obj(r) for r in rows]
 
+    @staticmethod
+    def _sanitize_fts(text: str) -> str:
+        """Strip column prefixes that aren't valid FTS5 columns.
+
+        LLMs often emit Gmail-style queries like ``after:2026-04-10`` or
+        ``from:john``.  FTS5 interprets ``word:`` as a column filter and
+        throws 'no such column' when the column doesn't exist.
+        """
+        _FTS_COLS = {"title", "body"}
+        def _strip(m: re.Match) -> str:
+            return m.group(0) if m.group(1).lower() in _FTS_COLS else m.group(2)
+        return re.sub(r'\b(\w+):(\S+)', _strip, text)
+
     def search(self, text: str, kind: Optional[str] = None, limit: int = 50) -> List[DataObject]:
         """Full-text search across title and body.
 
@@ -632,6 +646,7 @@ class Index:
         """
         if not text.strip():
             return []
+        text = self._sanitize_fts(text)
 
         if kind:
             rows = self._conn.execute("""
