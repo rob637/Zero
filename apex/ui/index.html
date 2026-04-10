@@ -33,6 +33,21 @@
             --info: #3b82f6;
         }
         
+        [data-theme="light"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f4f4f5;
+            --bg-tertiary: #e4e4e7;
+            --bg-hover: #d4d4d8;
+            --border-subtle: rgba(0,0,0,0.08);
+            --border-light: rgba(0,0,0,0.12);
+            --text-primary: #18181b;
+            --text-secondary: #52525b;
+            --text-muted: #a1a1aa;
+            --accent-primary: #7c3aed;
+            --accent-secondary: #4f46e5;
+            --accent-glow: rgba(124, 58, 237, 0.15);
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
@@ -2871,6 +2886,9 @@
                 Ready
             </span>
             <div class="top-bar-actions">
+                <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode" style="font-size: 1rem;">
+                    ☀️
+                </button>
                 <button class="icon-btn" onclick="startNewChat()" title="New Session" style="font-size: 0.85rem; padding: 6px 12px; margin-right: 8px;">
                     + New
                 </button>
@@ -5972,6 +5990,22 @@
         startPolling();
         // Warm cache on app open
         fetch('/prefetch', { method: 'POST' }).catch(() => {});
+
+        // Theme toggle
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme');
+            const next = current === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('ziggy-theme', next);
+            document.getElementById('themeToggle').textContent = next === 'light' ? '🌙' : '☀️';
+        }
+        (function initTheme() {
+            const saved = localStorage.getItem('ziggy-theme') || 'dark';
+            if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            const btn = document.getElementById('themeToggle');
+            if (btn) btn.textContent = saved === 'light' ? '🌙' : '☀️';
+        })();
     </script>
 </body>
 </html>
