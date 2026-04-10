@@ -257,6 +257,58 @@ def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     return _telic_engine
 
 
+def _try_refresh_token(store, provider: str) -> bool:
+    """Synchronously refresh an expired OAuth token using the refresh token."""
+    try:
+        import httpx
+        from connectors.oauth_flow import OAUTH_PROVIDERS
+
+        if provider not in OAUTH_PROVIDERS:
+            return False
+
+        cred = store.get(provider)
+        if not cred or not cred.data.get("refresh_token"):
+            return False
+
+        client_creds = store.get_client_credentials(provider)
+        if not client_creds:
+            return False
+
+        config = OAUTH_PROVIDERS[provider]
+        resp = httpx.post(
+            config.token_url,
+            data={
+                "client_id": client_creds["client_id"],
+                "client_secret": client_creds.get("client_secret"),
+                "refresh_token": cred.data["refresh_token"],
+                "grant_type": "refresh_token",
+            },
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.warning(f"Token refresh failed for {provider}: {resp.status_code}")
+            return False
+
+        tokens = resp.json()
+        store.save_token(
+            provider=provider,
+            access_token=tokens["access_token"],
+            refresh_token=tokens.get("refresh_token", cred.data.get("refresh_token")),
+            expires_in=tokens.get("expires_in", 3600),
+            scopes=cred.scopes,
+            extra_data=cred.data.get("extra_data", {}),
+        )
+        logger.info(f"Refreshed expired token for {provider}")
+        return True
+    except Exception as e:
+        logger.warning(f"Could not refresh {provider}: {e}")
+        return False
+
+
 def _build_connectors_from_registry() -> Dict[str, Any]:
     """
     Scan the registry and credential store to auto-discover all
@@ -324,12 +376,16 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
         "stripe": "stripe",
     }
     
-    # Check which providers have valid credentials
+    # Check which providers have credentials (refresh expired ones)
     connected_providers = set()
     try:
         for provider in store.list_providers():
             if store.has_valid(provider):
                 connected_providers.add(provider)
+            elif store.has(provider) and store.needs_refresh(provider):
+                # Token expired but refresh token may still be valid — try refresh
+                if _try_refresh_token(store, provider):
+                    connected_providers.add(provider)
     except Exception:
         pass
     
@@ -639,31 +695,47 @@ async def startup_event(app=None):
     except Exception as e:
         logger.warning(f"Google reconnect failed: {e}")
 
-    # Reconnect Microsoft services if MSAL token cache exists
+    # Reconnect Microsoft services if MSAL token cache or credential store has tokens
     try:
         from connectors.microsoft_auth import get_microsoft_auth
         ms_auth = get_microsoft_auth()
+        ms_reconnected = False
+        
+        # Try MSAL token cache first
         if ms_auth.has_credentials() and ms_auth._token_cache_file.exists():
             logger.info("Found Microsoft token cache, attempting reconnect...")
             from connectors.microsoft_graph import GraphClient
             ms_client = GraphClient(auth=ms_auth)
             if await ms_client.connect():
-                logger.info("Microsoft Graph reconnected!")
-                # Rebuild engine so Microsoft connectors pick up the live auth
-                get_telic_engine(force_rebuild=True)
-            else:
-                logger.warning("Microsoft token cache expired - user needs to re-authenticate")
+                logger.info("Microsoft Graph reconnected via MSAL!")
+                ms_reconnected = True
+        
+        # Fall back to credential store (web OAuth flow stores tokens there)
+        if not ms_reconnected:
+            store = get_cred_store()
+            if store.has("microsoft"):
+                if store.needs_refresh("microsoft"):
+                    _try_refresh_token(store, "microsoft")
+                if store.has_valid("microsoft"):
+                    logger.info("Microsoft reconnected via credential store")
+                    ms_reconnected = True
+        
+        if ms_reconnected:
+            get_telic_engine(force_rebuild=True)
+        elif ms_auth.has_credentials() or get_cred_store().has("microsoft"):
+            logger.warning("Microsoft token cache expired - user needs to re-authenticate")
     except Exception as e:
         logger.warning(f"Microsoft reconnect failed (non-fatal): {e}")
 
     # Reconnect Spotify if credentials exist in store
     try:
         store = get_cred_store()
+        if store.has("spotify") and store.needs_refresh("spotify"):
+            _try_refresh_token(store, "spotify")
         spotify_token = store.get_token("spotify")
         if spotify_token or os.environ.get("SPOTIFY_CLIENT_ID"):
             logger.info("Found Spotify credentials, will reconnect on engine build")
             # Spotify connector is auto-wired by _build_connectors_from_registry
-            # Just ensure the engine is built (force rebuild if not yet done)
             if not _telic_engine:
                 get_telic_engine(force_rebuild=True)
     except Exception as e:
