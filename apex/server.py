@@ -8,95 +8,36 @@ Run with:
 Then open http://localhost:8000 in your browser.
 """
 
-import asyncio
-import json
 import os
-import sys
+import json
 from pathlib import Path
 from typing import Optional, Dict, Any
-
-# Load .env FIRST before any other imports that might use env vars
-try:
-    from dotenv import load_dotenv
-    load_dotenv()  # apex/.env
-    load_dotenv(Path(__file__).parent.parent / ".env")  # repo root .env
-except ImportError:
-    pass
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
-
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from src.core.llm import create_client_from_env
-
-# Telic Engine - the REAL engine with all primitives
-from apex_engine import Apex as TelicEngine
-
-# ReAct Agent - native function calling
-from react_agent import ReActAgent, Tool, primitives_to_tools, Step, StepStatus, AgentState
-
-# Session persistence
-import sessions as session_store
-
-# Phase 7: Privacy & Control Layer
-from src.privacy import (
-    AuditLogger, audit_logger,
-    RedactionEngine, redaction_engine,
-    SecureLLMClient, create_secure_client_from_env,
-)
-from src.control import (
-    TrustLevel, TrustLevelManager, trust_manager,
-    ApprovalGateway, approval_gateway,
-    ActionHistoryDB, action_history,
-    UndoManager, undo_manager,
+# Shared state and helpers
+import server_state as state
+from server_state import (
+    get_telic_engine, get_proactive_monitor, get_devtools,
+    get_cred_store, startup_event,
+    _data_index, _sync_engine, _semantic_search,
+    _google_calendar, _gmail_connector, _google_connected_services,
+    HAS_GOOGLE_CALENDAR,
+    create_client_from_env,
+    get_credential_store, get_resolver,
+    ConnectorRegistry,
 )
 
-# Phase 4-5: Intelligence Layer
-from intelligence.proactive_monitor import ProactiveMonitor
-from intelligence.cross_service import CrossServiceIntelligence
-from intelligence.semantic_memory import SemanticMemory
-from intelligence import get_intelligence_hub, IntelligenceHub
-from connectors.devtools import UnifiedDevTools
+# Route modules
+from routes.oauth import router as oauth_router
+from routes.react import router as react_router
+from routes.intelligence import router as intelligence_router
 
-# Connector Registry Infrastructure
-from connectors.registry import (
-    ConnectorRegistry, 
-    get_registry, 
-    ConnectionStatus,
-    ConnectorMetadata,
-)
-from connectors.credentials import (
-    CredentialStore,
-    get_credential_store,
-)
-from connectors.oauth_flow import (
-    OAuthFlow,
-    get_oauth_flow,
-    OAUTH_PROVIDERS,
-)
-from connectors.resolver import (
-    PrimitiveResolver,
-    ExecutionMode,
-    AggregationStrategy,
-    get_resolver,
-)
-
-# Google Calendar connector (real API)
-try:
-    from connectors.google_auth import GoogleAuth, get_google_auth
-    from connectors.calendar import CalendarConnector
-    HAS_GOOGLE_CALENDAR = True
-except ImportError:
-    HAS_GOOGLE_CALENDAR = False
-    GoogleAuth = None
-    CalendarConnector = None
 
 @asynccontextmanager
 async def _lifespan(app):
@@ -111,491 +52,302 @@ app = FastAPI(title="Telic", description="AI Operating System", lifespan=_lifesp
 _cors_origins = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-    "tauri://localhost",       # Tauri desktop app
-    "https://tauri.localhost",  # Tauri v2
+    "tauri://localhost",
+    "https://tauri.localhost",
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
-# Initialize the Telic engine (all 8 primitives)
-_telic_engine: Optional[TelicEngine] = None
-_google_calendar: Optional['CalendarConnector'] = None
-_gmail_connector: Optional['GmailConnector'] = None
-
-# Track which Google services have authorized scopes (populated during OAuth callback)
-_google_connected_services: set = set()  # e.g. {"gmail", "calendar", "drive", "contacts", "photos"}
-
-# ReAct Agent state (per-session, stored by session_id in production)
-_react_agent: Optional[ReActAgent] = None
-_react_state: Optional[AgentState] = None
-
-# Session-based conversation (like ChatGPT/Gemini)
-_session_messages: list = []  # Full conversation history for session
-_session_agent: Optional[ReActAgent] = None   # Persistent agent for session
-_session_id: Optional[str] = None  # Current session ID for persistence
-
-def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
-    """Get or create the Telic engine singleton.
-    
-    Auto-discovers all connected connectors from the registry
-    and credential store instead of hardcoding individual services.
-    """
-    global _telic_engine, _google_calendar, _react_agent
-    
-    if _telic_engine is not None and not force_rebuild:
-        return _telic_engine
-    
-    # When rebuilding engine, also reset the react agent so it picks up new tools
-    if force_rebuild:
-        _react_agent = None
-        global _connectors_initialized
-        _connectors_initialized = False
-    
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return None
-        
-    model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
-    
-    # Auto-discover connectors from registry + credentials
-    connectors = _build_connectors_from_registry()
-    
-    _telic_engine = TelicEngine(api_key=api_key, model=model, connectors=connectors)
-    print(f"[ENGINE] Initialized with {len(connectors)} connectors: {list(connectors.keys())}")
-    return _telic_engine
+# Include route modules
+app.include_router(oauth_router)
+app.include_router(react_router)
+app.include_router(intelligence_router)
 
 
-def _build_connectors_from_registry() -> Dict[str, Any]:
-    """
-    Scan the registry and credential store to auto-discover all
-    connected services and build the connectors dict for the engine.
-    
-    This replaces manual hardcoding of individual connectors.
-    """
-    from connectors.registry import ConnectorRegistry
-    
-    connectors: Dict[str, Any] = {}
-    
-    # 1. Wire up already-initialized connectors (Google services from OAuth flow)
-    if HAS_GOOGLE_CALENDAR and _google_calendar and _google_calendar.connected:
-        connectors["calendar"] = _google_calendar
-    if _gmail_connector:
-        connectors["gmail"] = _gmail_connector
-    
-    # 2. Scan registry for all registered connectors and try to instantiate
-    #    those that have valid credentials
-    registry = ConnectorRegistry()
-    store = get_cred_store()
-    
-    # Map from registry connector names to engine connector keys
-    # (engine uses short keys, registry uses full names)
-    registry_to_engine = {
-        "gmail": "gmail",
-        "google_calendar": "calendar",
-        "google_drive": "drive",
-        "google_contacts": "contacts",
-        "google_sheets": "google_sheets",
-        "google_slides": "google_slides",
-        "google_photos": "google_photos",
-        "outlook": "outlook",
-        "outlook_calendar": "outlook_calendar",
-        "onedrive": "onedrive",
-        "microsoft_todo": "microsoft_todo",
-        "microsoft_excel": "excel",
-        "microsoft_powerpoint": "powerpoint",
-        "microsoft_contacts": "contacts_microsoft",
-        "onenote": "onenote",
-        "teams": "teams",
-        "slack": "slack",
-        "discord": "discord",
-        "github": "github",
-        "jira": "jira",
-        "todoist": "todoist",
-        "spotify": "spotify",
-        "dropbox": "dropbox",
-        "twilio": "twilio",
-        "twitter": "twitter",
-        "smartthings": "smartthings",
-        "youtube": "youtube",
-        "web_search": "web_search",
-        "weather": "weather",
-        "news": "news",
-        "notion": "notion",
-        "linear": "linear",
-        "trello": "trello",
-        "airtable": "airtable",
-        "zoom": "zoom",
-        "linkedin": "linkedin",
-        "reddit": "reddit",
-        "telegram": "telegram",
-        "hubspot": "hubspot",
-        "stripe": "stripe",
-    }
-    
-    # Check which providers have valid credentials
-    connected_providers = set()
-    try:
-        for provider in store.list_providers():
-            if store.has_valid(provider):
-                connected_providers.add(provider)
-    except Exception:
-        pass
-    
-    # Also check env vars for token-based services
-    env_tokens = {
-        "github": "GITHUB_TOKEN",
-        "slack": "SLACK_BOT_TOKEN",
-        "discord": "DISCORD_BOT_TOKEN",
-        "todoist": "TODOIST_API_TOKEN",
-        "spotify": "SPOTIFY_CLIENT_ID",
-        "smartthings": "SMARTTHINGS_TOKEN",
-        "twilio": "TWILIO_ACCOUNT_SID",
-        "weather": "OPENWEATHERMAP_API_KEY",
-        "news": "NEWSAPI_KEY",
-        "notion": "NOTION_API_KEY",
-        "linear": "LINEAR_API_KEY",
-        "trello": "TRELLO_API_KEY",
-        "airtable": "AIRTABLE_API_KEY",
-        "zoom": "ZOOM_API_KEY",
-        "linkedin": "LINKEDIN_ACCESS_TOKEN",
-        "reddit": "REDDIT_CLIENT_ID",
-        "telegram": "TELEGRAM_BOT_TOKEN",
-        "hubspot": "HUBSPOT_ACCESS_TOKEN",
-        "stripe": "STRIPE_SECRET_KEY",
-    }
-    for provider, env_var in env_tokens.items():
-        if os.environ.get(env_var):
-            connected_providers.add(provider)
-    
-    # Also add Google services that were connected via OAuth
-    if _google_connected_services:
-        connected_providers.add("google")
-    
-    # Check Microsoft auth
-    if "microsoft" in connected_providers or os.environ.get("AZURE_CLIENT_ID"):
-        connected_providers.add("microsoft")
-    
-    # Instantiate connectors for connected providers
-    # Map connector init parameter names for token injection from credential store
-    _token_param_names = {
-        "spotify": "access_token",
-        "discord": "bot_token",
-        "slack": "token",
-        "github": "token",
-        "todoist": "api_token",
-        "telegram": "bot_token",
-        "notion": "api_key",
-        "linear": "api_key",
-        "trello": "api_key",
-        "hubspot": "access_token",
-        "stripe": "api_key",
-        "dropbox": "access_token",
-        "weather": "api_key",
-        "news": "api_key",
-        "airtable": "api_key",
-        "linkedin": "access_token",
-        "smartthings": "access_token",
-    }
-    
-    for metadata in registry.list_connectors():
-        engine_key = registry_to_engine.get(metadata.name)
-        if not engine_key:
-            continue
-        
-        # Skip if already wired (e.g., Gmail/Calendar from OAuth)
-        if engine_key in connectors:
-            continue
-        
-        # Check if this provider has credentials
-        if metadata.provider not in connected_providers:
-            continue
-        
-        try:
-            # Try to inject token from credential store
-            # Microsoft connectors get tokens via GraphClient, not constructor args
-            kwargs = {}
-            if metadata.provider != "microsoft":
-                token = store.get_token(metadata.provider)
-                if token and metadata.provider in _token_param_names:
-                    param_name = _token_param_names[metadata.provider]
-                    kwargs[param_name] = token
-            
-            instance = metadata.connector_class(**kwargs)
-            connectors[engine_key] = instance
-            print(f"[ENGINE] Auto-wired: {metadata.display_name} -> {engine_key}")
-        except Exception as e:
-            print(f"[ENGINE] Failed to instantiate {metadata.name}: {e}")
-    
-    return connectors
 
-
-async def _connect_engine_connectors(engine: TelicEngine):
-    """Connect all connectors that have an async connect() method.
-    
-    Called once after engine init from an async context.
-    Connectors that are already connected or fail to connect are skipped.
-    """
-    for key, connector in list(engine._connectors.items()):
-        if hasattr(connector, 'connect'):
-            # Check if already connected (supports .connected property/attr or .is_connected() method)
-            is_connected = False
-            if hasattr(connector, 'connected'):
-                val = getattr(connector, 'connected')
-                is_connected = val() if callable(val) else val
-            elif hasattr(connector, 'is_connected'):
-                val = getattr(connector, 'is_connected')
-                is_connected = val() if callable(val) else val
-            
-            if not is_connected:
-                try:
-                    await connector.connect()
-                    print(f"[ENGINE] Connected: {key}")
-                except Exception as e:
-                    print(f"[ENGINE] Connect failed for {key}: {e}")
-
-
-_connectors_initialized = False
-
-def get_react_agent() -> Optional[ReActAgent]:
-    """Get or create the ReAct agent using Telic primitives."""
-    global _react_agent
-    
-    if _react_agent is not None:
-        return _react_agent
-    
-    # Need API key
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        # Fall back to OpenAI
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return None
-    
-    # Get the Telic engine (has all primitives)
-    engine = get_telic_engine()
-    if not engine:
-        return None
-    
-    # Convert ALL primitives to tools - selection happens per-request now
-    tools = primitives_to_tools(engine._primitives)
-    print(f"[REACT] Loaded {len(tools)} tools from {len(engine._primitives)} primitives")
-    
-    # Create LLM client
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        import anthropic
-        llm_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    else:
-        import openai
-        llm_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    
-    from datetime import datetime, timedelta
-    now = datetime.now()
-    # Build date context with upcoming days for accurate scheduling
-    date_context = f"""TODAY: {now.strftime("%A, %B %d, %Y")} ({now.strftime("%Y-%m-%d")})
-This week:
-"""
-    for i in range(7):
-        d = now + timedelta(days=i)
-        date_context += f"  {d.strftime('%A %b %d')}: {d.strftime('%Y-%m-%d')}\n"
-    
-    system_prompt = f"""You are Ziggy, an AI assistant that helps users get things done.
-
-{date_context}
-
-Use the available tools to accomplish what the user asks. You can call multiple tools in parallel when the calls are independent.
-
-Be efficient — don't repeat searches with slight variations. If a search returns no results, broaden the query or try a different approach.
-
-IMPORTANT BEHAVIORS:
-- If a search returns multiple results, STOP and ask the user which one they want
-- If information is unclear or missing, ASK before guessing  
-- Show computed results (calculations, data) to the user and ask if they want to proceed
-- Be conversational - explain what you're doing and what you found
-
-When you have completed the task, respond with a summary of what was done."""
-    
-    _react_agent = ReActAgent(
-        llm_client=llm_client,
-        tools=tools,
-        system_prompt=system_prompt,
+@app.get("/")
+async def root():
+    """Serve the UI with no-cache headers so updates are always picked up."""
+    return FileResponse(
+        Path(__file__).parent / "ui" / "index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
-    
-    return _react_agent
+
+@app.get("/sync/status")
+async def get_sync_status():
+    """Get sync engine status: per-source sync state and index stats."""
+    if not state._sync_engine:
+        return JSONResponse({"running": False, "error": "Sync engine not initialized"})
+    return JSONResponse(state._sync_engine.status)
 
 
-# Phase 4-5: Intelligence Layer singletons
-_proactive_monitor: Optional[ProactiveMonitor] = None
-_cross_service_intel: Optional[CrossServiceIntelligence] = None
-_semantic_memory: Optional[SemanticMemory] = None
-_devtools: Optional[UnifiedDevTools] = None
+@app.post("/sync/now")
+async def trigger_sync(source: Optional[str] = None):
+    """Force immediate sync. Optionally specify a single source."""
+    if not state._sync_engine:
+        raise HTTPException(400, "Sync engine not initialized")
+    result = await state._sync_engine.sync_now(source=source)
+    return JSONResponse(result)
 
 
-def get_proactive_monitor() -> ProactiveMonitor:
-    """Get or create the ProactiveMonitor singleton."""
-    global _proactive_monitor
-    if _proactive_monitor is None:
-        _proactive_monitor = ProactiveMonitor()
-    return _proactive_monitor
+@app.get("/health")
+async def health_check():
+    """System health: index integrity, sync status, embedding coverage."""
+    report = {"status": "healthy", "components": {}}
 
+    # Index health
+    if state._data_index:
+        idx_health = state._data_index.health()
+        report["components"]["index"] = idx_health
+        if idx_health["status"] != "healthy":
+            report["status"] = idx_health["status"]
+    else:
+        report["components"]["index"] = {"status": "unavailable"}
+        report["status"] = "degraded"
 
-def get_cross_service_intel() -> CrossServiceIntelligence:
-    """Get CrossServiceIntelligence via the IntelligenceHub (shared instance)."""
-    hub = get_intelligence_hub()
-    return hub._intel
+    # Sync engine
+    if state._sync_engine:
+        report["components"]["sync"] = {
+            "status": "running" if state._sync_engine._running else "stopped",
+            "adapters": len(state._sync_engine._adapters),
+        }
+    else:
+        report["components"]["sync"] = {"status": "unavailable"}
 
+    # Semantic search
+    if state._semantic_search and state._semantic_search.ready:
+        ss_stats = state._semantic_search.stats
+        report["components"]["semantic_search"] = {
+            "status": "ready",
+            "vectors": ss_stats.get("total_vectors", 0),
+            "backend": ss_stats.get("backend", "unknown"),
+        }
+    else:
+        report["components"]["semantic_search"] = {"status": "unavailable"}
 
-def get_devtools() -> UnifiedDevTools:
-    """Get or create the UnifiedDevTools singleton."""
-    global _devtools
-    if _devtools is None:
-        _devtools = UnifiedDevTools()
-    return _devtools
-
-
-async def startup_event():
-    """Try to reconnect Google services if tokens exist from previous session."""
-    global _google_calendar, _gmail_connector, _google_connected_services
-    
-    if not HAS_GOOGLE_CALENDAR:
-        print("[STARTUP] Google API libraries not available")
-        return
-    
+    # Connected services
     try:
-        auth = get_google_auth()
-        
-        # Check if we have existing tokens (no OAuth prompt)
-        if auth._token_file.exists():
-            print("[STARTUP] Found existing Google tokens, attempting reconnect...")
-            
-            # Load existing credentials without triggering OAuth flow
-            from google.oauth2.credentials import Credentials
-            from google.auth.transport.requests import Request
-            
-            # Load credentials with ALL possible scopes so we don't lose any
-            # Google's library restricts creds to only the scopes you request,
-            # so we must request everything the token might contain
-            all_scopes = auth._resolve_scopes(['calendar', 'gmail', 'drive', 'contacts', 'photos', 'sheets', 'slides'])
-            creds = Credentials.from_authorized_user_file(str(auth._token_file), all_scopes)
-            
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                auth._creds = creds
-                auth._save_token()
-            
-            if creds and creds.valid:
-                auth._creds = creds
-                
-                # Check what scopes we have - populate _google_connected_services
-                token_scopes = set(creds.scopes or [])
-                
-                # Map OAuth scopes to service names
-                scope_to_service = {
-                    'calendar': 'calendar',
-                    'gmail': 'gmail', 
-                    'mail.google': 'gmail',
-                    'drive': 'drive',
-                    'contacts': 'contacts',
-                    'photoslibrary': 'photos',
-                    'spreadsheets': 'sheets',
-                    'presentations': 'slides',
-                }
-                
-                # Populate connected services based on token scopes
-                _google_connected_services.clear()
-                for scope in token_scopes:
-                    for key, service in scope_to_service.items():
-                        if key in scope.lower():
-                            _google_connected_services.add(service)
-                
-                has_calendar = 'calendar' in _google_connected_services
-                has_gmail = 'gmail' in _google_connected_services
-                
-                print(f"[STARTUP] Token scopes: {_google_connected_services}")
-                
-                # Connect Calendar
-                if has_calendar:
-                    _google_calendar = CalendarConnector(auth)
-                    await _google_calendar.connect()
-                    print(f"[STARTUP] Google Calendar reconnected!")
-                
-                # Connect Gmail
-                if has_gmail:
-                    try:
-                        from connectors.gmail import GmailConnector
-                        _gmail_connector = GmailConnector(auth)
-                        if await _gmail_connector.connect():
-                            print("[STARTUP] Gmail reconnected!")
-                        else:
-                            print("[STARTUP] Gmail connection failed")
-                            _gmail_connector = None
-                    except Exception as gmail_err:
-                        print(f"[STARTUP] Gmail reconnect failed: {gmail_err}")
-                        _gmail_connector = None
-                else:
-                    print("[STARTUP] Gmail scopes not in token - user needs to re-authenticate with Gmail access")
-            else:
-                print("[STARTUP] Google tokens expired or invalid")
-                
-            # Rebuild engine with connectors
-            get_telic_engine(force_rebuild=True)
-        else:
-            print("[STARTUP] No Google tokens found - user needs to connect")
-            
-    except Exception as e:
-        print(f"[STARTUP] Google reconnect failed: {e}")
-
-    # Start ProactiveMonitor with any connected services
+        credential_store = state.get_credential_store()
+        providers = credential_store.list_providers()
+    except Exception:
+        providers = []
     try:
-        monitor = get_proactive_monitor()
-        
-        # Connect Google services if available
-        if _google_calendar and _google_calendar.connected:
-            monitor.connect_service("calendar", _google_calendar)
-        if _gmail_connector:
-            monitor.connect_service("email", _gmail_connector)
-        
-        # Connect services available via env vars
-        if os.environ.get("GITHUB_TOKEN"):
-            try:
-                from connectors.github import GitHubConnector
-                gh = GitHubConnector()
-                if await gh.connect():
-                    monitor.connect_service("github", gh)
-            except Exception:
-                pass
-        
-        if os.environ.get("SLACK_BOT_TOKEN"):
-            try:
-                from connectors.slack import SlackConnector
-                sl = SlackConnector()
-                if await sl.connect():
-                    monitor.connect_service("slack", sl)
-            except Exception:
-                pass
-        
-        await monitor.start()
-        print(f"[STARTUP] ProactiveMonitor started with services: {list(monitor._service_adapters.keys())}")
-    except Exception as e:
-        print(f"[STARTUP] ProactiveMonitor start failed (non-fatal): {e}")
-
-    # Initialize IntelligenceHub and wire to connected services
+        devtools = state.get_devtools()
+        devtools_providers = devtools.providers if hasattr(devtools, 'providers') else {}
+    except Exception:
+        devtools_providers = {}
     try:
-        hub = get_intelligence_hub()
-        stats = hub.get_stats()
-        mem_facts = stats.get("memory", {}).get("total_facts", 0)
-        pref_count = stats.get("preferences", {}).get("learned_preferences", 0)
-        pat_count = stats.get("patterns", {}).get("detected_patterns", 0)
-        print(f"[STARTUP] IntelligenceHub ready: {mem_facts} facts, {pref_count} preferences, {pat_count} patterns")
-    except Exception as e:
-        print(f"[STARTUP] IntelligenceHub init failed (non-fatal): {e}")
+        monitor = state.get_proactive_monitor()
+        monitor_services = list(monitor._services.keys()) if hasattr(monitor, '_services') else []
+    except Exception:
+        monitor_services = []
+    report["llm_configured"] = state.create_client_from_env() is not None
+    report["connected_services"] = len(providers)
+    report["services"] = {
+        "google": "google" in providers,
+        "microsoft": "microsoft" in providers,
+        "github": "github" in devtools_providers,
+        "jira": "jira" in devtools_providers,
+        "slack": "slack" in monitor_services,
+    }
+
+    return JSONResponse(report)
 
 
-# Request models
+@app.post("/index/vacuum")
+async def index_vacuum():
+    """Run VACUUM on the index database to reclaim space."""
+    if not state._data_index:
+        raise HTTPException(400, "Index not available")
+    result = state._data_index.vacuum()
+    return JSONResponse(result)
+
+
+@app.post("/index/rebuild-fts")
+async def index_rebuild_fts():
+    """Rebuild the FTS5 full-text search index."""
+    if not state._data_index:
+        raise HTTPException(400, "Index not available")
+    result = state._data_index.rebuild_fts()
+    return JSONResponse(result)
+
+
+@app.get("/discovery/apps")
+async def discover_apps():
+    """Scan local system for installed apps and suggest connectors.
+    
+    Returns ALL available connectors with 'detected' flag for ones
+    found locally. Apps not found are still listed — users may use
+    web versions.
+    """
+    from apex.app_discovery import get_all_available_connectors, scan_apps
+    result = scan_apps()
+    connectors = get_all_available_connectors()
+    return JSONResponse({
+        "platform": result.platform,
+        "scan_time_ms": round(result.scan_time_ms, 1),
+        "apps_found": len(result.apps),
+        "detected_apps": [
+            {"name": a.name, "id": a.app_id, "source": a.source}
+            for a in result.apps
+            if a.app_id in {s.connector_name for s in result.suggestions}
+               or a.app_id in _APP_TO_CONNECTOR_IDS
+        ],
+        "suggestions": [
+            {"connector": s.connector_name, "display": s.display_name,
+             "reason": s.reason, "priority": s.priority}
+            for s in result.suggestions
+        ],
+        "all_connectors": connectors,
+    })
+
+
+# Pre-compute set for the endpoint above
+from app_discovery import _APP_TO_CONNECTOR as _APP_TO_CONNECTOR_MAP
+_APP_TO_CONNECTOR_IDS = set(_APP_TO_CONNECTOR_MAP.keys())
+
+
+@app.get("/search/semantic")
+async def semantic_search_endpoint(
+    q: str,
+    kind: Optional[str] = None,
+    limit: int = 20,
+):
+    """Cross-service semantic search.
+
+    Finds things like "that budget spreadsheet John sent last week"
+    across email, calendar, drive, tasks, etc.
+    """
+    if not state._semantic_search or not state._semantic_search.ready:
+        raise HTTPException(503, "Semantic search not available")
+    results = await state._semantic_search.search(q, kind=kind, limit=limit)
+    return JSONResponse({
+        "query": q,
+        "count": len(results),
+        "results": [
+            {
+                "id": obj.id,
+                "kind": obj.kind.value,
+                "source": obj.source,
+                "title": obj.title,
+                "body": (obj.body[:300] + "...") if obj.body and len(obj.body) > 300 else obj.body,
+                "timestamp": obj.timestamp.isoformat() if obj.timestamp else None,
+                "participants": obj.participants,
+                "score": round(score, 3),
+            }
+            for obj, score in results
+        ],
+    })
+
+
+@app.get("/search/stats")
+async def search_stats():
+    """Get semantic search stats (embedded count, backend, etc.)."""
+    if not state._semantic_search:
+        return JSONResponse({"ready": False})
+    return JSONResponse(state._semantic_search.stats)
+
+
+# ==========================================================
+# Local File Indexer — opt-in PC file scanning
+# ==========================================================
+
+_file_scanner = None  # Optional[LocalFileScanner]
+
+
+
+@app.get("/files/settings")
+async def get_file_index_settings():
+    """Get current local file indexing settings."""
+    from apex.local_files import load_settings, FileIndexSettings
+    if not state._data_index:
+        return JSONResponse({"enabled": False, "error": "Index not available"})
+    settings = load_settings(state._data_index)
+    return JSONResponse({
+        "settings": settings.to_dict(),
+        "default_directories": FileIndexSettings.default_directories(),
+        "scanner_status": state._file_scanner.status if state._file_scanner else {"enabled": False, "running": False},
+    })
+
+
+@app.post("/files/settings")
+async def update_file_index_settings(request: Request):
+    """Update local file indexing settings. User opts in/out here."""
+    # _file_scanner in state module
+    from apex.local_files import (
+        FileIndexSettings, LocalFileScanner, load_settings, save_settings,
+    )
+    if not state._data_index:
+        raise HTTPException(400, "Index not available")
+
+    body = await request.json()
+    current = load_settings(state._data_index)
+
+    # Update only provided fields
+    for key in FileIndexSettings.__dataclass_fields__:
+        if key in body:
+            setattr(current, key, body[key])
+
+    save_settings(state._data_index, current)
+
+    # If enabling, start scanner
+    if current.enabled and (not state._file_scanner or not state._file_scanner._running):
+        state._file_scanner = LocalFileScanner(
+            index=state._data_index,
+            settings=current,
+            semantic_search=state._semantic_search,
+        )
+        await state._file_scanner.start()
+
+    # If disabling, stop scanner
+    if not current.enabled and state._file_scanner and state._file_scanner._running:
+        await state._file_scanner.stop()
+        state._file_scanner = None
+
+    return JSONResponse({
+        "settings": current.to_dict(),
+        "scanner_status": state._file_scanner.status if state._file_scanner else {"enabled": False, "running": False},
+    })
+
+
+@app.get("/files/status")
+async def get_file_index_status():
+    """Get file scanner progress and stats."""
+    if not state._file_scanner:
+        return JSONResponse({"enabled": False, "running": False})
+    return JSONResponse(state._file_scanner.status)
+
+
+@app.post("/files/rescan")
+async def trigger_file_rescan():
+    """Force a full rescan of local files."""
+    # _file_scanner in state module
+    from apex.local_files import LocalFileScanner, load_settings
+    if not state._data_index:
+        raise HTTPException(400, "Index not available")
+
+    settings = load_settings(state._data_index)
+    if not settings.enabled:
+        raise HTTPException(400, "Local file indexing is not enabled. Enable it via POST /files/settings")
+
+    # Stop existing scanner and start fresh
+    if state._file_scanner:
+        await state._file_scanner.stop()
+
+    state._file_scanner = LocalFileScanner(
+        index=state._data_index,
+        settings=settings,
+        semantic_search=state._semantic_search,
+    )
+    await state._file_scanner.start()
+    return JSONResponse({"status": "rescan started", "progress": state._file_scanner.status})
+
+
 @app.get("/capabilities")
 async def get_capabilities():
     """
@@ -666,25 +418,25 @@ async def get_services():
     services = []
     
     # Check connection status for each - be accurate about what's actually connected
-    global _google_calendar, _gmail_connector, _google_connected_services
+    # Globals managed via state module
     
-    calendar_connected = _google_calendar is not None and _google_calendar.connected
-    gmail_connected = _gmail_connector is not None
+    calendar_connected = state._google_calendar is not None and state._google_calendar.connected
+    gmail_connected = state._gmail_connector is not None
     
     # Check env vars for other services
     github_connected = bool(os.environ.get("GITHUB_TOKEN"))
     jira_connected = bool(os.environ.get("JIRA_API_TOKEN") and os.environ.get("JIRA_URL"))
     slack_connected = bool(os.environ.get("SLACK_BOT_TOKEN"))
     
-    # Use _google_connected_services to track which Google services are authorized
+    # Use state._google_connected_services to track which Google services are authorized
     status_map = {
-        "gmail": gmail_connected or 'gmail' in _google_connected_services,
-        "google_calendar": calendar_connected or 'calendar' in _google_connected_services,
-        "google_drive": 'drive' in _google_connected_services,
-        "google_contacts": 'contacts' in _google_connected_services,
-        "google_photos": 'photos' in _google_connected_services,
-        "google_sheets": 'sheets' in _google_connected_services,
-        "google_slides": 'slides' in _google_connected_services,
+        "gmail": gmail_connected or 'gmail' in state._google_connected_services,
+        "google_calendar": calendar_connected or 'calendar' in state._google_connected_services,
+        "google_drive": 'drive' in state._google_connected_services,
+        "google_contacts": 'contacts' in state._google_connected_services,
+        "google_photos": 'photos' in state._google_connected_services,
+        "google_sheets": 'sheets' in state._google_connected_services,
+        "google_slides": 'slides' in state._google_connected_services,
         "github": github_connected,
         "jira": jira_connected,
         "slack": slack_connected,
@@ -692,7 +444,7 @@ async def get_services():
     
     # Also check credential store for stored tokens
     try:
-        store = get_cred_store()
+        store = state.get_cred_store()
         for provider in store.list_providers():
             if store.has_valid(provider):
                 status_map[provider] = True
@@ -735,2780 +487,6 @@ async def setup_page():
 # =============================================================================
 
 _credential_store = None
-
-def get_cred_store():
-    """Get singleton credential store."""
-    global _credential_store
-    if _credential_store is None:
-        _credential_store = get_credential_store()
-    return _credential_store
-
-
-class SaveCredentialRequest(BaseModel):
-    """Request to save a credential."""
-    provider: str
-    credential_type: str = "api_key"  # api_key, oauth_token, client_credentials
-    api_key: Optional[str] = None
-    access_token: Optional[str] = None
-    refresh_token: Optional[str] = None
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
-    extra: Optional[Dict[str, Any]] = None
-
-
-@app.get("/credentials")
-async def list_credentials():
-    """
-    List all stored credentials (without exposing secrets).
-    
-    Returns provider names, types, and status - NOT the actual credentials.
-    """
-    store = get_cred_store()
-    providers = store.list_providers()
-    
-    credentials = []
-    for provider in providers:
-        cred = store.get(provider)
-        if cred:
-            credentials.append({
-                "provider": provider,
-                "type": cred.credential_type.value,
-                "created_at": cred.created_at.isoformat() if cred.created_at else None,
-                "expires_at": cred.expires_at.isoformat() if cred.expires_at else None,
-                "is_expired": cred.is_expired(),
-                "has_refresh_token": bool(cred.data.get("refresh_token")),
-                "scopes": cred.scopes,
-            })
-    
-    return JSONResponse({"credentials": credentials})
-
-
-@app.post("/credentials")
-async def save_credential(req: SaveCredentialRequest):
-    """
-    Save a credential (API key or token).
-    
-    Credentials are stored encrypted on disk.
-    """
-    store = get_cred_store()
-    
-    try:
-        if req.credential_type == "api_key" and req.api_key:
-            success = store.save_api_key(
-                provider=req.provider,
-                api_key=req.api_key,
-                extra_data=req.extra,
-            )
-        elif req.credential_type == "client_credentials" and req.client_id:
-            success = store.save_client_credentials(
-                provider=req.provider,
-                client_id=req.client_id,
-                client_secret=req.client_secret,
-                extra_data=req.extra,
-            )
-        elif req.credential_type == "oauth_token" and req.access_token:
-            success = store.save_token(
-                provider=req.provider,
-                access_token=req.access_token,
-                refresh_token=req.refresh_token,
-                extra_data=req.extra,
-            )
-        else:
-            return JSONResponse(
-                {"success": False, "error": "Invalid credential type or missing required fields"},
-                status_code=400,
-            )
-        
-        if success:
-            # Also set as environment variable for current session
-            env_var_map = {
-                "github": "GITHUB_TOKEN",
-                "slack": "SLACK_BOT_TOKEN",
-                "discord": "DISCORD_BOT_TOKEN",
-                "jira": "JIRA_API_TOKEN",
-                "todoist": "TODOIST_API_TOKEN",
-                "twilio": "TWILIO_AUTH_TOKEN",
-                "spotify": "SPOTIFY_CLIENT_ID",
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY",
-            }
-            if req.provider in env_var_map and req.api_key:
-                os.environ[env_var_map[req.provider]] = req.api_key
-            
-            return JSONResponse({
-                "success": True,
-                "message": f"Credential saved for {req.provider}",
-            })
-        else:
-            return JSONResponse(
-                {"success": False, "error": "Failed to save credential"},
-                status_code=500,
-            )
-    except Exception as e:
-        return JSONResponse(
-            {"success": False, "error": str(e)},
-            status_code=500,
-        )
-
-
-@app.delete("/credentials/{provider}")
-async def delete_credential(provider: str):
-    """Delete a stored credential."""
-    store = get_cred_store()
-    
-    if store.delete(provider):
-        return JSONResponse({"success": True, "message": f"Deleted credential for {provider}"})
-    else:
-        return JSONResponse(
-            {"success": False, "error": f"No credential found for {provider}"},
-            status_code=404,
-        )
-
-
-@app.get("/credentials/{provider}/status")
-async def credential_status(provider: str):
-    """Check credential status for a provider."""
-    store = get_cred_store()
-    cred = store.get(provider)
-    
-    if not cred:
-        return JSONResponse({
-            "exists": False,
-            "valid": False,
-            "provider": provider,
-        })
-    
-    return JSONResponse({
-        "exists": True,
-        "valid": not cred.is_expired(),
-        "type": cred.credential_type.value,
-        "expires_at": cred.expires_at.isoformat() if cred.expires_at else None,
-        "needs_refresh": store.needs_refresh(provider),
-        "provider": provider,
-    })
-
-
-# =============================================================================
-# OAUTH POPUP FLOW - Browser popup for OAuth instead of redirect
-# =============================================================================
-
-@app.get("/oauth/start/{provider}")
-async def oauth_start(provider: str, scopes: Optional[str] = None):
-    """
-    Start OAuth flow - returns URL to open in popup.
-    
-    The popup will redirect to /oauth/callback which handles the token exchange
-    and closes the popup with a message to the parent window.
-    """
-    from connectors.oauth_flow import OAUTH_PROVIDERS
-    
-    if provider not in OAUTH_PROVIDERS:
-        return JSONResponse(
-            {"error": f"Unknown OAuth provider: {provider}"},
-            status_code=400,
-        )
-    
-    try:
-        # For Google, use GoogleAuth which handles credentials from file
-        if provider == "google":
-            auth = get_google_auth()
-            if not auth.has_credentials_file():
-                return JSONResponse({
-                    "error": "Google OAuth credentials not configured",
-                    "setup_instructions": auth.get_setup_instructions(),
-                }, status_code=400)
-            
-            # Start with the requested scopes
-            scope_names = ["calendar", "gmail"]  # Always include core services
-            if scopes:
-                for s in scopes.split(","):
-                    if s not in scope_names:
-                        scope_names.append(s)
-            
-            # CRITICAL: Preserve existing scopes from current token
-            # Otherwise connecting a new service loses access to previously connected ones
-            if auth._token_file.exists():
-                try:
-                    from google.oauth2.credentials import Credentials
-                    existing_creds = Credentials.from_authorized_user_file(str(auth._token_file))
-                    if existing_creds and existing_creds.scopes:
-                        # Map existing OAuth scopes back to scope names
-                        scope_url_to_name = {
-                            'calendar': 'calendar',
-                            'gmail': 'gmail',
-                            'drive': 'drive',
-                            'contacts': 'contacts',
-                            'photoslibrary': 'photos',
-                            'spreadsheets': 'sheets',
-                            'presentations': 'slides',
-                        }
-                        for scope_url in existing_creds.scopes:
-                            for key, name in scope_url_to_name.items():
-                                if key in scope_url.lower() and name not in scope_names:
-                                    scope_names.append(name)
-                                    print(f"[OAUTH] Preserving existing scope: {name}")
-                except Exception as e:
-                    print(f"[OAUTH] Could not read existing scopes: {e}")
-            
-            print(f"[OAUTH] Requesting scopes: {scope_names}")
-            resolved_scopes = auth._resolve_scopes(scope_names)
-            
-            # Generate auth URL
-            from google_auth_oauthlib.flow import InstalledAppFlow
-            import secrets
-            
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(auth._credentials_file),
-                scopes=resolved_scopes,
-                redirect_uri="http://127.0.0.1:8000/oauth/callback",
-            )
-            
-            state = secrets.token_urlsafe(32)
-            auth_url, _ = flow.authorization_url(
-                state=state,
-                access_type="offline",
-                prompt="consent",
-            )
-            
-            # Store state for callback
-            _oauth_pending_states[state] = {
-                "provider": "google", 
-                "flow": flow,
-                "scopes": resolved_scopes,
-            }
-            
-            return JSONResponse({
-                "auth_url": auth_url,
-                "state": state,
-                "provider": provider,
-            })
-        
-        # For Discord, check env vars first
-        if provider == "discord":
-            client_id = os.environ.get("DISCORD_CLIENT_ID")
-            client_secret = os.environ.get("DISCORD_CLIENT_SECRET")
-            
-            print(f"[DISCORD] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
-            
-            if client_id and client_secret:
-                import secrets
-                state = secrets.token_urlsafe(32)
-                
-                # Discord OAuth scopes - user-only (no bot, no server required)
-                discord_scopes = ["identify", "email", "guilds"]
-                scope_str = "%20".join(discord_scopes)
-                
-                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
-                auth_url = (
-                    f"https://discord.com/api/oauth2/authorize"
-                    f"?client_id={client_id}"
-                    f"&redirect_uri={redirect_uri}"
-                    f"&response_type=code"
-                    f"&scope={scope_str}"
-                    f"&state={state}"
-                )
-                
-                _oauth_pending_states[state] = {
-                    "provider": "discord",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                }
-                
-                return JSONResponse({
-                    "auth_url": auth_url,
-                    "state": state,
-                    "provider": provider,
-                })
-        
-        # For Microsoft, check env vars
-        if provider == "microsoft":
-            client_id = os.environ.get("MICROSOFT_CLIENT_ID")
-            client_secret = os.environ.get("MICROSOFT_CLIENT_SECRET")
-            
-            print(f"[MICROSOFT] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
-            
-            if client_id and client_secret:
-                import secrets
-                state = secrets.token_urlsafe(32)
-                
-                # Microsoft OAuth scopes for Graph API
-                microsoft_scopes = [
-                    "openid",
-                    "email", 
-                    "profile",
-                    "offline_access",
-                    "User.Read",
-                    "Mail.Read",
-                    "Mail.Send",
-                    "Mail.ReadWrite",
-                    "Calendars.Read",
-                    "Calendars.ReadWrite",
-                    "Files.Read",
-                    "Files.ReadWrite", 
-                    "Tasks.Read",
-                    "Tasks.ReadWrite",
-                    "Contacts.Read",
-                ]
-                scope_str = "%20".join(microsoft_scopes)
-                
-                redirect_uri = "http://localhost:8000/oauth/callback"
-                auth_url = (
-                    f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
-                    f"?client_id={client_id}"
-                    f"&redirect_uri={redirect_uri}"
-                    f"&response_type=code"
-                    f"&scope={scope_str}"
-                    f"&state={state}"
-                )
-                
-                _oauth_pending_states[state] = {
-                    "provider": "microsoft",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                }
-                
-                return JSONResponse({
-                    "auth_url": auth_url,
-                    "state": state,
-                    "provider": provider,
-                })
-            else:
-                print("⚠️ Microsoft credentials not found in .env")
-                return JSONResponse({
-                    "error": "Microsoft credentials not configured. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET to .env",
-                    "needs_setup": True,
-                }, status_code=400)
-        
-        # For Slack, check env vars
-        if provider == "slack":
-            client_id = os.environ.get("SLACK_CLIENT_ID")
-            client_secret = os.environ.get("SLACK_CLIENT_SECRET")
-            
-            print(f"[SLACK] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
-            
-            if client_id and client_secret:
-                import secrets
-                state = secrets.token_urlsafe(32)
-                
-                # Slack OAuth scopes
-                slack_scopes = [
-                    "channels:read",
-                    "channels:history",
-                    "chat:write",
-                    "users:read",
-                    "users:read.email",
-                    "team:read",
-                    "im:read",
-                    "im:history",
-                ]
-                scope_str = ",".join(slack_scopes)  # Slack uses comma-separated
-                
-                redirect_uri = "http://localhost:8000/oauth/callback"
-                auth_url = (
-                    f"https://slack.com/oauth/v2/authorize"
-                    f"?client_id={client_id}"
-                    f"&redirect_uri={redirect_uri}"
-                    f"&user_scope={scope_str}"
-                    f"&state={state}"
-                )
-                
-                _oauth_pending_states[state] = {
-                    "provider": "slack",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                }
-                
-                return JSONResponse({
-                    "auth_url": auth_url,
-                    "state": state,
-                    "provider": provider,
-                })
-            else:
-                print("⚠️ Slack credentials not found in .env")
-                return JSONResponse({
-                    "error": "Slack credentials not configured. Add SLACK_CLIENT_ID and SLACK_CLIENT_SECRET to .env",
-                    "needs_setup": True,
-                }, status_code=400)
-        
-        # For GitHub, check env vars
-        if provider == "github":
-            client_id = os.environ.get("GITHUB_CLIENT_ID")
-            client_secret = os.environ.get("GITHUB_CLIENT_SECRET")
-            
-            print(f"[GITHUB] Checking env: client_id={bool(client_id)}, client_secret={bool(client_secret)}")
-            
-            if client_id and client_secret:
-                import secrets
-                state = secrets.token_urlsafe(32)
-                
-                # GitHub OAuth scopes
-                github_scopes = ["user", "repo", "read:org"]
-                scope_str = "%20".join(github_scopes)
-                
-                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
-                auth_url = (
-                    f"https://github.com/login/oauth/authorize"
-                    f"?client_id={client_id}"
-                    f"&redirect_uri={redirect_uri}"
-                    f"&scope={scope_str}"
-                    f"&state={state}"
-                )
-                
-                _oauth_pending_states[state] = {
-                    "provider": "github",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                }
-                
-                return JSONResponse({
-                    "auth_url": auth_url,
-                    "state": state,
-                    "provider": provider,
-                })
-            else:
-                print("⚠️ GitHub credentials not found in .env")
-                return JSONResponse({
-                    "error": "GitHub credentials not configured. Add GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to .env",
-                    "needs_setup": True,
-                }, status_code=400)
-        
-        # For Spotify, check env vars  
-        if provider == "spotify":
-            client_id = os.environ.get("SPOTIFY_CLIENT_ID")
-            client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
-            
-            if client_id and client_secret:
-                import secrets
-                state = secrets.token_urlsafe(32)
-                
-                spotify_scopes = [
-                    "user-read-private",
-                    "user-read-email",
-                    "user-read-playback-state",
-                    "user-modify-playback-state",
-                    "user-read-currently-playing",
-                    "playlist-read-private",
-                    "playlist-modify-public",
-                    "playlist-modify-private",
-                ]
-                scope_str = "%20".join(spotify_scopes)
-                
-                redirect_uri = "http://127.0.0.1:8000/oauth/callback"
-                auth_url = (
-                    f"https://accounts.spotify.com/authorize"
-                    f"?client_id={client_id}"
-                    f"&redirect_uri={redirect_uri}"
-                    f"&response_type=code"
-                    f"&scope={scope_str}"
-                    f"&state={state}"
-                )
-                
-                _oauth_pending_states[state] = {
-                    "provider": "spotify",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                }
-                
-                return JSONResponse({
-                    "auth_url": auth_url,
-                    "state": state,
-                    "provider": provider,
-                })
-        
-        # For any other provider in OAUTH_PROVIDERS, check env vars
-        env_prefix = provider.upper()
-        # Handle special env var naming
-        env_map = {"atlassian": "ATLASSIAN", "jira": "ATLASSIAN"}
-        env_name = env_map.get(provider, env_prefix)
-        
-        client_id = os.environ.get(f"{env_name}_CLIENT_ID")
-        client_secret = os.environ.get(f"{env_name}_CLIENT_SECRET")
-        
-        if client_id and client_secret:
-            import secrets as _secrets
-            state = _secrets.token_urlsafe(32)
-            
-            config = OAUTH_PROVIDERS[provider]
-            
-            # Build scopes
-            scope_list = config.scopes.get("all", list(config.scopes.values())[0]) if len(config.scopes) > 0 else []
-            scope_str = "%20".join(scope_list) if scope_list else ""
-            
-            redirect_uri = "http://127.0.0.1:8000/oauth/callback"
-            from urllib.parse import urlencode, quote
-            
-            params = {
-                "client_id": client_id,
-                "redirect_uri": redirect_uri,
-                "response_type": "code",
-                "state": state,
-            }
-            if scope_str:
-                params["scope"] = " ".join(scope_list)
-            
-            # Add provider-specific extra params
-            params.update(config.extra_auth_params)
-            
-            auth_url = f"{config.auth_url}?{urlencode(params)}"
-            
-            _oauth_pending_states[state] = {
-                "provider": provider,
-                "client_id": client_id,
-                "client_secret": client_secret,
-            }
-            
-            print(f"[OAUTH] Starting {provider} OAuth flow")
-            
-            return JSONResponse({
-                "auth_url": auth_url,
-                "state": state,
-                "provider": provider,
-            })
-        
-        return JSONResponse({
-            "error": f"No credentials configured for {provider}. Add {env_name}_CLIENT_ID and {env_name}_CLIENT_SECRET to .env",
-            "needs_setup": True,
-        }, status_code=400)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            {"error": str(e)},
-            status_code=500,
-        )
-
-# Store pending OAuth states for callback
-_oauth_pending_states: Dict[str, Any] = {}
-
-
-@app.get("/oauth/callback")
-async def oauth_callback(code: str = None, state: str = None, error: str = None):
-    """
-    OAuth callback handler.
-    
-    This page is loaded in the popup window after user authorizes.
-    It exchanges the code for tokens, stores them, and closes the popup.
-    """
-    if error:
-        return HTMLResponse(f"""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Authorization Failed</title></head>
-        <body>
-            <h2>Authorization Failed</h2>
-            <p>{error}</p>
-            <script>
-                if (window.opener) {{
-                    window.opener.postMessage({{
-                        type: 'oauth_error',
-                        error: '{error}'
-                    }}, '*');
-                }}
-                setTimeout(() => window.close(), 2000);
-            </script>
-        </body>
-        </html>
-        """)
-    
-    if not code or not state:
-        return HTMLResponse("""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Missing Parameters</title></head>
-        <body>
-            <h2>Missing authorization code or state</h2>
-            <script>
-                if (window.opener) {
-                    window.opener.postMessage({
-                        type: 'oauth_error',
-                        error: 'Missing authorization code'
-                    }, '*');
-                }
-                setTimeout(() => window.close(), 2000);
-            </script>
-        </body>
-        </html>
-        """)
-    
-    try:
-        # Check for pending Google flow first
-        if state in _oauth_pending_states:
-            pending = _oauth_pending_states.pop(state)
-            provider_used = pending["provider"]
-            
-            if provider_used == "google":
-                # Exchange code using Google's flow
-                flow = pending["flow"]
-                flow.fetch_token(code=code)
-                creds = flow.credentials
-                
-                # Store tokens using GoogleAuth
-                auth = get_google_auth()
-                auth._creds = creds
-                auth._save_token()
-                
-                # Connect services with the new credentials
-                global _google_calendar, _gmail_connector, _google_connected_services
-                
-                # Determine what scopes we got
-                token_scopes = set(creds.scopes or [])
-                
-                # Map OAuth scopes to service names
-                scope_to_service = {
-                    'calendar': 'calendar',
-                    'gmail': 'gmail', 
-                    'mail.google': 'gmail',
-                    'drive': 'drive',
-                    'contacts': 'contacts',
-                    'photoslibrary': 'photos',
-                    'spreadsheets': 'sheets',
-                    'presentations': 'slides',
-                }
-                
-                # Clear and repopulate connected services
-                _google_connected_services.clear()
-                for scope in token_scopes:
-                    for key, service in scope_to_service.items():
-                        if key in scope.lower():
-                            _google_connected_services.add(service)
-                
-                print(f"[OAUTH] Authorized Google services: {_google_connected_services}")
-                
-                has_calendar = 'calendar' in _google_connected_services
-                has_gmail = 'gmail' in _google_connected_services
-                
-                if has_calendar:
-                    _google_calendar = CalendarConnector(auth)
-                    await _google_calendar.connect()
-                    print("[OAUTH] Google Calendar connected!")
-                
-                if has_gmail:
-                    from connectors.gmail import GmailConnector
-                    _gmail_connector = GmailConnector(auth)
-                    if await _gmail_connector.connect():
-                        print("[OAUTH] Gmail connected!")
-                
-                # Rebuild engine
-                get_telic_engine(force_rebuild=True)
-                
-                # Build a display of connected services
-                services_display = []
-                for svc in ['calendar', 'gmail', 'drive', 'contacts', 'photos', 'sheets', 'slides']:
-                    if svc in _google_connected_services:
-                        services_display.append(f"{svc.title()}: ✓")
-                connected_text = " | ".join(services_display) if services_display else "No services"
-                
-                return HTMLResponse(f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Authorization Successful</title>
-                    <style>
-                        body {{
-                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                            background: #0a0a0f;
-                            color: #f4f4f5;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                            margin: 0;
-                        }}
-                        .card {{
-                            text-align: center;
-                            padding: 40px;
-                        }}
-                        .checkmark {{
-                            font-size: 48px;
-                            margin-bottom: 16px;
-                        }}
-                        h2 {{ margin-bottom: 8px; }}
-                        p {{ color: #a1a1aa; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="checkmark">✓</div>
-                        <h2>Connected!</h2>
-                        <p>{connected_text}</p>
-                        <p>You can close this window.</p>
-                    </div>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{
-                                type: 'oauth_success',
-                                provider: 'google'
-                            }}, '*');
-                        }}
-                        setTimeout(() => window.close(), 1500);
-                    </script>
-                </body>
-                </html>
-                """)
-            
-            elif provider_used == "discord":
-                # Exchange code for Discord token
-                import httpx
-                
-                client_id = pending["client_id"]
-                client_secret = pending["client_secret"]
-                
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        "https://discord.com/api/oauth2/token",
-                        data={
-                            "client_id": client_id,
-                            "client_secret": client_secret,
-                            "grant_type": "authorization_code",
-                            "code": code,
-                            "redirect_uri": "http://127.0.0.1:8000/oauth/callback",
-                        },
-                        headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                    
-                    if response.status_code != 200:
-                        raise Exception(f"Discord token exchange failed: {response.text}")
-                    
-                    tokens = response.json()
-                
-                # Store tokens
-                store = get_cred_store()
-                store.save_token(
-                    provider="discord",
-                    access_token=tokens.get("access_token"),
-                    refresh_token=tokens.get("refresh_token"),
-                    expires_in=tokens.get("expires_in"),
-                    scopes=tokens.get("scope", "").split(),
-                )
-                store.save_client_credentials(
-                    provider="discord",
-                    client_id=client_id,
-                    client_secret=client_secret,
-                )
-                
-                print(f"[OAUTH] Discord connected!")
-                
-                return HTMLResponse(f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Discord Connected</title>
-                    <style>
-                        body {{
-                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                            background: #0a0a0f;
-                            color: #f4f4f5;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                            margin: 0;
-                        }}
-                        .card {{ text-align: center; padding: 40px; }}
-                        .checkmark {{ font-size: 48px; margin-bottom: 16px; }}
-                        h2 {{ margin-bottom: 8px; }}
-                        p {{ color: #a1a1aa; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="checkmark">✓</div>
-                        <h2>Discord Connected!</h2>
-                        <p>You can close this window.</p>
-                    </div>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{
-                                type: 'oauth_success',
-                                provider: 'discord'
-                            }}, '*');
-                        }}
-                        setTimeout(() => window.close(), 1500);
-                    </script>
-                </body>
-                </html>
-                """)
-            
-            elif provider_used == "microsoft":
-                # Exchange code for Microsoft token
-                import httpx
-                
-                client_id = pending["client_id"]
-                client_secret = pending["client_secret"]
-                
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-                        data={
-                            "client_id": client_id,
-                            "client_secret": client_secret,
-                            "grant_type": "authorization_code",
-                            "code": code,
-                            "redirect_uri": "http://localhost:8000/oauth/callback",
-                        },
-                        headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                    
-                    if response.status_code != 200:
-                        raise Exception(f"Microsoft token exchange failed: {response.text}")
-                    
-                    tokens = response.json()
-                
-                # Store tokens
-                store = get_cred_store()
-                store.save_token(
-                    provider="microsoft",
-                    access_token=tokens.get("access_token"),
-                    refresh_token=tokens.get("refresh_token"),
-                    expires_in=tokens.get("expires_in"),
-                    scopes=tokens.get("scope", "").split(),
-                )
-                store.save_client_credentials(
-                    provider="microsoft",
-                    client_id=client_id,
-                    client_secret=client_secret,
-                )
-                
-                print(f"[OAUTH] Microsoft connected!")
-                
-                return HTMLResponse(f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Microsoft Connected</title>
-                    <style>
-                        body {{
-                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                            background: #0a0a0f;
-                            color: #f4f4f5;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                            margin: 0;
-                        }}
-                        .card {{ text-align: center; padding: 40px; }}
-                        .checkmark {{ font-size: 48px; margin-bottom: 16px; color: #00a4ef; }}
-                        h2 {{ margin-bottom: 8px; }}
-                        p {{ color: #a1a1aa; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="checkmark">✓</div>
-                        <h2>Microsoft Connected!</h2>
-                        <p>Outlook, OneDrive, Calendar, Tasks</p>
-                        <p>You can close this window.</p>
-                    </div>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{
-                                type: 'oauth_success',
-                                provider: 'microsoft'
-                            }}, '*');
-                        }}
-                        setTimeout(() => window.close(), 1500);
-                    </script>
-                </body>
-                </html>
-                """)
-            
-            elif provider_used == "slack":
-                # Exchange code for Slack token
-                import httpx
-                
-                client_id = pending["client_id"]
-                client_secret = pending["client_secret"]
-                
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        "https://slack.com/api/oauth.v2.access",
-                        data={
-                            "client_id": client_id,
-                            "client_secret": client_secret,
-                            "code": code,
-                            "redirect_uri": "http://localhost:8000/oauth/callback",
-                        },
-                        headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                    
-                    if response.status_code != 200:
-                        raise Exception(f"Slack token exchange failed: {response.text}")
-                    
-                    data = response.json()
-                    if not data.get("ok"):
-                        raise Exception(f"Slack error: {data.get('error')}")
-                    
-                    tokens = data
-                
-                # Store tokens - Slack user tokens come in authed_user
-                store = get_cred_store()
-                authed_user = tokens.get("authed_user", {})
-                store.save_token(
-                    provider="slack",
-                    access_token=authed_user.get("access_token") or tokens.get("access_token"),
-                    refresh_token=authed_user.get("refresh_token") or tokens.get("refresh_token"),
-                    expires_in=None,  # Slack tokens don't expire
-                    scopes=(authed_user.get("scope", "") or tokens.get("scope", "")).split(","),
-                )
-                store.save_client_credentials(
-                    provider="slack",
-                    client_id=client_id,
-                    client_secret=client_secret,
-                )
-                
-                team_name = tokens.get("team", {}).get("name", "Workspace")
-                print(f"[OAUTH] Slack connected to {team_name}!")
-                
-                return HTMLResponse(f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Slack Connected</title>
-                    <style>
-                        body {{
-                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                            background: #0a0a0f;
-                            color: #f4f4f5;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                            margin: 0;
-                        }}
-                        .card {{ text-align: center; padding: 40px; }}
-                        .checkmark {{ font-size: 48px; margin-bottom: 16px; color: #4a154b; }}
-                        h2 {{ margin-bottom: 8px; }}
-                        p {{ color: #a1a1aa; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="checkmark">✓</div>
-                        <h2>Slack Connected!</h2>
-                        <p>Workspace: {team_name}</p>
-                        <p>You can close this window.</p>
-                    </div>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{
-                                type: 'oauth_success',
-                                provider: 'slack'
-                            }}, '*');
-                        }}
-                        setTimeout(() => window.close(), 1500);
-                    </script>
-                </body>
-                </html>
-                """)
-            
-            elif provider_used == "github":
-                # Exchange code for GitHub token
-                import httpx
-                
-                client_id = pending["client_id"]
-                client_secret = pending["client_secret"]
-                
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        "https://github.com/login/oauth/access_token",
-                        data={
-                            "client_id": client_id,
-                            "client_secret": client_secret,
-                            "code": code,
-                        },
-                        headers={
-                            "Content-Type": "application/x-www-form-urlencoded",
-                            "Accept": "application/json",
-                        },
-                    )
-                    
-                    if response.status_code != 200:
-                        raise Exception(f"GitHub token exchange failed: {response.text}")
-                    
-                    tokens = response.json()
-                    if "error" in tokens:
-                        raise Exception(f"GitHub error: {tokens.get('error_description', tokens.get('error'))}")
-                
-                # Store tokens
-                store = get_cred_store()
-                store.save_token(
-                    provider="github",
-                    access_token=tokens.get("access_token"),
-                    refresh_token=tokens.get("refresh_token"),
-                    expires_in=tokens.get("expires_in"),
-                    scopes=tokens.get("scope", "").split(","),
-                )
-                store.save_client_credentials(
-                    provider="github",
-                    client_id=client_id,
-                    client_secret=client_secret,
-                )
-                
-                print(f"[OAUTH] GitHub connected!")
-                
-                return HTMLResponse(f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>GitHub Connected</title>
-                    <style>
-                        body {{
-                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                            background: #0a0a0f;
-                            color: #f4f4f5;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                            margin: 0;
-                        }}
-                        .card {{ text-align: center; padding: 40px; }}
-                        .checkmark {{ font-size: 48px; margin-bottom: 16px; }}
-                        h2 {{ margin-bottom: 8px; }}
-                        p {{ color: #a1a1aa; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="checkmark">✓</div>
-                        <h2>GitHub Connected!</h2>
-                        <p>Repos, Issues, PRs</p>
-                        <p>You can close this window.</p>
-                    </div>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{
-                                type: 'oauth_success',
-                                provider: 'github'
-                            }}, '*');
-                        }}
-                        setTimeout(() => window.close(), 1500);
-                    </script>
-                </body>
-                </html>
-                """)
-            
-            elif provider_used == "spotify":
-                # Exchange code for Spotify token
-                import httpx
-                import base64
-                
-                client_id = pending["client_id"]
-                client_secret = pending["client_secret"]
-                auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-                
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        "https://accounts.spotify.com/api/token",
-                        data={
-                            "grant_type": "authorization_code",
-                            "code": code,
-                            "redirect_uri": "http://127.0.0.1:8000/oauth/callback",
-                        },
-                        headers={
-                            "Content-Type": "application/x-www-form-urlencoded",
-                            "Authorization": f"Basic {auth_header}",
-                        },
-                    )
-                    
-                    if response.status_code != 200:
-                        raise Exception(f"Spotify token exchange failed: {response.text}")
-                    
-                    tokens = response.json()
-                
-                # Store tokens
-                store = get_cred_store()
-                store.save_token(
-                    provider="spotify",
-                    access_token=tokens.get("access_token"),
-                    refresh_token=tokens.get("refresh_token"),
-                    expires_in=tokens.get("expires_in"),
-                    scopes=tokens.get("scope", "").split(),
-                )
-                store.save_client_credentials(
-                    provider="spotify",
-                    client_id=client_id,
-                    client_secret=client_secret,
-                )
-                
-                print(f"[OAUTH] Spotify connected!")
-                
-                return HTMLResponse(f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Spotify Connected</title>
-                    <style>
-                        body {{
-                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                            background: #0a0a0f;
-                            color: #f4f4f5;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                            margin: 0;
-                        }}
-                        .card {{ text-align: center; padding: 40px; }}
-                        .checkmark {{ font-size: 48px; margin-bottom: 16px; color: #1db954; }}
-                        h2 {{ margin-bottom: 8px; }}
-                        p {{ color: #a1a1aa; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="checkmark">✓</div>
-                        <h2>Spotify Connected!</h2>
-                        <p>Music playback enabled</p>
-                        <p>You can close this window.</p>
-                    </div>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{
-                                type: 'oauth_success',
-                                provider: 'spotify'
-                            }}, '*');
-                        }}
-                        setTimeout(() => window.close(), 1500);
-                    </script>
-                </body>
-                </html>
-                """)
-            
-            else:
-                # Generic OAuth 2.0 token exchange for any other provider
-                from connectors.oauth_flow import OAUTH_PROVIDERS as _OAUTH_PROVIDERS
-                import httpx
-                
-                client_id = pending["client_id"]
-                client_secret = pending["client_secret"]
-                config = _OAUTH_PROVIDERS.get(provider_used)
-                
-                if not config:
-                    raise Exception(f"No OAuth config for {provider_used}")
-                
-                # Some providers (Notion, Zoom) use Basic auth for token exchange
-                headers = {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Accept": "application/json",
-                }
-                
-                token_data = {
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "code": code,
-                    "grant_type": "authorization_code",
-                    "redirect_uri": "http://127.0.0.1:8000/oauth/callback",
-                }
-                
-                # Notion uses Basic auth instead of client_secret in body
-                if provider_used == "notion":
-                    import base64
-                    auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-                    headers["Authorization"] = f"Basic {auth_header}"
-                    del token_data["client_secret"]
-                
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        config.token_url,
-                        data=token_data,
-                        headers=headers,
-                    )
-                    
-                    if response.status_code != 200:
-                        raise Exception(f"{config.name} token exchange failed: {response.text}")
-                    
-                    tokens = response.json()
-                
-                if "error" in tokens:
-                    raise Exception(f"{config.name} error: {tokens.get('error_description', tokens.get('error'))}")
-                
-                # Store tokens
-                store = get_cred_store()
-                store.save_token(
-                    provider=provider_used,
-                    access_token=tokens.get("access_token"),
-                    refresh_token=tokens.get("refresh_token"),
-                    expires_in=tokens.get("expires_in"),
-                    scopes=tokens.get("scope", "").split() if tokens.get("scope") else [],
-                )
-                store.save_client_credentials(
-                    provider=provider_used,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                )
-                
-                print(f"[OAUTH] {config.name} connected!")
-                
-                return HTMLResponse(f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>{config.name} Connected</title>
-                    <style>
-                        body {{
-                            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                            background: #0a0a0f;
-                            color: #f4f4f5;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                            margin: 0;
-                        }}
-                        .card {{ text-align: center; padding: 40px; }}
-                        .checkmark {{ font-size: 48px; margin-bottom: 16px; }}
-                        h2 {{ margin-bottom: 8px; }}
-                        p {{ color: #a1a1aa; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="checkmark">✓</div>
-                        <h2>{config.name} Connected!</h2>
-                        <p>You can close this window.</p>
-                    </div>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{
-                                type: 'oauth_success',
-                                provider: '{provider_used}'
-                            }}, '*');
-                        }}
-                        setTimeout(() => window.close(), 1500);
-                    </script>
-                </body>
-                </html>
-                """)
-        
-        # Fallback to generic OAuth flow for other providers
-        from connectors.oauth_flow import get_oauth_flow
-        
-        flow = get_oauth_flow()
-        tokens = await flow.handle_callback(code, state)
-        
-        if not tokens:
-            raise Exception("Failed to exchange authorization code")
-        
-        provider_used = tokens.get("provider", "unknown")
-        
-        # Store tokens
-        store = get_cred_store()
-        store.save_token(
-            provider=provider_used,
-            access_token=tokens.get("access_token"),
-            refresh_token=tokens.get("refresh_token"),
-            expires_in=tokens.get("expires_in"),
-            scopes=tokens.get("scope", "").split() if tokens.get("scope") else [],
-        )
-        
-        return HTMLResponse(f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Authorization Successful</title>
-            <style>
-                body {{
-                    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                    background: #0a0a0f;
-                    color: #f4f4f5;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100vh;
-                    margin: 0;
-                }}
-                .card {{
-                    text-align: center;
-                    padding: 40px;
-                }}
-                .checkmark {{
-                    font-size: 48px;
-                    margin-bottom: 16px;
-                }}
-                h2 {{ margin-bottom: 8px; }}
-                p {{ color: #a1a1aa; }}
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <div class="checkmark">✓</div>
-                <h2>Connected!</h2>
-                <p>You can close this window.</p>
-            </div>
-            <script>
-                if (window.opener) {{
-                    window.opener.postMessage({{
-                        type: 'oauth_success',
-                        provider: '{provider_used}'
-                    }}, '*');
-                }}
-                setTimeout(() => window.close(), 1500);
-            </script>
-        </body>
-        </html>
-        """)
-        
-    except Exception as e:
-        return HTMLResponse(f"""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Authorization Failed</title></head>
-        <body style="font-family: sans-serif; padding: 40px;">
-            <h2>Authorization Failed</h2>
-            <p>{str(e)}</p>
-            <script>
-                if (window.opener) {{
-                    window.opener.postMessage({{
-                        type: 'oauth_error',
-                        error: '{str(e)}'
-                    }}, '*');
-                }}
-                setTimeout(() => window.close(), 3000);
-            </script>
-        </body>
-        </html>
-        """)
-
-
-# Routes
-@app.get("/")
-async def root():
-    """Serve the UI with no-cache headers so updates are always picked up."""
-    return FileResponse(
-        Path(__file__).parent / "ui" / "index.html",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
-
-
-def resolve_wire_value(val, read_results: dict, primitive_to_step: dict):
-    """
-    Resolve wire references in a value. Handles multiple formats:
-    - step_N.path (e.g., step_0.results[0].email)
-    - {{PRIMITIVE.operation.path}} (e.g., {{CONTACTS.search.results[0].email}})
-    - Inline placeholders within strings
-    """
-    if not isinstance(val, str):
-        return val
-    
-    import re
-    
-    def follow_path(data, path):
-        """Navigate a path like 'results[0].email' through data."""
-        if data is None:
-            return None
-        current = data
-        # Split on dots, but handle brackets
-        parts = re.split(r'\.(?![^\[]*\])', path)
-        for part in parts:
-            if current is None:
-                return None
-            # Handle array index like results[0]
-            bracket_match = re.match(r'(\w+)\[(\d+)\]', part)
-            if bracket_match:
-                key, idx = bracket_match.groups()
-                if isinstance(current, dict) and key in current:
-                    current = current[key]
-                    if isinstance(current, list) and int(idx) < len(current):
-                        current = current[int(idx)]
-                    else:
-                        return None
-                else:
-                    return None
-            elif isinstance(current, dict):
-                current = current.get(part)
-            else:
-                return None
-        return current
-    
-    # Check for {{PRIMITIVE.operation.path}} format (can be multiple in string)
-    def replace_placeholder(match):
-        placeholder = match.group(1)  # e.g., "CONTACTS.search.results[0].email"
-        parts = placeholder.split('.', 2)  # Split into [PRIMITIVE, operation, path]
-        if len(parts) >= 2:
-            prim_op = f"{parts[0]}.{parts[1]}".upper()
-            step_id = primitive_to_step.get(prim_op)
-            if step_id is not None and step_id in read_results:
-                if len(parts) > 2:
-                    result = follow_path(read_results[step_id], parts[2])
-                else:
-                    result = read_results[step_id]
-                if result is not None:
-                    return str(result) if not isinstance(result, str) else result
-        return match.group(0)  # Keep original if can't resolve
-    
-    # Replace all {{...}} placeholders
-    if '{{' in val:
-        resolved = re.sub(r'\{\{([^}]+)\}\}', replace_placeholder, val)
-        return resolved
-    
-    # Check for step_N.path format
-    step_match = re.match(r'step_(\d+)\.(.+)', val)
-    if step_match:
-        step_id = int(step_match.group(1))
-        path = step_match.group(2)
-        if step_id in read_results:
-            result = follow_path(read_results[step_id], path)
-            if result is not None:
-                return result
-    
-    return val
-
-
-class ReactRequest(BaseModel):
-    message: str
-
-
-class ReactApproveRequest(BaseModel):
-    approved: bool
-
-
-def serialize_result(result: Any) -> Any:
-    """Convert any result to JSON-serializable form."""
-    if result is None:
-        return None
-    if isinstance(result, (str, int, float, bool)):
-        return result
-    if isinstance(result, (list, tuple)):
-        return [serialize_result(item) for item in result]
-    if isinstance(result, dict):
-        return {k: serialize_result(v) for k, v in result.items()}
-    # Handle dataclasses and objects with __dict__
-    if hasattr(result, '__dict__'):
-        return serialize_result(vars(result))
-    # Fallback to string representation
-    return str(result)
-
-
-def step_to_dict(step: Step) -> Dict[str, Any]:
-    """Convert a Step to a JSON-serializable dict."""
-    return {
-        "tool": step.tool_call.name,
-        "params": step.tool_call.params,
-        "status": step.status.value,
-        "result": serialize_result(step.result),
-        "error": step.error,
-        "requires_approval": step.requires_approval,
-    }
-
-
-def step_to_sse_dict(step: Step) -> Dict[str, Any]:
-    """Convert a Step to a lightweight dict for SSE streaming (no full results)."""
-    result_data = serialize_result(step.result)
-    # For SSE mid-stream events, send only a compact preview
-    if result_data is not None:
-        try:
-            result_json = json.dumps(result_data) if not isinstance(result_data, str) else result_data
-        except (TypeError, ValueError):
-            result_json = str(result_data)
-        if len(result_json) > 1500:
-            result_data = f"[{len(result_json)} bytes — see final results]"
-    params = step.tool_call.params or {}
-    return {
-        "tool": step.tool_call.name,
-        "params": {k: (v if len(str(v)) < 100 else str(v)[:100] + "...") for k, v in params.items()},
-        "status": step.status.value,
-        "result": result_data,
-        "error": step.error,
-        "requires_approval": step.requires_approval,
-    }
-
-
-def state_to_response(state: AgentState) -> Dict[str, Any]:
-    """Convert AgentState to API response."""
-    return {
-        "steps": [step_to_dict(s) for s in state.steps],
-        "pending_approval": step_to_dict(state.pending_approval) if state.pending_approval else None,
-        "is_complete": state.is_complete,
-        "response": state.final_response,
-    }
-
-
-async def select_primitives_for_request(message: str, all_primitives: dict) -> dict:
-    """
-    DEPRECATED: Dynamic primitive selection caused conversation context issues.
-    Now we use all primitives and let the LLM choose which to use.
-    Keeping this function for potential future use with smarter filtering.
-    """
-    return all_primitives
-
-
-async def get_session_agent(force_new: bool = False) -> Optional[ReActAgent]:
-    """
-    Get or create a session-persistent ReAct agent.
-    
-    Unlike the old approach that created fresh agents per request,
-    this maintains conversation context like ChatGPT/Gemini.
-    """
-    global _session_agent, _session_messages
-    
-    if force_new:
-        _session_agent = None
-        _session_messages = []
-    
-    if _session_agent is not None:
-        return _session_agent
-    
-    # Need API key
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return None
-    
-    # Get the Telic engine
-    engine = get_telic_engine()
-    if not engine:
-        return None
-    
-    # Connect any connectors that need async initialization
-    global _connectors_initialized
-    if not _connectors_initialized:
-        await _connect_engine_connectors(engine)
-        _connectors_initialized = True
-    
-    # Use ALL primitives - let the LLM decide what's relevant
-    tools = primitives_to_tools(engine._primitives)
-    print(f"[SESSION] Created agent with {len(tools)} tools")
-    
-    # Create LLM client
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        import anthropic
-        llm_client = anthropic.Anthropic()
-    else:
-        import openai
-        llm_client = openai.OpenAI()
-    
-    from datetime import datetime, timedelta
-    now = datetime.now()
-    # Build date context with upcoming days for accurate scheduling
-    date_context = f"""TODAY: {now.strftime("%A, %B %d, %Y")} ({now.strftime("%Y-%m-%d")})
-This week:
-"""
-    for i in range(7):
-        d = now + timedelta(days=i)
-        date_context += f"  {d.strftime('%A %b %d')}: {d.strftime('%Y-%m-%d')}\n"
-    
-    # Gather intelligence context for system prompt
-    intel_section = ""
-    try:
-        hub = get_intelligence_hub()
-        parts = []
-        
-        # Get learned preferences
-        prefs = await hub.get_preferences()
-        if prefs:
-            pref_items = list(prefs.values())[:8] if isinstance(prefs, dict) else list(prefs)[:8]
-            pref_lines = [f"- {p.key}: {p.value} (confidence: {p.confidence:.0%})" for p in pref_items]
-            parts.append("LEARNED USER PREFERENCES:\n" + "\n".join(pref_lines))
-        
-        # Get detected patterns
-        patterns = await hub.get_patterns(min_confidence=0.5)
-        if patterns:
-            pat_lines = [f"- {p.name}: {p.description}" for p in patterns[:5]]
-            parts.append("DETECTED PATTERNS:\n" + "\n".join(pat_lines))
-        
-        # Get memory stats
-        stats = hub._memory.get_stats()
-        if stats.get("total_facts", 0) > 0:
-            parts.append(f"MEMORY: {stats['total_facts']} facts remembered about {stats.get('total_entities', 0)} entities")
-        
-        if parts:
-            intel_section = "\n\n" + "\n\n".join(parts) + "\n"
-    except Exception as e:
-        print(f"[INTEL] System prompt enrichment failed (non-fatal): {e}")
-    
-    system_prompt = f"""You are Ziggy, an AI assistant that helps users get things done.
-
-{date_context}
-
-You have access to the user's email, calendar, files, tasks, and other services.
-Use tools to accomplish what the user asks. You can call multiple tools in parallel when the calls are independent.
-
-Be efficient — don't repeat searches with slight variations. If a search returns no results, broaden the query or try a different approach rather than retrying similar queries.
-{intel_section}
-CONVERSATION CONTEXT:
-- You have full memory of this conversation session
-- References like "the first one", "send it", "the information above" refer to earlier in THIS conversation
-- If user mentions something from earlier, use that context
-
-IMPORTANT BEHAVIORS:
-- When you find multiple matches, ask user which one they want
-- When information is missing, ask before guessing
-- Be conversational - explain what you're doing
-- Trust your tool results. If a tool returns data, present it. Do not retry with different parameters or search for confirmation.
-- LEARN: When you discover something useful about the user — their preferences, important people, which services/calendars/playlists they care about, how they like things done — use KNOWLEDGE.remember to store it. You have a persistent memory. Use it so you get better over time.
-
-When complete, summarize what was done."""
-    
-    _session_agent = ReActAgent(
-        llm_client=llm_client,
-        tools=tools,
-        system_prompt=system_prompt,
-    )
-    
-    return _session_agent
-
-
-@app.post("/react/chat")
-async def react_chat(req: ReactRequest):
-    """
-    Main chat endpoint - continues the current session.
-    
-    Unlike before, this ALWAYS continues the same conversation session.
-    Use /react/new to start a fresh conversation.
-    """
-    global _react_state, _session_messages, _session_agent
-    
-    agent = await get_session_agent()
-    if not agent:
-        return JSONResponse({
-            "error": "No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
-            "steps": [],
-            "pending_approval": None,
-            "is_complete": True,
-            "response": None,
-        })
-    
-    try:
-        # Ensure we have a session ID
-        if not _session_id:
-            _session_id = session_store.new_session_id()
-        
-        print(f"[SESSION] User: {req.message[:80]}...")
-        print(f"[SESSION] Conversation history: {len(_session_messages)} messages")
-        
-        # Build context from conversation history for the agent
-        if _session_messages:
-            # Summarize recent conversation for context
-            context_lines = []
-            for m in _session_messages[-10:]:  # Last 10 messages
-                role = 'User' if m['role'] == 'user' else 'Assistant'
-                content = m['content'][:300] + "..." if len(m['content']) > 300 else m['content']
-                context_lines.append(f"{role}: {content}")
-            context_summary = "\n".join(context_lines)
-            
-            full_message = f"""[CONVERSATION CONTEXT - This is a continuation of an ongoing conversation]
-Previous messages in this session:
-{context_summary}
-
-[CURRENT USER MESSAGE]
-{req.message}
-
-Remember: References like "the first one", "send it to him", "the information above" refer to the context above."""
-        else:
-            full_message = req.message
-        
-        # Run the agent with context
-        state = await agent.run(full_message)
-        _react_state = state
-        
-        # Record in session history
-        _session_messages.append({"role": "user", "content": req.message})
-        if state.final_response:
-            _session_messages.append({"role": "assistant", "content": state.final_response})
-        
-        # Auto-save session
-        _auto_save_session()
-        
-        # Log what happened
-        for step in state.steps:
-            status = "✓" if step.status == StepStatus.COMPLETED else "⏸" if step.status == StepStatus.PENDING_APPROVAL else "✗"
-            print(f"[SESSION] {status} {step.tool_call.name}")
-        
-        if state.pending_approval:
-            print(f"[SESSION] Waiting for approval: {state.pending_approval.tool_call.name}")
-        
-        if state.is_complete:
-            print(f"[SESSION] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
-        
-        return JSONResponse(state_to_response(state))
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({
-            "error": str(e),
-            "steps": [],
-            "pending_approval": None,
-            "is_complete": True,
-            "response": f"Error: {str(e)}",
-        })
-
-
-@app.post("/react/chat/stream")
-async def react_chat_stream(req: ReactRequest):
-    """
-    Streaming chat endpoint using Server-Sent Events.
-    
-    Streams step-by-step progress as the agent works,
-    so the UI can show real-time activity instead of waiting.
-    """
-    import json
-    global _react_state, _session_messages, _session_id
-
-    # Ensure we have a session ID
-    if not _session_id:
-        _session_id = session_store.new_session_id()
-
-    agent = await get_session_agent()
-    if not agent:
-        async def err():
-            yield f"data: {json.dumps({'event': 'error', 'message': 'No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.'})}\n\n"
-        return StreamingResponse(err(), media_type="text/event-stream")
-
-    # Build message with conversation context (same logic as react_chat)
-    print(f"[STREAM] User: {req.message[:80]}...")
-    print(f"[STREAM] Conversation history: {len(_session_messages)} messages")
-
-    if _session_messages:
-        context_lines = []
-        for m in _session_messages[-10:]:
-            role = 'User' if m['role'] == 'user' else 'Assistant'
-            content = m['content'][:300] + "..." if len(m['content']) > 300 else m['content']
-            context_lines.append(f"{role}: {content}")
-        context_summary = "\n".join(context_lines)
-
-        full_message = f"""[CONVERSATION CONTEXT - This is a continuation of an ongoing conversation]
-Previous messages in this session:
-{context_summary}
-
-[CURRENT USER MESSAGE]
-{req.message}
-
-Remember: References like "the first one", "send it to him", "the information above" refer to the context above."""
-    else:
-        full_message = req.message
-
-    # Gather intelligence context before running agent
-    intel_context = ""
-    try:
-        hub = get_intelligence_hub()
-        intel_parts = []
-
-        # Recall relevant facts from semantic memory
-        recalled = await hub.recall(req.message, limit=5, min_relevance=0.3)
-        if recalled:
-            facts_text = "\n".join(f"- {f.content}" for f, _score in recalled[:5])
-            intel_parts.append(f"[MEMORY - Things I remember]\n{facts_text}")
-
-        # Check what patterns are expected now
-        expected = await hub.whats_expected_now()
-        if expected:
-            patterns_text = "\n".join(f"- {p['pattern']}: {p['description']}" for p in expected[:3])
-            intel_parts.append(f"[PATTERNS - What usually happens now]\n{patterns_text}")
-
-        # Get proactive suggestions
-        suggestions = await hub.get_suggestions(max_suggestions=3)
-        if suggestions:
-            sugg_text = "\n".join(f"- {s.title}: {s.description}" for s in suggestions[:3])
-            intel_parts.append(f"[SUGGESTIONS]\n{sugg_text}")
-
-        if intel_parts:
-            intel_context = "\n\n".join(intel_parts) + "\n\n"
-            print(f"[INTEL] Injected {len(intel_parts)} intelligence sections")
-    except Exception as e:
-        print(f"[INTEL] Context gathering failed (non-fatal): {e}")
-
-    # Prepend intelligence context to message
-    if intel_context:
-        full_message = f"[INTELLIGENCE CONTEXT - Use this to provide better, more personalized responses]\n{intel_context}[USER MESSAGE]\n{full_message}"
-
-    # Event queue for SSE
-    queue = asyncio.Queue()
-
-    async def on_step(step: Step):
-        """Push step events to SSE queue and record observations."""
-        data = step_to_sse_dict(step)
-        data["id"] = step.tool_call.id  # Unique ID for matching start/complete
-        if step.status == StepStatus.RUNNING:
-            await queue.put({"event": "tool_start", "step": data})
-        elif step.status == StepStatus.COMPLETED:
-            await queue.put({"event": "tool_complete", "step": data})
-            # Record observation for intelligence learning
-            try:
-                # Map tool names to preference analyzer keys
-                _ACTION_MAP = {
-                    "calendar_create": "schedule_meeting",
-                    "email_send": "send_email",
-                    "email_draft": "send_email",
-                    "document_create": "create_document",
-                    "document_write": "create_document",
-                    "task_create": "create_task",
-                    "task_add": "create_task",
-                    "web_search": "search_web",
-                }
-                raw_action = step.tool_call.name
-                action = _ACTION_MAP.get(raw_action, raw_action)
-                await hub.observe(action, {
-                    "params": step.tool_call.params,
-                    "result_preview": str(step.result)[:200] if step.result else None,
-                    "user_message": req.message[:200],
-                })
-            except Exception:
-                pass  # Non-fatal
-        elif step.status == StepStatus.FAILED:
-            await queue.put({"event": "tool_failed", "step": data})
-        elif step.status == StepStatus.PENDING_APPROVAL:
-            await queue.put({"event": "approval_needed", "step": data})
-
-    async def on_thinking():
-        await queue.put({"event": "thinking"})
-
-    # Wire callbacks (save previous to restore later)
-    prev_on_step = agent.on_step
-    prev_on_thinking = getattr(agent, 'on_thinking', None)
-    agent.on_step = on_step
-    agent.on_thinking = on_thinking
-
-    async def event_generator():
-        global _react_state
-
-        # Initial thinking event
-        yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
-
-        # Generate execution blueprint (plan) before running
-        try:
-            engine = get_telic_engine()
-            # Build a compact list of available capabilities
-            available_tools = []
-            for prim_name, primitive in engine._primitives.items():
-                ops = primitive.get_available_operations()
-                connected = primitive.get_connected_providers()
-                if connected:
-                    for op_name, desc in ops.items():
-                        available_tools.append(f"{prim_name}_{op_name}: {desc}")
-            
-            tools_summary = "\n".join(available_tools[:80])  # Cap for token efficiency
-            
-            plan_prompt = f"""Given this user request, output a JSON array of the steps you would take.
-Each step: {{"tool": "tool_name", "label": "short human description", "service": "primary service icon name"}}
-Service icon names: calendar, gmail, outlook, drive, onedrive, contacts, sheets, slides, photos, spotify, slack, github, discord, todoist, teams, onenote, excel, powerpoint, web, file, task, search, weather, news
-Only include steps that require tool calls. Keep it to 2-6 steps. Output ONLY the JSON array, no other text.
-
-Available tools:
-{tools_summary}
-
-User request: {req.message}"""
-
-            if os.environ.get("ANTHROPIC_API_KEY"):
-                import anthropic
-                plan_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-                try:
-                    plan_response = plan_client.messages.create(
-                        model="claude-haiku-4-20250414",
-                        max_tokens=300,
-                        messages=[{"role": "user", "content": plan_prompt}]
-                    )
-                except Exception:
-                    # Fallback to sonnet if haiku unavailable
-                    plan_response = plan_client.messages.create(
-                        model="claude-sonnet-4-20250514",
-                        max_tokens=300,
-                        messages=[{"role": "user", "content": plan_prompt}]
-                    )
-                plan_text = plan_response.content[0].text.strip()
-            else:
-                import openai
-                plan_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-                plan_response = plan_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    max_tokens=300,
-                    messages=[{"role": "user", "content": plan_prompt}]
-                )
-                plan_text = plan_response.choices[0].message.content.strip()
-
-            # Parse JSON from response (handle markdown code blocks)
-            if plan_text.startswith("```"):
-                plan_text = plan_text.split("```")[1]
-                if plan_text.startswith("json"):
-                    plan_text = plan_text[4:]
-                plan_text = plan_text.strip()
-            
-            plan_steps = json.loads(plan_text)
-            if isinstance(plan_steps, list) and len(plan_steps) > 0:
-                yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
-                print(f"[STREAM] Blueprint: {len(plan_steps)} planned steps")
-        except Exception as e:
-            import traceback
-            print(f"[STREAM] Blueprint generation skipped: {e}")
-            traceback.print_exc()
-
-        # Run agent as background task
-        task = asyncio.create_task(agent.run(full_message))
-
-        try:
-            while not task.done():
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"data: {json.dumps(event)}\n\n"
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
-
-            # Drain remaining queued events
-            while not queue.empty():
-                event = await queue.get()
-                yield f"data: {json.dumps(event)}\n\n"
-
-            # Final state
-            state = task.result()
-            _react_state = state
-
-            # Update session history
-            _session_messages.append({"role": "user", "content": req.message})
-            if state.final_response:
-                _session_messages.append({"role": "assistant", "content": state.final_response})
-
-            # Auto-save session
-            _auto_save_session()
-
-            # Intelligence: Remember facts from this interaction
-            try:
-                completed_tools = [s.tool_call.name for s in state.steps if s.status == StepStatus.COMPLETED]
-                if completed_tools:
-                    await hub.on_event("task_completed", {
-                        "user_message": req.message,
-                        "tools_used": completed_tools,
-                        "success": state.is_complete,
-                    })
-            except Exception:
-                pass  # Non-fatal
-
-            # Log
-            for s in state.steps:
-                icon = "✓" if s.status == StepStatus.COMPLETED else "⏸" if s.status == StepStatus.PENDING_APPROVAL else "✗"
-                print(f"[STREAM] {icon} {s.tool_call.name}")
-            if state.is_complete:
-                print(f"[STREAM] Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
-
-            yield f"data: {json.dumps({'event': 'complete', 'data': state_to_response(state)})}\n\n"
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
-        finally:
-            agent.on_step = prev_on_step
-            agent.on_thinking = prev_on_thinking
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@app.post("/react/new")
-async def react_new_conversation():
-    """Start a fresh conversation - saves current session, then clears."""
-    global _session_messages, _session_agent, _react_state, _session_id
-    
-    # Auto-save current session if it has messages
-    if _session_id and _session_messages:
-        _auto_save_session()
-    
-    _session_messages = []
-    _session_agent = None
-    _react_state = None
-    _session_id = session_store.new_session_id()
-    print(f"[SESSION] Started new conversation: {_session_id}")
-    return JSONResponse({"status": "ok", "message": "New conversation started", "session_id": _session_id})
-
-
-@app.post("/react/approve")
-async def react_approve(req: ReactApproveRequest):
-    """
-    Approve or reject a pending action.
-    
-    After approval, the agent continues executing.
-    """
-    global _react_state, _session_messages
-    
-    agent = await get_session_agent()
-    if not agent or not _react_state:
-        return JSONResponse({
-            "error": "No pending action",
-            "steps": [],
-            "pending_approval": None,
-            "is_complete": True,
-            "response": None,
-        })
-    
-    try:
-        action = "Approved" if req.approved else "Rejected"
-        if _react_state.pending_approval:
-            print(f"[SESSION] {action}: {_react_state.pending_approval.tool_call.name}")
-        
-        # Continue with approval decision
-        state = await agent.continue_with_approval(req.approved)
-        _react_state = state
-        
-        # Record result in session history
-        if state.final_response:
-            _session_messages.append({"role": "assistant", "content": state.final_response})
-        
-        return JSONResponse(state_to_response(state))
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({
-            "error": str(e),
-            "steps": [],
-            "pending_approval": None,
-            "is_complete": True,
-            "response": f"Error: {str(e)}",
-        })
-
-
-@app.post("/react/approve/stream")
-async def react_approve_stream(req: ReactApproveRequest):
-    """
-    Streaming version of approve. Returns SSE events as agent continues
-    executing after approval, so the UI can show real-time tool progress.
-    """
-    import json
-    global _react_state, _session_messages
-
-    agent = await get_session_agent()
-    if not agent or not _react_state:
-        async def err():
-            yield f"data: {json.dumps({'event': 'error', 'message': 'No pending action'})}\n\n"
-        return StreamingResponse(err(), media_type="text/event-stream")
-
-    action = "Approved" if req.approved else "Rejected"
-    if _react_state.pending_approval:
-        print(f"[STREAM-APPROVE] {action}: {_react_state.pending_approval.tool_call.name}")
-
-    if not req.approved:
-        # Rejection is instant — no streaming needed
-        async def reject_stream():
-            state = await agent.continue_with_approval(False)
-            _react_state = state
-            yield f"data: {json.dumps({'event': 'complete', 'data': state_to_response(state)})}\n\n"
-        return StreamingResponse(reject_stream(), media_type="text/event-stream")
-
-    # Approved — stream the continuation
-    queue = asyncio.Queue()
-
-    async def on_step(step):
-        data = step_to_sse_dict(step)
-        data["id"] = step.tool_call.id
-        if step.status == StepStatus.RUNNING:
-            await queue.put({"event": "tool_start", "step": data})
-        elif step.status == StepStatus.COMPLETED:
-            await queue.put({"event": "tool_complete", "step": data})
-        elif step.status == StepStatus.FAILED:
-            await queue.put({"event": "tool_failed", "step": data})
-        elif step.status == StepStatus.PENDING_APPROVAL:
-            await queue.put({"event": "approval_needed", "step": data})
-
-    async def on_thinking():
-        await queue.put({"event": "thinking"})
-
-    prev_on_step = agent.on_step
-    prev_on_thinking = getattr(agent, 'on_thinking', None)
-    agent.on_step = on_step
-    agent.on_thinking = on_thinking
-
-    async def event_generator():
-        global _react_state
-        yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
-        task = asyncio.create_task(agent.continue_with_approval(True))
-        try:
-            while not task.done():
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"data: {json.dumps(event)}\n\n"
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
-            while not queue.empty():
-                event = await queue.get()
-                yield f"data: {json.dumps(event)}\n\n"
-            state = task.result()
-            _react_state = state
-            if state.final_response:
-                _session_messages.append({"role": "assistant", "content": state.final_response})
-            _auto_save_session()
-            yield f"data: {json.dumps({'event': 'complete', 'data': state_to_response(state)})}\n\n"
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
-        finally:
-            agent.on_step = prev_on_step
-            agent.on_thinking = prev_on_thinking
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-# /react/continue is now deprecated - /react/chat handles all messages with session context
-@app.post("/react/continue")
-async def react_continue(req: ReactRequest):
-    """
-    DEPRECATED: Use /react/chat instead.
-    Redirects to /react/chat for backwards compatibility.
-    """
-    return await react_chat(req)
-    return await react_chat(req)
-
-
-# ==========================================================
-# Session History - save, list, load, delete past conversations
-# ==========================================================
-
-def _auto_save_session():
-    """Save the current session to SQLite. Call before clearing."""
-    global _session_id
-    if not _session_id or not _session_messages:
-        return
-    # Generate title from first user message
-    title = "Untitled"
-    for m in _session_messages:
-        if m["role"] == "user":
-            title = m["content"][:80].strip()
-            break
-    session_store.save_session(_session_id, title, _session_messages)
-    print(f"[SESSION] Auto-saved session {_session_id}: {title[:50]}")
-
-
-@app.get("/sessions")
-async def list_sessions(limit: int = 50):
-    """List all saved sessions, most recent first."""
-    return JSONResponse(session_store.list_sessions(limit))
-
-
-@app.get("/sessions/{session_id}")
-async def get_session(session_id: str):
-    """Get a saved session with its full message history."""
-    session = session_store.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return JSONResponse(session)
-
-
-@app.post("/sessions/{session_id}/load")
-async def load_session(session_id: str):
-    """Load a saved session as the active conversation."""
-    global _session_id, _session_messages, _session_agent, _react_state
-    
-    # Save current session first if it has messages
-    if _session_id and _session_messages:
-        _auto_save_session()
-    
-    session = session_store.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    _session_id = session_id
-    _session_messages = session["messages"]
-    _session_agent = None  # Force agent recreation to pick up new context
-    _react_state = None
-    print(f"[SESSION] Loaded session {session_id} with {len(_session_messages)} messages")
-    return JSONResponse({"status": "ok", "session": session})
-
-
-@app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
-    """Delete a saved session."""
-    deleted = session_store.delete_session(session_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return JSONResponse({"status": "ok"})
-
-
-@app.get("/intelligence/alerts")
-async def get_alerts():
-    """Get proactive alerts and suggestions from the intelligence layer."""
-    monitor = get_proactive_monitor()
-    alerts = monitor.get_pending_alerts()
-    
-    # Also get intelligence suggestions
-    suggestions = []
-    try:
-        hub = get_intelligence_hub()
-        raw_suggestions = await hub.get_suggestions(max_suggestions=5)
-        suggestions = [s.to_dict() for s in raw_suggestions] if raw_suggestions else []
-    except Exception:
-        pass
-    
-    return JSONResponse({
-        "alerts": [a.to_dict() for a in alerts],
-        "suggestions": suggestions,
-        "count": len(alerts) + len(suggestions),
-        "stats": monitor.get_stats(),
-    })
-
-
-@app.post("/intelligence/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: str):
-    """Acknowledge an alert."""
-    monitor = get_proactive_monitor()
-    success = monitor.acknowledge_alert(alert_id)
-    return JSONResponse({"success": success, "alert_id": alert_id})
-
-
-@app.post("/intelligence/alerts/{alert_id}/dismiss")
-async def dismiss_alert(alert_id: str):
-    """Dismiss an alert."""
-    monitor = get_proactive_monitor()
-    success = monitor.dismiss_alert(alert_id)
-    return JSONResponse({"success": success, "alert_id": alert_id})
-
-
-@app.get("/intelligence/briefing")
-async def get_briefing():
-    """Get a morning briefing with cross-service intelligence."""
-    intel = get_cross_service_intel()
-    
-    try:
-        briefing = await intel.morning_briefing()
-        return JSONResponse({
-            "briefing": briefing,
-            "generated_at": intel._memory._now().isoformat() if intel._memory else None,
-        })
-    except Exception as e:
-        return JSONResponse({
-            "error": str(e),
-            "briefing": None,
-        })
-
-
-@app.get("/intelligence/devtools")
-async def get_devtools_summary():
-    """Get unified development tools summary (GitHub + Jira)."""
-    devtools = get_devtools()
-    
-    if not devtools.providers:
-        return JSONResponse({
-            "error": "No DevTools providers connected. Connect GitHub or Jira first.",
-            "summary": None,
-            "providers": [],
-        })
-    
-    try:
-        summary = await devtools.get_work_summary()
-        return JSONResponse({
-            "summary": summary,
-            "providers": devtools.providers,
-        })
-    except Exception as e:
-        return JSONResponse({
-            "error": str(e),
-            "summary": None,
-            "providers": devtools.providers,
-        })
-
-
-@app.post("/intelligence/devtools/connect/github")
-async def connect_github():
-    """Connect GitHub to DevTools."""
-    from connectors.github import GitHubConnector
-    
-    devtools = get_devtools()
-    monitor = get_proactive_monitor()
-    
-    connector = GitHubConnector()
-    connected = await connector.connect()
-    
-    if connected:
-        devtools.add_github(connector)
-        monitor.connect_service("github", connector)
-        return JSONResponse({
-            "success": True,
-            "user": connector.current_user.login if connector.current_user else None,
-            "providers": devtools.providers,
-        })
-    else:
-        return JSONResponse({
-            "success": False,
-            "error": "Failed to connect to GitHub. Set GITHUB_TOKEN or install gh CLI.",
-            "providers": devtools.providers,
-        })
-
-
-@app.post("/intelligence/devtools/connect/jira")
-async def connect_jira():
-    """Connect Jira to DevTools."""
-    from connectors.jira import JiraConnector
-    
-    devtools = get_devtools()
-    monitor = get_proactive_monitor()
-    
-    connector = JiraConnector()
-    connected = await connector.connect()
-    
-    if connected:
-        devtools.add_jira(connector)
-        monitor.connect_service("jira", connector)
-        return JSONResponse({
-            "success": True,
-            "user": connector.current_user.display_name if connector.current_user else None,
-            "providers": devtools.providers,
-        })
-    else:
-        return JSONResponse({
-            "success": False,
-            "error": "Failed to connect to Jira. Set JIRA_URL, JIRA_EMAIL, and JIRA_API_TOKEN.",
-            "providers": devtools.providers,
-        })
-
-
-@app.post("/intelligence/devtools/connect/slack")
-async def connect_slack():
-    """Connect Slack to DevTools."""
-    from connectors.slack import SlackConnector
-    
-    monitor = get_proactive_monitor()
-    
-    connector = SlackConnector()
-    connected = await connector.connect()
-    
-    if connected:
-        monitor.connect_service("slack", connector)
-        return JSONResponse({
-            "success": True,
-            "user": connector.current_user.name if connector.current_user else None,
-            "team": connector.team.get("name") if connector.team else None,
-        })
-    else:
-        return JSONResponse({
-            "success": False,
-            "error": "Failed to connect to Slack. Set SLACK_BOT_TOKEN environment variable.",
-        })
-
-
-@app.post("/intelligence/monitor/start")
-async def start_monitoring():
-    """Start the proactive monitoring loop."""
-    monitor = get_proactive_monitor()
-    await monitor.start()
-    return JSONResponse({
-        "running": monitor._state.value == "running",
-        "stats": monitor.get_stats(),
-    })
-
-
-@app.post("/intelligence/monitor/stop")
-async def stop_monitoring():
-    """Stop the proactive monitoring loop."""
-    monitor = get_proactive_monitor()
-    await monitor.stop()
-    return JSONResponse({
-        "running": monitor._state.value == "running",
-        "stats": monitor.get_stats(),
-    })
-
-
-@app.get("/intelligence/monitor/status")
-async def monitor_status():
-    """Get monitoring status."""
-    monitor = get_proactive_monitor()
-    return JSONResponse({
-        "running": monitor._state.value == "running",
-        "paused": monitor._state.value == "paused",
-        "stats": monitor.get_stats(),
-        "connected_services": list(monitor._service_adapters.keys()),
-    })
-
-
-@app.get("/intelligence/stats")
-async def intelligence_stats():
-    """Get comprehensive intelligence layer statistics."""
-    hub = get_intelligence_hub()
-    return JSONResponse(hub.get_stats())
-
-
-@app.get("/intelligence/memory")
-async def intelligence_memory(query: str = "", entity: str = ""):
-    """Query semantic memory."""
-    hub = get_intelligence_hub()
-    if entity:
-        facts = await hub.recall_about(entity)
-        return JSONResponse({
-            "entity": entity,
-            "facts": [f.to_dict() for f in facts] if facts else [],
-        })
-    elif query:
-        facts = await hub.recall(query, limit=10)
-        return JSONResponse({
-            "query": query,
-            "facts": [f.to_dict() for f, _score in facts] if facts else [],
-        })
-    else:
-        stats = hub._memory.get_stats()
-        return JSONResponse({"stats": stats})
-
-
-@app.get("/intelligence/patterns")
-async def intelligence_patterns():
-    """Get detected behavioral patterns."""
-    hub = get_intelligence_hub()
-    patterns = await hub.get_patterns()
-    return JSONResponse({
-        "patterns": [p.to_dict() for p in patterns] if patterns else [],
-        "count": len(patterns) if patterns else 0,
-    })
-
-
-
-@app.get("/privacy/audit")
-async def get_audit_log(limit: int = 50):
-    """
-    Get recent external data transmissions.
-    
-    Every time data is sent to an LLM, it's logged here.
-    Users can review exactly what was sent externally.
-    """
-    records = audit_logger.get_transmissions(limit=limit)
-    return JSONResponse({
-        "transmissions": [r.to_dict() for r in records],
-        "count": len(records),
-    })
-
-
-@app.get("/privacy/audit/stats")
-async def get_audit_stats():
-    """
-    Get transmission statistics for the last 24 hours.
-    
-    Shows: total calls, bytes sent, PII detected, destinations used.
-    """
-    stats = audit_logger.get_stats()
-    return JSONResponse(stats)
-
-
-@app.get("/privacy/audit/today")
-async def get_audit_today():
-    """
-    Get human-readable summary of today's transmissions.
-    """
-    summary = audit_logger.get_today_summary()
-    return JSONResponse({
-        "summary": summary,
-    })
-
-
-@app.post("/privacy/redact")
-async def test_redaction(text: str):
-    """
-    Test PII redaction on a piece of text.
-    
-    Use this to see what would be redacted before sending to LLM.
-    """
-    result = redaction_engine.redact(text)
-    return JSONResponse({
-        "original_length": len(text),
-        "redacted_text": result.redacted_text,
-        "redaction_count": result.redaction_count,
-        "had_pii": result.had_pii,
-        "redactions": result.redactions,
-    })
-
-
-@app.get("/privacy/trust")
-async def get_trust_levels():
-    """
-    Get all trust level settings.
-    
-    Shows which actions require approval vs auto-approve.
-    """
-    levels = trust_manager.get_all_levels()
-    return JSONResponse({
-        "trust_levels": levels,
-        "legend": {
-            "always_ask": "🔴 Always require explicit approval",
-            "ask_once": "🟡 Ask once, offer to remember pattern",
-            "auto_approve": "🟢 Execute without asking",
-        }
-    })
-
-
-@app.post("/privacy/trust/{action_type}")
-async def set_trust_level(action_type: str, level: str):
-    """
-    Set trust level for an action type.
-    
-    Levels: always_ask, ask_once, auto_approve
-    """
-    try:
-        trust_level = TrustLevel(level)
-        trust_manager.set_trust_level(action_type, trust_level)
-        return JSONResponse({
-            "success": True,
-            "action_type": action_type,
-            "level": level,
-        })
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/privacy/pending")
-async def get_pending_actions():
-    """
-    Get all actions awaiting approval.
-    
-    These are actions that need user confirmation before executing.
-    """
-    pending = approval_gateway.get_pending()
-    return JSONResponse({
-        "pending": [a.to_dict() for a in pending],
-        "count": len(pending),
-    })
-
-
-@app.post("/privacy/approve/{action_id}")
-async def approve_action(action_id: str):
-    """
-    Approve a pending action.
-    
-    The action will be executed immediately.
-    """
-    try:
-        result = await approval_gateway.approve(action_id)
-        return JSONResponse({
-            "success": True,
-            "action_id": action_id,
-            "status": result.status.value,
-            "result": result.result,
-        })
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@app.post("/privacy/reject/{action_id}")
-async def reject_action(action_id: str, reason: str = None):
-    """
-    Reject a pending action.
-    
-    The action will not be executed.
-    """
-    try:
-        result = await approval_gateway.reject(action_id, reason=reason)
-        return JSONResponse({
-            "success": True,
-            "action_id": action_id,
-            "status": result.status.value,
-        })
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-# =============================================================================
-# PHASE 7 SPRINT 4: CONTROL LAYER ENDPOINTS
-# =============================================================================
-
-class ApproveActionRequest(BaseModel):
-    action_id: str
-    modifications: Optional[Dict[str, Any]] = None
-    remember_pattern: bool = False
-    pattern_context: Optional[Dict[str, Any]] = None
-
-
-class UndoActionRequest(BaseModel):
-    action_id: str
-
-
-@app.get("/control/history")
-async def get_action_history(limit: int = 50, category: str = None, status: str = None):
-    """
-    Get action history with optional filtering.
-    
-    Shows all actions that have been recorded, including their status.
-    """
-    actions = action_history.get_recent(limit=limit)
-    
-    # Optional filtering
-    if category:
-        actions = [a for a in actions if a.category.value == category]
-    if status:
-        actions = [a for a in actions if a.status.value == status]
-    
-    return JSONResponse({
-        "actions": [a.to_dict() for a in actions],
-        "count": len(actions),
-    })
-
-
-@app.get("/control/history/{action_id}")
-async def get_action_detail(action_id: str):
-    """
-    Get details of a specific action.
-    """
-    record = action_history.get_by_id(action_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Action not found")
-    
-    return JSONResponse(record.to_dict())
-
-
-@app.post("/control/approve")
-async def approve_control_action(request: ApproveActionRequest):
-    """
-    Approve an action via the control layer.
-    
-    This creates a checkpoint for undo, executes the action, and logs it.
-    Supports trust level learning via remember_pattern flag.
-    """
-    action_id = request.action_id
-    
-    try:
-        # Get the action from approval gateway
-        result = await approval_gateway.approve(
-            action_id,
-            modifications=request.modifications,
-            remember_pattern=request.remember_pattern,
-            pattern_context=request.pattern_context,
-        )
-        
-        # Mark completed in action history
-        action_history.mark_completed(action_id, result=result.result)
-        
-        return JSONResponse({
-            "success": True,
-            "action_id": action_id,
-            "result": result.result,
-        })
-    except ValueError as e:
-        return JSONResponse({
-            "success": False,
-            "error": str(e),
-        }, status_code=400)
-    except Exception as e:
-        return JSONResponse({
-            "success": False,
-            "error": str(e),
-        }, status_code=500)
-
-
-@app.post("/control/reject")
-async def reject_control_action(request: ApproveActionRequest):
-    """
-    Reject an action via the control layer.
-    """
-    action_id = request.action_id
-    
-    try:
-        result = await approval_gateway.reject(action_id)
-        return JSONResponse({
-            "success": True,
-            "action_id": action_id,
-        })
-    except ValueError as e:
-        return JSONResponse({
-            "success": False,
-            "error": str(e),
-        }, status_code=400)
-
-
-@app.post("/control/undo")
-async def undo_action(request: UndoActionRequest):
-    """
-    Undo a completed action.
-    
-    Only works for actions that have checkpoints and are within the undo window.
-    """
-    action_id = request.action_id
-    
-    try:
-        # Get action record
-        record = action_history.get_by_id(action_id)
-        if not record:
-            return JSONResponse({
-                "success": False,
-                "error": "Action not found",
-            }, status_code=404)
-        
-        if not record.is_undoable:
-            return JSONResponse({
-                "success": False,
-                "error": "Action is not undoable",
-            }, status_code=400)
-        
-        # Try to undo via undo manager
-        checkpoint_id = record.payload.get("checkpoint_id")
-        if checkpoint_id:
-            result = await undo_manager.undo(checkpoint_id)
-            if result.status.value == "completed":
-                action_history.mark_undone(action_id)
-                return JSONResponse({
-                    "success": True,
-                    "action_id": action_id,
-                    "message": "Action undone successfully",
-                })
-            else:
-                return JSONResponse({
-                    "success": False,
-                    "error": f"Undo failed: {result.error}",
-                }, status_code=500)
-        else:
-            # No checkpoint, just mark as undone
-            action_history.mark_undone(action_id)
-            return JSONResponse({
-                "success": True,
-                "action_id": action_id,
-                "message": "Action marked as undone (no checkpoint to restore)",
-            })
-            
-    except Exception as e:
-        return JSONResponse({
-            "success": False,
-            "error": str(e),
-        }, status_code=500)
-
-
-@app.get("/control/checkpoints")
-async def get_checkpoints(limit: int = 20):
-    """
-    Get recent undo checkpoints.
-    """
-    checkpoints = undo_manager.get_checkpoints(limit=limit)
-    return JSONResponse({
-        "checkpoints": [c.to_dict() for c in checkpoints],
-        "count": len(checkpoints),
-    })
-
-
-@app.get("/health")
-async def health():
-    """Health check."""
-    try:
-        credential_store = get_credential_store()
-        providers = credential_store.list_providers()
-    except Exception:
-        providers = []
-    
-    # Check connected services 
-    try:
-        devtools = get_devtools()
-        devtools_providers = devtools.providers if hasattr(devtools, 'providers') else {}
-    except Exception:
-        devtools_providers = {}
-    
-    try:
-        monitor = get_proactive_monitor()
-        monitor_services = list(monitor._services.keys()) if hasattr(monitor, '_services') else []
-    except Exception:
-        monitor_services = []
-    
-    service_status = {
-        "google": "google" in providers,
-        "microsoft": "microsoft" in providers,
-        "github": "github" in devtools_providers,
-        "jira": "jira" in devtools_providers,
-        "slack": "slack" in monitor_services,
-    }
-    
-    return {
-        "status": "ok",
-        "llm_configured": create_client_from_env() is not None,
-        "connected_services": len(providers),
-        "services": service_status,
-    }
-
 
 @app.get("/api/setup-status")
 async def setup_status():
@@ -3582,6 +560,7 @@ async def set_api_key(req: ApiKeyRequest):
 # ============================================================================
 # CONNECTOR REGISTRY ENDPOINTS
 # ============================================================================
+
 
 @app.get("/connectors")
 async def list_connectors():
@@ -3739,209 +718,11 @@ class OAuthInitRequest(BaseModel):
     redirect_uri: str | None = None
 
 
-@app.get("/oauth/providers")
-async def list_oauth_providers():
-    """List all supported OAuth providers."""
-    oauth = get_oauth_flow()
-    
-    providers = {}
-    for name in oauth.get_supported_providers():
-        info = oauth.get_provider_info(name)
-        providers[name] = info
-    
-    return JSONResponse({
-        "providers": providers,
-        "count": len(providers),
-    })
-
-
-@app.get("/oauth/status")
-async def get_oauth_status():
-    """Get connection status for all OAuth providers."""
-    oauth = get_oauth_flow()
-    status = oauth.get_connection_status()
-    
-    connected = [p for p, s in status.items() if s["connected"]]
-    
-    return JSONResponse({
-        "status": status,
-        "connected": connected,
-        "total_connected": len(connected),
-    })
-
-
-@app.post("/oauth/{provider}/init")
-async def init_provider_oauth(provider: str, req: OAuthInitRequest):
-    """
-    Start OAuth flow for a provider.
-    
-    Returns an authorization URL to redirect the user to.
-    The user will grant permissions, then be redirected back to /oauth/callback.
-    
-    Example:
-        POST /oauth/google/init
-        {
-            "client_id": "your-client-id.apps.googleusercontent.com",
-            "client_secret": "your-client-secret",
-            "services": ["gmail", "calendar", "drive"]
-        }
-    
-    Response:
-        {
-            "auth_url": "https://accounts.google.com/o/oauth2/....",
-            "provider": "google",
-            "services": ["gmail", "calendar", "drive"]
-        }
-    """
-    oauth = get_oauth_flow()
-    
-    # Validate provider
-    if provider not in oauth.get_supported_providers():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown provider: {provider}. Supported: {oauth.get_supported_providers()}"
-        )
-    
-    try:
-        auth_url = oauth.get_auth_url(
-            provider=provider,
-            client_id=req.client_id,
-            client_secret=req.client_secret,
-            services=req.services,
-            scopes=req.scopes,
-            redirect_uri=req.redirect_uri,
-        )
-        
-        return JSONResponse({
-            "auth_url": auth_url,
-            "provider": provider,
-            "services": req.services or [],
-            "message": f"Redirect user to auth_url to authorize {provider}",
-        })
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/oauth/callback")
-async def oauth_callback_get(code: str, state: str):
-    """
-    OAuth callback endpoint (GET).
-    
-    This is where OAuth providers redirect after user authorization.
-    Returns a success HTML page.
-    """
-    oauth = get_oauth_flow()
-    
-    try:
-        result = await oauth.handle_callback(code, state)
-        
-        # Return success page
-        html_path = Path(__file__).parent / "ui" / "oauth_success.html"
-        if html_path.exists():
-            return FileResponse(html_path)
-        
-        # Fallback HTML if file doesn't exist
-        return JSONResponse({
-            "success": True,
-            "provider": result["provider"],
-            "services": result["services"],
-            "message": "Successfully connected! You can close this window.",
-        })
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"OAuth callback error: {e}")
-        raise HTTPException(status_code=500, detail=f"OAuth error: {str(e)}")
-
-
-@app.post("/oauth/callback")
-async def oauth_callback_post(code: str, state: str):
-    """
-    OAuth callback endpoint (POST).
-    
-    Alternative for programmatic OAuth completion.
-    """
-    oauth = get_oauth_flow()
-    
-    try:
-        result = await oauth.handle_callback(code, state)
-        
-        return JSONResponse({
-            "success": True,
-            "provider": result["provider"],
-            "services": result["services"],
-            "scopes": result["scopes"],
-        })
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/oauth/{provider}/status")
-async def get_provider_oauth_status(provider: str):
-    """Get OAuth connection status for a specific provider."""
-    oauth = get_oauth_flow()
-    
-    if provider not in oauth.get_supported_providers():
-        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
-    
-    status = oauth.get_connection_status()
-    provider_status = status.get(provider, {"connected": False})
-    
-    return JSONResponse({
-        "provider": provider,
-        **provider_status,
-    })
-
-
-@app.post("/oauth/{provider}/refresh")
-async def refresh_provider_token(provider: str):
-    """Refresh OAuth token for a provider."""
-    oauth = get_oauth_flow()
-    
-    if provider not in oauth.get_supported_providers():
-        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
-    
-    try:
-        success = await oauth.refresh_token(provider)
-        
-        return JSONResponse({
-            "success": success,
-            "provider": provider,
-            "message": "Token refreshed" if success else "Token refresh failed",
-        })
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.delete("/oauth/{provider}")
-async def disconnect_provider(provider: str):
-    """Disconnect and remove credentials for a provider."""
-    oauth = get_oauth_flow()
-    
-    if provider not in oauth.get_supported_providers():
-        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
-    
-    success = oauth.disconnect(provider)
-    
-    return JSONResponse({
-        "success": success,
-        "provider": provider,
-        "message": f"Disconnected {provider}" if success else f"{provider} was not connected",
-    })
-
-
-# ============================================================================
-# PRIMITIVE RESOLVER ENDPOINTS (Phase 3 - Multi-Provider Support)
-# ============================================================================
 
 @app.get("/primitives")
 async def list_primitives():
     """List all primitives and their available providers."""
-    resolver = get_resolver()
+    resolver = state.get_resolver()
     registry = get_registry()
     
     primitives = {}
@@ -3965,7 +746,7 @@ async def list_primitives():
 @app.get("/primitives/{primitive}/providers")
 async def get_primitive_providers(primitive: str):
     """Get available providers for a specific primitive."""
-    resolver = get_resolver()
+    resolver = state.get_resolver()
     
     primitive = primitive.upper()
     needs_selection, providers = resolver.needs_provider_selection(primitive)
@@ -4005,7 +786,7 @@ async def execute_primitive(primitive: str, req: PrimitiveExecuteRequest):
             "mode": "all"  // Search all connected email providers
         }
     """
-    resolver = get_resolver()
+    resolver = state.get_resolver()
     
     primitive = primitive.upper()
     
@@ -4045,7 +826,7 @@ async def preview_primitive_execution(
     
     Shows which providers will be used before actually executing.
     """
-    resolver = get_resolver()
+    resolver = state.get_resolver()
     
     primitive = primitive.upper()
     exec_mode = None
@@ -4087,55 +868,13 @@ async def set_preferred_provider(primitive: str, req: SetPreferredProviderReques
 
 
 # Run with uvicorn
+
+
+# Serve static files (CSS, JS, images)
+ui_dir = Path(__file__).parent / "ui"
+if ui_dir.exists():
+    app.mount("/ui", StaticFiles(directory=str(ui_dir)), name="ui")
+
 if __name__ == "__main__":
     import uvicorn
-    
-    # Load .env file (API keys, config) — checks both apex/ and repo root
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()  # apex/.env
-        load_dotenv(Path(__file__).parent.parent / ".env")  # repo root .env
-    except ImportError:
-        pass
-    
-    print("""
-╔═══════════════════════════════════════════════════════════════╗
-║                       TELIC AI OS                             ║
-║            The AI Operating System with Purpose               ║
-╚═══════════════════════════════════════════════════════════════╝
-    """)
-    
-    # Check for API key
-    if not os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
-        print("⚠️  No LLM API key found!")
-        print("   Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.")
-        print()
-    else:
-        print("✅ LLM API key configured")
-    
-    # Check for OAuth credentials
-    providers_configured = []
-    providers_missing = []
-    
-    oauth_providers = [
-        ("DISCORD", "DISCORD_CLIENT_ID"),
-        ("MICROSOFT", "MICROSOFT_CLIENT_ID"),
-        ("SLACK", "SLACK_CLIENT_ID"),
-        ("GITHUB", "GITHUB_CLIENT_ID"),
-        ("SPOTIFY", "SPOTIFY_CLIENT_ID"),
-    ]
-    
-    for name, env_var in oauth_providers:
-        if os.environ.get(env_var):
-            providers_configured.append(name.lower())
-        else:
-            providers_missing.append(name.lower())
-    
-    if providers_configured:
-        print(f"✅ OAuth configured: {', '.join(providers_configured)}")
-    if providers_missing:
-        print(f"⚠️  OAuth not configured: {', '.join(providers_missing)} (add to .env)")
-    
-    print("\n🌐 Opening http://localhost:8000 ...\n")
-    
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)

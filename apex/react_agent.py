@@ -8,11 +8,37 @@ The AI calls tools one at a time, sees results, and decides next steps.
 import json
 import asyncio
 import logging
+import random
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Callable, Dict, List, Optional, Awaitable
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+async def _retry_with_backoff(fn, max_retries=3, base_delay=1.0):
+    """Call fn() with exponential backoff on transient failures.
+    
+    Retries on rate limits (429), overload (529), and server errors (5xx).
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return await fn()
+        except Exception as e:
+            err_str = str(e).lower()
+            status = getattr(e, 'status_code', None) or getattr(e, 'status', None)
+            is_retryable = (
+                status in (429, 529, 500, 502, 503)
+                or 'rate' in err_str
+                or 'overloaded' in err_str
+                or 'capacity' in err_str
+                or 'timeout' in err_str
+            )
+            if not is_retryable or attempt == max_retries:
+                raise
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+            logger.warning(f"LLM call failed (attempt {attempt+1}/{max_retries+1}), retrying in {delay:.1f}s: {e}")
+            await asyncio.sleep(delay)
 
 
 def serialize(obj: Any) -> Any:
@@ -96,6 +122,7 @@ class ReActAgent:
         system_prompt: Optional[str] = None,
         on_step: Optional[Callable[[Step], Awaitable[None]]] = None,
         on_thinking: Optional[Callable[[], Awaitable[None]]] = None,
+        on_token: Optional[Callable[[str], None]] = None,
     ):
         self.llm_client = llm_client
         self.tools = {t.name: t for t in tools}
@@ -103,6 +130,7 @@ class ReActAgent:
         self.system_prompt = system_prompt or self._default_system_prompt()
         self.on_step = on_step  # Callback when step starts/completes
         self.on_thinking = on_thinking  # Callback before each LLM call
+        self.on_token = on_token  # Sync callback for streaming text tokens
         self.state = AgentState()
     
     def _default_system_prompt(self) -> str:
@@ -211,6 +239,10 @@ When you have completed the task, respond with a summary of what was done."""
         max_iterations = 40  # Safety limit
         
         for _ in range(max_iterations):
+            # Trim context window if too large to prevent exceeding token limits.
+            # ~4 chars/token average; 180k tokens ≈ 720k chars. Trim at 600k to leave room.
+            self._trim_context_window(max_chars=600_000)
+            
             # Notify that we're about to call the LLM
             if self.on_thinking:
                 await self.on_thinking()
@@ -254,12 +286,69 @@ When you have completed the task, respond with a summary of what was done."""
             # Collect all tool results to add as ONE user message
             tool_results = []
             
-            # Execute tool calls
-            for tc in tool_calls:
+            # Execute tool calls — parallel for read-only, sequential for side-effects
+            readonly_calls = [(tc, self.tools.get(tc.name)) for tc in tool_calls
+                              if self.tools.get(tc.name) and not self.tools[tc.name].side_effect]
+            sideeffect_calls = [(tc, self.tools.get(tc.name)) for tc in tool_calls
+                                if not self.tools.get(tc.name) or self.tools[tc.name].side_effect]
+            
+            # Run read-only tools in parallel
+            async def _run_tool(tc, tool):
                 step = Step(tool_call=tc)
                 self.state.steps.append(step)
-                
-                tool = self.tools.get(tc.name)
+                if not tool:
+                    step.status = StepStatus.FAILED
+                    step.error = f"Unknown tool: {tc.name}"
+                    if self.on_step:
+                        await self.on_step(step)
+                    return {
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"Error: Unknown tool '{tc.name}'",
+                        "is_error": True
+                    }
+                if self.on_step:
+                    await self.on_step(step)
+                try:
+                    result = await self._execute_tool(tc)
+                    step.result = serialize(result)
+                    step.status = StepStatus.COMPLETED
+                    result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
+                    MAX_RESULT_LEN = 2000
+                    if len(result_str) > MAX_RESULT_LEN:
+                        result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
+                    if self.on_step:
+                        await self.on_step(step)
+                    return {
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result_str
+                    }
+                except Exception as e:
+                    step.status = StepStatus.FAILED
+                    step.error = str(e)
+                    logger.error(f"Tool {tc.name} failed: {e}", exc_info=True)
+                    if self.on_step:
+                        await self.on_step(step)
+                    return {
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"Error: {str(e)}",
+                        "is_error": True
+                    }
+            
+            # Parallel execution of read-only tools
+            if readonly_calls:
+                parallel_results = await asyncio.gather(
+                    *[_run_tool(tc, tool) for tc, tool in readonly_calls]
+                )
+                tool_results.extend(parallel_results)
+            
+            # Sequential execution of side-effect tools (require approval)
+            for tc, tool in sideeffect_calls:
+                step = Step(tool_call=tc)
+                self.state.steps.append(step)
+
                 if not tool:
                     step.status = StepStatus.FAILED
                     step.error = f"Unknown tool: {tc.name}"
@@ -272,78 +361,22 @@ When you have completed the task, respond with a summary of what was done."""
                     if self.on_step:
                         await self.on_step(step)
                     continue
-                
-                # Check if approval needed - for now, add placeholder and pause
-                if tool.side_effect:
-                    step.status = StepStatus.PENDING_APPROVAL
-                    step.requires_approval = True
-                    self.state.pending_approval = step
-                    # Add results collected so far, mark remaining as pending
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": "[Awaiting user approval]"
-                    })
-                    # Store remaining tools to handle after approval
-                    if self.on_step:
-                        await self.on_step(step)
-                    # Add all collected results as ONE message
-                    self.state.messages.append({"role": "user", "content": tool_results})
-                    return self.state  # Pause for approval
-                
-                # Execute non-side-effect tool immediately
+
+                # Side-effect tool — pause for user approval
                 if self.on_step:
                     await self.on_step(step)
-                
-                try:
-                    result = await self._execute_tool(tc)
-                    step.result = serialize(result)  # Convert to plain data
-                    step.status = StepStatus.COMPLETED
-                    
-                    # Truncate long results to keep context lean
-                    result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
-                    MAX_RESULT_LEN = 2000
-                    if len(result_str) > MAX_RESULT_LEN:
-                        result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
-                    
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": result_str
-                    })
-                except Exception as e:
-                    # Retry once on transient failures (network, timeout, rate limit)
-                    retried = False
-                    err_str = str(e).lower()
-                    if any(kw in err_str for kw in ["timeout", "rate limit", "429", "503", "connection"]):
-                        try:
-                            result = await self._execute_tool(tc)
-                            step.result = serialize(result)
-                            step.status = StepStatus.COMPLETED
-                            result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
-                            if len(result_str) > 2000:
-                                result_str = result_str[:2000] + f"\n... [truncated]"
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tc.id,
-                                "content": result_str
-                            })
-                            retried = True
-                        except Exception:
-                            pass
-                    
-                    if not retried:
-                        step.status = StepStatus.FAILED
-                        step.error = str(e)
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": f"Error: {str(e)}",
-                            "is_error": True
-                        })
-                
+                step.status = StepStatus.PENDING_APPROVAL
+                step.requires_approval = True
+                self.state.pending_approval = step
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc.id,
+                    "content": "[Awaiting user approval]"
+                })
                 if self.on_step:
                     await self.on_step(step)
+                self.state.messages.append({"role": "user", "content": tool_results})
+                return self.state  # Pause for approval
             
             # Add ALL tool results as ONE user message
             if tool_results:
@@ -365,21 +398,61 @@ When you have completed the task, respond with a summary of what was done."""
             return await self._call_openai()
     
     async def _call_anthropic(self) -> Any:
-        """Call Anthropic's Claude API."""
+        """Call Anthropic's Claude API with prompt caching."""
         import time as _time
         _t0 = _time.perf_counter()
         # Calculate context size for logging
         _ctx_size = sum(len(json.dumps(m)) for m in self.state.messages)
-        response = await asyncio.to_thread(
-            self.llm_client.messages.create,
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            system=self.system_prompt,
-            tools=self.tool_schemas,
-            messages=self.state.messages
-        )
+
+        # Build system prompt with cache_control so it's cached across turns.
+        # Tools are the biggest token cost — cache them too.
+        system_blocks = [
+            {
+                "type": "text",
+                "text": self.system_prompt,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+
+        # Mark the last tool with cache_control so the entire tool list is cached
+        cached_tools = list(self.tool_schemas)  # shallow copy
+        if cached_tools:
+            cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
+
+        if self.on_token:
+            # Streaming mode — fire on_token for each text chunk so the UI
+            # can render the response progressively. on_token is synchronous
+            # and called from the background thread.
+            on_token = self.on_token
+            def _stream_sync():
+                with self.llm_client.messages.stream(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=4096,
+                    system=system_blocks,
+                    tools=cached_tools,
+                    messages=self.state.messages,
+                ) as stream:
+                    for text in stream.text_stream:
+                        on_token(text)
+                    return stream.get_final_message()
+            response = await asyncio.to_thread(_stream_sync)
+        else:
+            response = await _retry_with_backoff(lambda: asyncio.to_thread(
+                self.llm_client.messages.create,
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                system=system_blocks,
+                tools=cached_tools,
+                messages=self.state.messages
+            ))
         _elapsed = _time.perf_counter() - _t0
-        logger.info(f"LLM call: {_elapsed:.1f}s | context: {_ctx_size:,} chars | usage: {response.usage}")
+        _cache_info = ""
+        if hasattr(response, 'usage'):
+            _cr = getattr(response.usage, 'cache_creation_input_tokens', 0) or 0
+            _ch = getattr(response.usage, 'cache_read_input_tokens', 0) or 0
+            if _cr or _ch:
+                _cache_info = f" | cache: created={_cr} read={_ch}"
+        logger.info(f"LLM call: {_elapsed:.1f}s | context: {_ctx_size:,} chars | usage: {response.usage}{_cache_info}")
         return response
     
     async def _call_openai(self) -> Any:
@@ -399,12 +472,12 @@ When you have completed the task, respond with a summary of what was done."""
         messages = [{"role": "system", "content": self.system_prompt}]
         messages.extend(self._convert_messages_to_openai())
         
-        response = await asyncio.to_thread(
+        response = await _retry_with_backoff(lambda: asyncio.to_thread(
             self.llm_client.chat.completions.create,
             model="gpt-4o",
             messages=messages,
             tools=openai_tools if openai_tools else None
-        )
+        ))
         return self._wrap_openai_response(response)
     
     def _convert_messages_to_openai(self) -> List[Dict]:
@@ -468,12 +541,47 @@ When you have completed the task, respond with a summary of what was done."""
         return "\n".join(texts)
     
     async def _execute_tool(self, tool_call: ToolCall) -> Any:
-        """Execute a tool call."""
+        """Execute a tool call with a timeout guard."""
         tool = self.tools.get(tool_call.name)
         if not tool:
             raise ValueError(f"Unknown tool: {tool_call.name}")
         
-        return await tool.handler(tool_call.params)
+        try:
+            return await asyncio.wait_for(tool.handler(tool_call.params), timeout=120.0)
+        except asyncio.TimeoutError:
+            raise TimeoutError(f"Tool '{tool_call.name}' timed out after 120s")
+
+    def _trim_context_window(self, max_chars: int = 600_000) -> None:
+        """Trim conversation history when approaching context limit.
+
+        Keeps the first user message (original request) and the most recent
+        messages, dropping the middle.  A summary marker is inserted so the
+        AI knows context was trimmed.
+        """
+        msgs = self.state.messages
+        total = sum(len(json.dumps(m)) for m in msgs)
+        if total <= max_chars or len(msgs) <= 4:
+            return
+
+        # Keep first message (original request) + last N messages
+        # Remove from the middle until under budget
+        keep_first = 1
+        keep_last = len(msgs) // 2  # Start with half
+        while keep_last > 2:
+            tail = msgs[-keep_last:]
+            tail_size = sum(len(json.dumps(m)) for m in tail)
+            first_size = len(json.dumps(msgs[0]))
+            if first_size + tail_size + 200 <= max_chars:
+                break
+            keep_last -= 1
+
+        trimmed_count = len(msgs) - keep_first - keep_last
+        summary_msg = {
+            "role": "user",
+            "content": f"[Context trimmed: {trimmed_count} earlier messages removed to stay within limits. Continue with the current task.]"
+        }
+        self.state.messages = msgs[:keep_first] + [summary_msg] + msgs[-keep_last:]
+        logger.info(f"Context trimmed: {total:,} chars -> {sum(len(json.dumps(m)) for m in self.state.messages):,} chars ({trimmed_count} messages dropped)")
 
 
 def primitives_to_tools(primitives: Dict[str, Any]) -> List[Tool]:

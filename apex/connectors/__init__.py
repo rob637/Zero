@@ -102,6 +102,13 @@ from .youtube import YouTubeConnector, YouTubeVideo
 from .web_search import WebSearchConnector, SearchResult
 
 # Core infrastructure
+from .base import (
+    ConnectorError,
+    AuthError,
+    RateLimitError,
+    ConnectorTimeoutError,
+    NotConnectedError,
+)
 from .credentials import (
     CredentialStore,
     CredentialBackend,
@@ -275,6 +282,12 @@ __all__ = [
     'StripeConnector',
     # Desktop Notifications
     'DesktopNotifyConnector',
+    # Errors
+    'ConnectorError',
+    'AuthError',
+    'RateLimitError',
+    'ConnectorTimeoutError',
+    'NotConnectedError',
     # OAuth Flow
     'OAuthFlow',
     'OAuthProviderConfig',

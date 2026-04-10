@@ -29,9 +29,52 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Optional, Set, Type
+import asyncio
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Error Hierarchy
+# =============================================================================
+
+class ConnectorError(Exception):
+    """Base exception for all connector errors."""
+
+    def __init__(self, message: str, connector: str = "", provider: str = ""):
+        self.connector = connector
+        self.provider = provider
+        super().__init__(message)
+
+
+class AuthError(ConnectorError):
+    """Authentication or authorization failure (401/403, expired token)."""
+    pass
+
+
+class RateLimitError(ConnectorError):
+    """Rate limit exceeded (429). Includes retry_after hint when available."""
+
+    def __init__(
+        self,
+        message: str = "Rate limit exceeded",
+        retry_after: Optional[float] = None,
+        **kwargs,
+    ):
+        self.retry_after = retry_after
+        super().__init__(message, **kwargs)
+
+
+class ConnectorTimeoutError(ConnectorError):
+    """Request timed out."""
+    pass
+
+
+class NotConnectedError(ConnectorError):
+    """Operation attempted on a connector that is not connected."""
+    pass
 
 
 # =============================================================================
@@ -398,7 +441,79 @@ class Connector(ABC):
         self._last_error = error
         self._error_count += 1
         logger.error(f"[{self.name}] {error}")
-    
+
+    async def _retry_with_backoff(self, coro_factory, max_retries: int = 3):
+        """Execute an async callable with exponential backoff on transient errors.
+
+        Args:
+            coro_factory: A zero-arg callable that returns a new coroutine each
+                          call (e.g., ``lambda: self._client.get(url)``).
+            max_retries: Maximum number of retry attempts.
+
+        Returns:
+            The result of the successful coroutine.
+
+        Raises:
+            AuthError: Immediately (not retried).
+            RateLimitError: After exhausting retries or if no retry_after.
+            ConnectorTimeoutError: After exhausting retries.
+            ConnectorError: After exhausting retries for other transient errors.
+        """
+        last_exc: Optional[Exception] = None
+        for attempt in range(max_retries + 1):
+            try:
+                start = time.monotonic()
+                result = await coro_factory()
+                latency = (time.monotonic() - start) * 1000
+                self.record_operation(latency, success=True)
+                return result
+            except AuthError:
+                raise  # Never retry auth failures
+            except RateLimitError as e:
+                last_exc = e
+                delay = e.retry_after if e.retry_after else 2 ** attempt
+                if attempt < max_retries:
+                    logger.warning(
+                        f"[{self.name}] Rate limited, retry {attempt + 1}/{max_retries} "
+                        f"in {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                self.record_error(str(e))
+                raise
+            except (ConnectorTimeoutError, asyncio.TimeoutError) as e:
+                last_exc = e
+                delay = 2 ** attempt
+                if attempt < max_retries:
+                    logger.warning(
+                        f"[{self.name}] Timeout, retry {attempt + 1}/{max_retries} "
+                        f"in {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                self.record_error(str(e))
+                raise ConnectorTimeoutError(
+                    str(e), connector=self.name
+                ) from e
+            except ConnectorError:
+                raise  # Don't retry unknown connector errors
+            except Exception as e:
+                last_exc = e
+                delay = 2 ** attempt
+                if attempt < max_retries:
+                    logger.warning(
+                        f"[{self.name}] Transient error, retry {attempt + 1}/{max_retries} "
+                        f"in {delay:.1f}s: {e}"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                self.record_error(str(e))
+                raise ConnectorError(
+                    str(e), connector=self.name
+                ) from e
+        # Should not reach here, but just in case
+        raise ConnectorError(str(last_exc), connector=self.name)  # pragma: no cover
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} name={self.name} connected={self._connected}>"
 
@@ -538,10 +653,67 @@ class RateLimitMixin:
 
 
 # =============================================================================
+# Standalone Retry Utility
+# =============================================================================
+
+async def retry_with_backoff(
+    coro_factory,
+    max_retries: int = 3,
+    connector_name: str = "",
+):
+    """Execute an async callable with exponential backoff.
+
+    Standalone version for connectors that don't inherit from Connector.
+
+    Args:
+        coro_factory: Zero-arg callable returning a new coroutine each call.
+        max_retries: Maximum retry attempts.
+        connector_name: Name for log messages.
+
+    Raises:
+        AuthError: Immediately (never retried).
+        The last exception after retries are exhausted.
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(max_retries + 1):
+        try:
+            return await coro_factory()
+        except AuthError:
+            raise
+        except RateLimitError as e:
+            last_exc = e
+            delay = e.retry_after if e.retry_after else 2 ** attempt
+        except (ConnectorTimeoutError, asyncio.TimeoutError) as e:
+            last_exc = e
+            delay = 2 ** attempt
+        except ConnectorError:
+            raise
+        except Exception as e:
+            last_exc = e
+            delay = 2 ** attempt
+
+        if attempt < max_retries:
+            logger.warning(
+                f"[{connector_name}] Retry {attempt + 1}/{max_retries} in {delay:.1f}s: {last_exc}"
+            )
+            await asyncio.sleep(delay)
+            continue
+        raise last_exc  # type: ignore[misc]
+
+
+# =============================================================================
 # Type Exports
 # =============================================================================
 
 __all__ = [
+    # Errors
+    "ConnectorError",
+    "AuthError",
+    "RateLimitError",
+    "ConnectorTimeoutError",
+    "NotConnectedError",
+    # Retry utility
+    "retry_with_backoff",
     # Enums
     "ConnectorHealth",
     "ProviderType", 

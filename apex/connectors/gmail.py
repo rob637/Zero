@@ -33,6 +33,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .google_auth import GoogleAuth, get_google_auth
+from .base import (
+    AuthError, ConnectorError, NotConnectedError, RateLimitError,
+    retry_with_backoff,
+)
 
 try:
     from googleapiclient.discovery import build
@@ -130,7 +134,23 @@ class GmailConnector:
     @property
     def user_email(self) -> Optional[str]:
         return self._user_email
-    
+
+    async def health_check(self) -> str:
+        """Check Gmail API connectivity. Returns 'healthy', 'auth_required', or 'unhealthy'."""
+        if not self._service:
+            return "disconnected"
+        try:
+            profile = await asyncio.to_thread(
+                self._service.users().getProfile(userId='me').execute
+            )
+            return "healthy" if profile.get("emailAddress") else "unhealthy"
+        except HttpError as e:
+            if e.resp.status in (401, 403):
+                return "auth_required"
+            return "unhealthy"
+        except Exception:
+            return "unhealthy"
+
     def _parse_message(self, msg: Dict, include_body: bool = False) -> Email:
         """Parse Gmail API message into Email object."""
         headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
@@ -230,9 +250,9 @@ class GmailConnector:
             List of Email objects
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
-        try:
+        async def _do_list():
             # List message IDs
             request = self._service.users().messages().list(
                 userId='me',
@@ -259,9 +279,18 @@ class GmailConnector:
                 emails.append(self._parse_message(msg, include_body=include_body))
             
             return emails
-            
+
+        try:
+            return await retry_with_backoff(_do_list, connector_name="gmail")
         except HttpError as e:
-            raise RuntimeError(f"Gmail API error: {e}")
+            if e.resp.status in (401, 403):
+                raise AuthError(f"Gmail auth error: {e}", connector="gmail")
+            if e.resp.status == 429:
+                raise RateLimitError(
+                    f"Gmail rate limited: {e}", connector="gmail",
+                    retry_after=float(e.resp.get("retry-after", 60)),
+                )
+            raise ConnectorError(f"Gmail API error: {e}", connector="gmail")
     
     async def get_message(self, message_id: str) -> Email:
         """
@@ -274,7 +303,7 @@ class GmailConnector:
             Email object with full body
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().get(
             userId='me',
@@ -322,7 +351,7 @@ class GmailConnector:
             Dict with message ID and thread ID
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         # Create message
         if attachments:
@@ -357,21 +386,25 @@ class GmailConnector:
         # Encode
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
         
-        # Send
-        try:
+        # Send with retry
+        async def _do_send():
             request = self._service.users().messages().send(
                 userId='me',
                 body={'raw': raw}
             )
-            result = await asyncio.to_thread(request.execute)
-            
+            return await asyncio.to_thread(request.execute)
+
+        try:
+            result = await retry_with_backoff(_do_send, connector_name="gmail")
             return {
                 'id': result['id'],
                 'thread_id': result.get('threadId'),
                 'success': True,
             }
         except HttpError as e:
-            raise RuntimeError(f"Failed to send email: {e}")
+            if e.resp.status in (401, 403):
+                raise AuthError(f"Gmail auth error: {e}", connector="gmail")
+            raise ConnectorError(f"Failed to send email: {e}", connector="gmail")
     
     async def create_draft(
         self,
@@ -387,7 +420,7 @@ class GmailConnector:
             Dict with draft ID
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         message = MIMEText(body, 'html' if html else 'plain')
         message['to'] = to
@@ -415,7 +448,7 @@ class GmailConnector:
     async def get_labels(self) -> List[Dict]:
         """Get all labels (folders)."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().labels().list(userId='me')
         result = await asyncio.to_thread(request.execute)
@@ -428,7 +461,7 @@ class GmailConnector:
     async def mark_read(self, message_id: str):
         """Mark a message as read."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().modify(
             userId='me',
@@ -440,7 +473,7 @@ class GmailConnector:
     async def mark_unread(self, message_id: str):
         """Mark a message as unread."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().modify(
             userId='me',
@@ -452,7 +485,7 @@ class GmailConnector:
     async def delete_message(self, message_id: str):
         """Permanently delete a message (not recoverable)."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().delete(
             userId='me', id=message_id
@@ -462,7 +495,7 @@ class GmailConnector:
     async def trash_message(self, message_id: str):
         """Move a message to trash."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().trash(
             userId='me', id=message_id
@@ -472,7 +505,7 @@ class GmailConnector:
     async def untrash_message(self, message_id: str):
         """Remove a message from trash."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().untrash(
             userId='me', id=message_id
@@ -482,7 +515,7 @@ class GmailConnector:
     async def archive_message(self, message_id: str):
         """Archive a message (remove from INBOX)."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().modify(
             userId='me',
@@ -494,7 +527,7 @@ class GmailConnector:
     async def add_label(self, message_id: str, label_ids: List[str]):
         """Add labels to a message."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().modify(
             userId='me',
@@ -506,7 +539,7 @@ class GmailConnector:
     async def remove_label(self, message_id: str, label_ids: List[str]):
         """Remove labels from a message."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().messages().modify(
             userId='me',
@@ -523,7 +556,7 @@ class GmailConnector:
     ) -> Dict:
         """Reply to an existing message (maintains thread)."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         import base64
         from email.mime.text import MIMEText
@@ -565,7 +598,7 @@ class GmailConnector:
     ) -> Dict:
         """Forward a message to another recipient."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         import base64
         from email.mime.text import MIMEText
@@ -603,7 +636,7 @@ class GmailConnector:
     async def get_thread(self, thread_id: str) -> List[Dict]:
         """Get all messages in a thread."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().threads().get(
             userId='me', id=thread_id, format='metadata',
@@ -623,3 +656,110 @@ class GmailConnector:
                 'snippet': msg.get('snippet', ''),
             })
         return messages
+
+    async def sync_messages(
+        self,
+        history_id: Optional[str] = None,
+        max_results: int = 100,
+    ) -> Dict[str, Any]:
+        """Incremental sync using Gmail History API.
+
+        Args:
+            history_id: Previous historyId for incremental sync.
+                        If None, does a full initial pull.
+            max_results: Max messages for full pull.
+
+        Returns:
+            {
+                "messages": [Email, ...],        # New/updated messages
+                "deleted_ids": [str, ...],        # Message IDs that were deleted/trashed
+                "history_id": str,                # New historyId for next sync
+            }
+        """
+        if not self._service:
+            raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
+
+        try:
+            # Get current historyId from profile
+            profile = await asyncio.to_thread(
+                self._service.users().getProfile(userId='me').execute
+            )
+            current_history_id = profile.get('historyId', '')
+
+            if not history_id:
+                # Full initial sync — just list recent messages
+                emails = await self.list_messages(
+                    query="in:inbox OR in:sent",
+                    max_results=max_results,
+                    include_body=False,
+                )
+                return {
+                    "messages": emails,
+                    "deleted_ids": [],
+                    "history_id": current_history_id,
+                }
+
+            # Incremental: use History API
+            added_ids = set()
+            deleted_ids = set()
+            next_page = None
+
+            while True:
+                kwargs = {
+                    'userId': 'me',
+                    'startHistoryId': history_id,
+                    'historyTypes': ['messageAdded', 'messageDeleted'],
+                }
+                if next_page:
+                    kwargs['pageToken'] = next_page
+
+                request = self._service.users().history().list(**kwargs)
+                try:
+                    result = await asyncio.to_thread(request.execute)
+                except HttpError as e:
+                    if e.resp.status == 404:
+                        # historyId expired — do full resync
+                        emails = await self.list_messages(
+                            query="in:inbox OR in:sent",
+                            max_results=max_results,
+                            include_body=False,
+                        )
+                        return {
+                            "messages": emails,
+                            "deleted_ids": [],
+                            "history_id": current_history_id,
+                        }
+                    raise
+
+                for record in result.get('history', []):
+                    for added in record.get('messagesAdded', []):
+                        added_ids.add(added['message']['id'])
+                    for deleted in record.get('messagesDeleted', []):
+                        deleted_ids.add(deleted['message']['id'])
+
+                next_page = result.get('nextPageToken')
+                if not next_page:
+                    break
+
+            # Fetch full metadata for added messages
+            emails = []
+            for msg_id in added_ids - deleted_ids:
+                try:
+                    request = self._service.users().messages().get(
+                        userId='me', id=msg_id,
+                        format='metadata',
+                        metadataHeaders=['From', 'To', 'Subject', 'Date'],
+                    )
+                    msg = await asyncio.to_thread(request.execute)
+                    emails.append(self._parse_message(msg, include_body=False))
+                except HttpError:
+                    continue  # Skip individual message errors
+
+            return {
+                "messages": emails,
+                "deleted_ids": list(deleted_ids),
+                "history_id": current_history_id,
+            }
+
+        except HttpError as e:
+            raise RuntimeError(f"Gmail sync error: {e}")

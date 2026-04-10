@@ -329,6 +329,20 @@ class SlackConnector:
     @property
     def team(self) -> Optional[Dict]:
         return self._team
+
+    async def health_check(self) -> str:
+        """Check Slack API connectivity. Returns 'healthy', 'auth_required', or 'unhealthy'."""
+        if not self._client:
+            return "disconnected"
+        try:
+            data = await self._post("auth.test")
+            if data.get("ok"):
+                return "healthy"
+            if data.get("error") in ("invalid_auth", "token_revoked", "not_authed"):
+                return "auth_required"
+            return "unhealthy"
+        except Exception:
+            return "unhealthy"
     
     # === API Methods ===
     

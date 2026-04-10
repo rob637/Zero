@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -9,22 +10,35 @@ from typing import List, Dict, Optional
 
 DB_PATH = Path(__file__).parent / "sqlite" / "sessions.db"
 
+# Persistent connection with thread-safety via a lock.
+# SQLite in WAL mode supports concurrent reads while writes are serialised.
+_lock = threading.Lock()
+_conn: Optional[sqlite3.Connection] = None
+
 
 def _get_conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            messages TEXT NOT NULL DEFAULT '[]'
-        )
-    """)
-    conn.commit()
-    return conn
+    """Return the persistent connection, creating it on first use."""
+    global _conn
+    if _conn is not None:
+        return _conn
+    with _lock:
+        if _conn is not None:
+            return _conn
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        _conn.row_factory = sqlite3.Row
+        _conn.execute("PRAGMA journal_mode=WAL")
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                messages TEXT NOT NULL DEFAULT '[]'
+            )
+        """)
+        _conn.commit()
+    return _conn
 
 
 def new_session_id() -> str:
@@ -36,22 +50,21 @@ def save_session(session_id: str, title: str, messages: List[Dict]) -> Dict:
     conn = _get_conn()
     now = datetime.utcnow().isoformat()
 
-    # Check if session exists to preserve created_at
-    existing = conn.execute(
-        "SELECT created_at FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
-    created_at = existing["created_at"] if existing else now
+    with _lock:
+        existing = conn.execute(
+            "SELECT created_at FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        created_at = existing["created_at"] if existing else now
 
-    conn.execute("""
-        INSERT INTO sessions (id, title, created_at, updated_at, messages)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            title = excluded.title,
-            updated_at = excluded.updated_at,
-            messages = excluded.messages
-    """, (session_id, title, created_at, now, json.dumps(messages)))
-    conn.commit()
-    conn.close()
+        conn.execute("""
+            INSERT INTO sessions (id, title, created_at, updated_at, messages)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                updated_at = excluded.updated_at,
+                messages = excluded.messages
+        """, (session_id, title, created_at, now, json.dumps(messages)))
+        conn.commit()
     return {"id": session_id, "title": title, "created_at": created_at, "updated_at": now}
 
 
@@ -62,7 +75,6 @@ def list_sessions(limit: int = 50) -> List[Dict]:
         "SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT ?",
         (limit,)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -73,7 +85,6 @@ def get_session(session_id: str) -> Optional[Dict]:
         "SELECT id, title, created_at, updated_at, messages FROM sessions WHERE id = ?",
         (session_id,)
     ).fetchone()
-    conn.close()
     if row:
         result = dict(row)
         result["messages"] = json.loads(result["messages"])
@@ -84,7 +95,7 @@ def get_session(session_id: str) -> Optional[Dict]:
 def delete_session(session_id: str) -> bool:
     """Delete a session. Returns True if it existed."""
     conn = _get_conn()
-    cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-    conn.commit()
-    conn.close()
+    with _lock:
+        cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        conn.commit()
     return cursor.rowcount > 0

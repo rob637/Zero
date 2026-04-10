@@ -772,13 +772,30 @@ class ConnectorRegistry:
                 name="stripe",
                 display_name="Stripe",
                 provider="stripe",
-                primitives=["PAYMENTS", "BILLING"],
+                primitives=["PAYMENTS", "BILLING", "FINANCE"],
                 scopes=[],
                 connector_class=StripeConnector,
                 description="Customers, charges, invoices, subscriptions, products, and payment intents via Stripe API",
                 icon="stripe",
                 setup_url="https://dashboard.stripe.com/apikeys",
                 requires_client_creds=False,
+            ))
+        except ImportError:
+            pass
+
+        try:
+            from .ebay import EbayConnector
+            self.register(ConnectorMetadata(
+                name="ebay",
+                display_name="eBay",
+                provider="ebay",
+                primitives=["SHOPPING"],
+                scopes=[],
+                connector_class=EbayConnector,
+                description="Search products, get item details, and browse categories on eBay",
+                icon="ebay",
+                setup_url="https://developer.ebay.com/my/keys",
+                requires_client_creds=True,
             ))
         except ImportError:
             pass

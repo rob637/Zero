@@ -168,17 +168,15 @@ class EncryptedFileBackend(CredentialBackend):
         self._storage = Path(storage_path or "~/.apex/credentials").expanduser()
         self._storage.mkdir(parents=True, exist_ok=True)
         
-        # Set up encryption
+        # Set up encryption — cryptography is required
         if HAS_CRYPTO:
             if encryption_key:
                 self._fernet = Fernet(encryption_key)
             else:
                 self._fernet = Fernet(self._get_or_create_key())
         else:
-            self._fernet = None
-            logger.warning(
-                "cryptography package not installed. "
-                "Credentials will be stored without encryption. "
+            raise ImportError(
+                "cryptography package is required for credential storage. "
                 "Run: pip install cryptography"
             )
     
@@ -247,15 +245,11 @@ class EncryptedFileBackend(CredentialBackend):
     
     def _encrypt(self, data: str) -> str:
         """Encrypt data string."""
-        if self._fernet:
-            return self._fernet.encrypt(data.encode()).decode()
-        return base64.b64encode(data.encode()).decode()
+        return self._fernet.encrypt(data.encode()).decode()
     
     def _decrypt(self, data: str) -> str:
         """Decrypt data string."""
-        if self._fernet:
-            return self._fernet.decrypt(data.encode()).decode()
-        return base64.b64decode(data.encode()).decode()
+        return self._fernet.decrypt(data.encode()).decode()
     
     def _get_file_path(self, key: str) -> Path:
         """Get the file path for a credential key."""

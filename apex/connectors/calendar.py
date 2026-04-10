@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 import json
 
 from .google_auth import GoogleAuth, get_google_auth
+from .base import AuthError, ConnectorError, NotConnectedError, retry_with_backoff
 
 try:
     from googleapiclient.discovery import build
@@ -142,6 +143,21 @@ class CalendarConnector:
     @property
     def connected(self) -> bool:
         return self._service is not None
+
+    async def health_check(self) -> str:
+        """Check Calendar API connectivity. Returns 'healthy', 'auth_required', or 'unhealthy'."""
+        if not self._service:
+            return "disconnected"
+        try:
+            request = self._service.calendarList().list(maxResults=1)
+            await asyncio.to_thread(request.execute)
+            return "healthy"
+        except HttpError as e:
+            if e.resp.status in (401, 403):
+                return "auth_required"
+            return "unhealthy"
+        except Exception:
+            return "unhealthy"
     
     def _parse_event(self, event: Dict) -> CalendarEvent:
         """Parse Google Calendar event into CalendarEvent."""
@@ -219,7 +235,7 @@ class CalendarConnector:
             List of CalendarEvent objects
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
         
         if time_min is None:
             time_min = datetime.now(tz=timezone.utc)
@@ -298,16 +314,77 @@ class CalendarConnector:
         
         # If ALL calendars failed, raise so caller knows it's an error, not an empty day
         if errors and not all_events:
-            raise RuntimeError(f"Could not reach Google Calendar ({len(errors)} calendars failed: {errors[0]})")
+            raise ConnectorError(f"Could not reach Google Calendar ({len(errors)} calendars failed: {errors[0]})", connector="calendar")
         
         # Sort all events by start time
         all_events.sort(key=lambda e: e.start)
         return all_events
+
+    async def sync_events(
+        self,
+        calendar_id: str = 'primary',
+        sync_token: str = None,
+        max_results: int = 250,
+    ) -> tuple:
+        """Incremental sync using Google's syncToken.
+
+        First call (no sync_token): returns all events + a sync token.
+        Subsequent calls (with sync_token): returns only changed/deleted events.
+
+        Returns:
+            (events: List[CalendarEvent], deleted_ids: List[str], next_sync_token: str)
+        """
+        if not self._service:
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
+
+        events = []
+        deleted_ids = []
+        page_token = None
+        next_sync_token = ""
+
+        while True:
+            kwargs = {
+                'calendarId': calendar_id,
+                'maxResults': max_results,
+                'singleEvents': True,
+            }
+            if sync_token and not page_token:
+                kwargs['syncToken'] = sync_token
+            elif not sync_token:
+                # Full sync — get events from 90 days ago to 90 days ahead
+                now = datetime.now(tz=timezone.utc)
+                kwargs['timeMin'] = (now - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%SZ')
+                kwargs['timeMax'] = (now + timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%SZ')
+                kwargs['orderBy'] = 'startTime'
+            if page_token:
+                kwargs['pageToken'] = page_token
+
+            try:
+                request = self._service.events().list(**kwargs)
+                result = await asyncio.to_thread(request.execute)
+            except Exception as e:
+                # If sync token is invalidated (410 Gone), fall back to full sync
+                if '410' in str(e) or 'Gone' in str(e):
+                    return await self.sync_events(calendar_id=calendar_id, sync_token=None)
+                raise
+
+            for item in result.get('items', []):
+                if item.get('status') == 'cancelled':
+                    deleted_ids.append(item['id'])
+                else:
+                    events.append(self._parse_event(item))
+
+            page_token = result.get('nextPageToken')
+            if not page_token:
+                next_sync_token = result.get('nextSyncToken', '')
+                break
+
+        return events, deleted_ids, next_sync_token
     
     async def get_event(self, event_id: str, calendar_id: str = 'primary') -> CalendarEvent:
         """Get a single event by ID."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
         
         request = self._service.events().get(
             calendarId=calendar_id,
@@ -350,7 +427,7 @@ class CalendarConnector:
             Created CalendarEvent
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
         
         # Parse times
         if isinstance(start, str):
@@ -441,7 +518,7 @@ class CalendarConnector:
             Updated CalendarEvent
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
         
         # Get existing event
         existing = await self.get_event(event_id, calendar_id)
@@ -480,7 +557,7 @@ class CalendarConnector:
     ) -> bool:
         """Delete an event."""
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
         
         try:
             request = self._service.events().delete(
@@ -516,7 +593,7 @@ class CalendarConnector:
             List of free slots with start/end times
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
         
         if time_min is None:
             time_min = datetime.utcnow()
@@ -588,7 +665,7 @@ class CalendarConnector:
         Returns list of dicts with: id, summary (name), primary, accessRole
         """
         if not self._service:
-            raise RuntimeError("Not connected. Call connect() first.")
+            raise NotConnectedError("Not connected. Call connect() first.", connector="calendar")
         
         # Use cached calendars from connect() instead of making another API call
         if not self._calendars:
