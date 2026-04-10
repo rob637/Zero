@@ -1865,9 +1865,9 @@ class CalendarPrimitive(Primitive):
     def get_operations(self) -> Dict[str, str]:
         return {
             "create": "Create a calendar event (supports birthdays, meetings, reminders, recurring events)",
-            "list": "List/get events in a date range. USE THIS for 'what's on my calendar today/this week/tomorrow' queries. By default queries ALL of the user's own calendars (not subscriptions) in a single call — no need to call list_calendars first. Only specify calendar_id if the user asks about a specific calendar.",
-            "list_calendars": "List all available calendars (name, id, access level). Only needed if the user explicitly asks about their calendars or you need to look up a calendar_id by name.",
-            "search": "Search events by keyword text (e.g. 'dentist', 'team meeting'). NOT for date lookups — use list for that.",
+            "list": "List events in a date range. By default queries ALL of the user's own calendars (not subscriptions) in a single call — no need to call list_calendars first. Only specify calendar_id if the user asks about a specific calendar.",
+            "list_calendars": "List all available calendars (name, id, access level).",
+            "search": "Search/find events by date range and/or calendar. Returns all events in the range.",
             "delete": "Delete an event by ID",
             "availability": "Check free/busy times in a date range",
         }
@@ -2070,21 +2070,11 @@ class CalendarPrimitive(Primitive):
             
             elif operation == "search":
                 if self._list_func:
+                    # Search = list with optional date bounds + calendar filter.
+                    # The AI is the intelligence — it reads the results.
+                    # Don't pass query text as Google's q= filter; it silently
+                    # kills results when the text doesn't match event titles.
                     search_kwargs = {}
-                    raw_query = params.get("query", "")
-                    # Don't pass date strings as text search — they match nothing.
-                    # A date-like query means the caller wants events on that date.
-                    import re
-                    if re.match(r'^\d{4}-\d{2}-\d{2}', raw_query):
-                        # Treat as date range query, not text search
-                        try:
-                            dt = datetime.fromisoformat(raw_query[:10])
-                            search_kwargs["time_min"] = dt
-                            search_kwargs["time_max"] = dt + timedelta(days=1)
-                        except ValueError:
-                            search_kwargs["query"] = raw_query
-                    else:
-                        search_kwargs["query"] = raw_query
                     if params.get("start_date"):
                         search_kwargs["time_min"] = datetime.fromisoformat(params["start_date"])
                     if params.get("end_date"):
