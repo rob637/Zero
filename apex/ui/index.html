@@ -2597,6 +2597,62 @@
             color: var(--text-muted);
             margin-top: 2px;
         }
+        /* Nudges */
+        .nudge-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.15s;
+            border-left: 3px solid var(--accent-primary);
+            margin: 4px 8px;
+            background: var(--bg-secondary);
+        }
+        .nudge-item:hover { background: var(--bg-hover); }
+        .nudge-item .nudge-title {
+            font-weight: 600;
+            font-size: 0.78rem;
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .nudge-item .nudge-msg {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            line-height: 1.3;
+        }
+        .nudge-item .nudge-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 4px;
+        }
+        .nudge-item .nudge-btn {
+            font-size: 0.68rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border-light);
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .nudge-item .nudge-btn:hover { background: var(--bg-hover); }
+        .nudge-item .nudge-btn.primary {
+            background: var(--accent-primary);
+            color: white;
+            border-color: var(--accent-primary);
+        }
+        .nudge-item .nudge-btn.primary:hover { opacity: 0.85; }
+        .nudge-item.priority-urgent { border-left-color: #e53e3e; }
+        .nudge-item.priority-high { border-left-color: #ed8936; }
+        .nudge-item.priority-medium { border-left-color: var(--accent-primary); }
+        .nudge-item.priority-low { border-left-color: var(--text-muted); }
+        .nudge-empty {
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
         /* Routines */
         .routine-item {
             display: flex;
@@ -2876,6 +2932,18 @@
             </div>
         </div>
         
+        <div class="sidebar-section">
+            <div class="sidebar-section-title collapsible" onclick="toggleSection('nudges')">
+                <span>Nudges <span class="section-badge" id="nudgesBadge"></span></span>
+                <span class="chevron" id="nudgesChevron">▼</span>
+            </div>
+            <div class="sidebar-collapsible-content" id="nudgesCollapsible">
+                <div id="nudgesList">
+                    <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.75rem;">Checking...</div>
+                </div>
+            </div>
+        </div>
+
         <div class="sidebar-section">
             <div class="sidebar-section-title collapsible" onclick="toggleSection('routines')">
                 <span>Routines <span class="section-badge" id="routinesBadge"></span></span>
@@ -6058,6 +6126,7 @@
             renderSidebarActions();
             loadPCIndexStatus();
             loadRoutines();
+            loadNudges();
         }, 500);
         
         // Periodic refresh — pause when tab hidden
@@ -6066,6 +6135,7 @@
             _pollTimers.alerts = setInterval(fetchAlerts, 60 * 1000);
             _pollTimers.providers = setInterval(loadProviders, 5 * 60 * 1000);
             _pollTimers.sessions = setInterval(loadSessions, 2 * 60 * 1000);
+            _pollTimers.nudges = setInterval(loadNudges, 3 * 60 * 1000);
         }
         function stopPolling() {
             Object.values(_pollTimers).forEach(t => clearInterval(t));
@@ -6077,6 +6147,74 @@
         startPolling();
         // Warm cache on app open
         fetch('/prefetch', { method: 'POST' }).catch(() => {});
+
+        // ============================================
+        // Nudges (AI-powered proactive suggestions)
+        // ============================================
+
+        async function loadNudges() {
+            try {
+                const res = await fetch(`${API}/api/nudges`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const nudges = data.nudges || [];
+                const list = document.getElementById('nudgesList');
+                const badge = document.getElementById('nudgesBadge');
+
+                badge.textContent = nudges.length > 0 ? nudges.length : '';
+
+                // Also update the top-bar notification dot
+                const alertBtn = document.getElementById('alertsBtn');
+                const totalAlerts = (alerts?.length || 0) + (suggestions?.length || 0) + nudges.length;
+                if (alertBtn) alertBtn.classList.toggle('has-notification', totalAlerts > 0);
+
+                if (nudges.length === 0) {
+                    list.innerHTML = '<div class="nudge-empty">No nudges right now</div>';
+                    return;
+                }
+
+                const catIcons = {
+                    meeting_prep: '📋',
+                    follow_up: '✉️',
+                    deadline: '⏰',
+                    insight: '💡',
+                    digest: '📰',
+                };
+
+                list.innerHTML = nudges.map(n => `
+                    <div class="nudge-item priority-${escapeHtml(n.priority)}" data-id="${escapeHtml(n.id)}">
+                        <div class="nudge-title">
+                            <span>${catIcons[n.category] || '💡'}</span>
+                            <span>${escapeHtml(n.title)}</span>
+                        </div>
+                        <div class="nudge-msg">${escapeHtml(n.message)}</div>
+                        <div class="nudge-actions">
+                            ${n.suggested_action
+                                ? `<button class="nudge-btn primary" onclick="actOnNudge('${escapeHtml(n.id)}', ${JSON.stringify(n.suggested_action)})">Do it</button>`
+                                : ''}
+                            <button class="nudge-btn" onclick="dismissNudge('${escapeHtml(n.id)}')">Dismiss</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.log('Nudges not available');
+            }
+        }
+
+        async function actOnNudge(id, action) {
+            // Send suggested action as a chat message
+            if (action) sendMessage(action);
+            try { await fetch(`${API}/api/nudges/${id}/act`, { method: 'POST' }); } catch(e) {}
+            loadNudges();
+        }
+
+        async function dismissNudge(id) {
+            // Optimistically remove from UI
+            const el = document.querySelector(`.nudge-item[data-id="${id}"]`);
+            if (el) el.style.display = 'none';
+            try { await fetch(`${API}/api/nudges/${id}/dismiss`, { method: 'POST' }); } catch(e) {}
+            loadNudges();
+        }
 
         // ============================================
         // Routines

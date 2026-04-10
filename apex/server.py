@@ -46,6 +46,7 @@ from routes.oauth import router as oauth_router
 from routes.react import router as react_router
 from routes.intelligence import router as intelligence_router
 from routes.routines import router as routines_router
+from routes.nudges import router as nudges_router
 
 
 @asynccontextmanager
@@ -113,6 +114,7 @@ app.include_router(oauth_router)
 app.include_router(react_router)
 app.include_router(intelligence_router)
 app.include_router(routines_router)
+app.include_router(nudges_router)
 
 
 

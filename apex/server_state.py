@@ -880,6 +880,15 @@ async def startup_event(app=None):
     except Exception as e:
         logger.warning(f"Routine scheduler init failed (non-fatal): {e}")
 
+    # Start nudge engine (AI-powered proactive suggestions)
+    try:
+        from nudge_engine import get_nudge_engine
+        _nudge_engine = get_nudge_engine()
+        await _nudge_engine.start()
+        logger.info("NudgeEngine started")
+    except Exception as e:
+        logger.warning(f"NudgeEngine init failed (non-fatal): {e}")
+
 
 
 def get_cred_store():
