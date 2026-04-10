@@ -611,6 +611,8 @@ class MediaPrimitive(Primitive):
             "info": "Get metadata about a media file (dimensions, format, EXIF: date taken, camera, GPS, etc.)",
             "convert": "Convert media between formats (e.g. mp4→mp3, png→jpg)",
             "resize": "Resize an image to specific dimensions",
+            "crop": "Crop an image — by coordinates (left/top/right/bottom) or by aspect ratio (e.g. '16:9', '1:1') with center-crop",
+            "analyze": "Analyze image quality — returns sharpness, brightness, contrast, colorfulness, resolution. Use this to compare and rank photos.",
             "generate": "Generate an image or audio using AI",
             "transcribe": "Transcribe audio/video to text",
             "play": "Play or queue media via a provider (Spotify, etc.)",
@@ -632,6 +634,18 @@ class MediaPrimitive(Primitive):
                 "width": {"type": "int", "required": False, "description": "Target width in pixels"},
                 "height": {"type": "int", "required": False, "description": "Target height in pixels"},
                 "output": {"type": "str", "required": False, "description": "Output file path"},
+            },
+            "crop": {
+                "path": {"type": "str", "required": True, "description": "Image file path"},
+                "left": {"type": "int", "required": False, "description": "Left pixel coordinate"},
+                "top": {"type": "int", "required": False, "description": "Top pixel coordinate"},
+                "right": {"type": "int", "required": False, "description": "Right pixel coordinate"},
+                "bottom": {"type": "int", "required": False, "description": "Bottom pixel coordinate"},
+                "aspect": {"type": "str", "required": False, "description": "Aspect ratio for center-crop (e.g. '16:9', '1:1', '4:3'). Overrides coordinates."},
+                "output": {"type": "str", "required": False, "description": "Output file path (default: overwrites original)"},
+            },
+            "analyze": {
+                "path": {"type": "str", "required": True, "description": "Image file path to analyze"},
             },
             "generate": {
                 "prompt": {"type": "str", "required": True, "description": "Description of what to generate"},
@@ -811,7 +825,103 @@ class MediaPrimitive(Primitive):
                     return StepResult(True, data={"path": output, "width": width, "height": height, "original": f"{orig_w}x{orig_h}"})
                 except ImportError:
                     return StepResult(False, error="Install Pillow for image resize: pip install Pillow")
-            
+
+            elif operation == "crop":
+                path = str(Path(params.get("path", "")).expanduser())
+                if not Path(path).exists():
+                    return StepResult(False, error=f"File not found: {path}")
+                try:
+                    from PIL import Image
+                    output = params.get("output", path)
+                    aspect = params.get("aspect", "")
+
+                    with Image.open(path) as img:
+                        w, h = img.size
+
+                        if aspect:
+                            # Center-crop to aspect ratio
+                            parts = aspect.split(":")
+                            ar = float(parts[0]) / float(parts[1])
+                            if w / h > ar:
+                                new_w = int(h * ar)
+                                left = (w - new_w) // 2
+                                box = (left, 0, left + new_w, h)
+                            else:
+                                new_h = int(w / ar)
+                                top = (h - new_h) // 2
+                                box = (0, top, w, top + new_h)
+                        else:
+                            left = params.get("left", 0)
+                            top = params.get("top", 0)
+                            right = params.get("right", w)
+                            bottom = params.get("bottom", h)
+                            box = (left, top, right, bottom)
+
+                        cropped = img.crop(box)
+                        output = str(Path(output).expanduser())
+                        cropped.save(output)
+
+                    return StepResult(True, data={"path": output, "width": cropped.width, "height": cropped.height, "crop_box": list(box)})
+                except ImportError:
+                    return StepResult(False, error="Install Pillow for image crop: pip install Pillow")
+
+            elif operation == "analyze":
+                path = str(Path(params.get("path", "")).expanduser())
+                if not Path(path).exists():
+                    return StepResult(False, error=f"File not found: {path}")
+                try:
+                    from PIL import Image, ImageStat, ImageFilter
+                    import math
+
+                    with Image.open(path) as img:
+                        w, h = img.size
+                        gray = img.convert("L")
+                        stat = ImageStat.Stat(gray)
+
+                        # Sharpness — variance of Laplacian
+                        edges = gray.filter(ImageFilter.FIND_EDGES)
+                        edge_stat = ImageStat.Stat(edges)
+                        sharpness = edge_stat.var[0]
+
+                        # Brightness — mean luminance
+                        brightness = stat.mean[0]
+
+                        # Contrast — stddev of luminance
+                        contrast = stat.stddev[0]
+
+                        # Colorfulness — Hasler & Süsstrunk (2003)
+                        colorfulness = 0.0
+                        if img.mode in ("RGB", "RGBA"):
+                            import numpy as np
+                            arr = np.array(img.convert("RGB"), dtype=float)
+                            rg = arr[:, :, 0] - arr[:, :, 1]
+                            yb = 0.5 * (arr[:, :, 0] + arr[:, :, 1]) - arr[:, :, 2]
+                            rg_std, rg_mean = float(np.std(rg)), float(np.mean(rg))
+                            yb_std, yb_mean = float(np.std(yb)), float(np.mean(yb))
+                            std_root = math.sqrt(rg_std**2 + yb_std**2)
+                            mean_root = math.sqrt(rg_mean**2 + yb_mean**2)
+                            colorfulness = std_root + 0.3 * mean_root
+
+                        # Quality score — weighted composite (0-100)
+                        s_score = min(sharpness / 30, 1.0) * 40       # sharpness: 0-40 pts
+                        c_score = min(contrast / 80, 1.0) * 25        # contrast: 0-25 pts
+                        b_score = (1 - abs(brightness - 128) / 128) * 20  # brightness (centered): 0-20 pts
+                        f_score = min(colorfulness / 100, 1.0) * 15   # colorfulness: 0-15 pts
+                        quality_score = round(s_score + c_score + b_score + f_score, 1)
+
+                    return StepResult(True, data={
+                        "path": path,
+                        "resolution": f"{w}x{h}",
+                        "megapixels": round(w * h / 1_000_000, 1),
+                        "sharpness": round(sharpness, 1),
+                        "brightness": round(brightness, 1),
+                        "contrast": round(contrast, 1),
+                        "colorfulness": round(colorfulness, 1),
+                        "quality_score": quality_score,
+                    })
+                except ImportError:
+                    return StepResult(False, error="Install Pillow for image analysis: pip install Pillow")
+
             elif operation == "generate":
                 prompt = params.get("prompt", "")
                 media_type = params.get("type", "image")
