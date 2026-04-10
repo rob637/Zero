@@ -395,7 +395,7 @@ async def trigger_file_rescan():
         settings=settings,
         semantic_search=state._semantic_search,
     )
-    await state._file_scanner.start()
+    await state._file_scanner.start(force=True)
     return JSONResponse({"status": "rescan started", "progress": state._file_scanner.status})
 
 

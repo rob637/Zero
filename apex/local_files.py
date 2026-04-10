@@ -605,6 +605,7 @@ class LocalFileScanner:
         self._semantic_search = semantic_search
         self._progress = ScanProgress()
         self._running = False
+        self._force = False
         self._scan_task: Optional[asyncio.Task] = None
         self._watcher_task: Optional[asyncio.Task] = None
         self._home = str(Path.home())
@@ -618,14 +619,16 @@ class LocalFileScanner:
             "settings": self._settings.to_dict(),
         }
 
-    async def start(self) -> bool:
-        """Start background scanning. Returns False if not enabled."""
+    async def start(self, force: bool = False) -> bool:
+        """Start background scanning. force=True skips checksum dedup."""
         if not self._settings.enabled:
             logger.info("Local file indexing is disabled (opt-in required)")
             return False
 
         if self._running:
             return True
+
+        self._force = force
 
         # Validate directories exist
         dirs = self._settings.scan_directories or FileIndexSettings.default_directories()
@@ -791,15 +794,16 @@ class LocalFileScanner:
             if not self._running:
                 break
 
-            # Check if already indexed with same checksum
+            # Check if already indexed with same checksum (skip if force)
             checksum = _file_checksum(path, st.st_size)
-            existing = self._index._conn.execute(
-                "SELECT checksum FROM data_objects WHERE id = ?",
-                (f"local_files:{path}",)
-            ).fetchone()
-            if existing and existing[0] == checksum:
-                self._progress.files_skipped += 1
-                continue
+            if not self._force:
+                existing = self._index._conn.execute(
+                    "SELECT checksum FROM data_objects WHERE id = ?",
+                    (f"local_files:{path}",)
+                ).fetchone()
+                if existing and existing[0] == checksum:
+                    self._progress.files_skipped += 1
+                    continue
 
             obj = _file_to_dataobject(path, st, home_dir=self._home)
             obj.checksum = checksum
@@ -825,15 +829,16 @@ class LocalFileScanner:
             if not self._running:
                 break
 
-            # Check if already indexed with same checksum
+            # Check if already indexed with same checksum (skip if force)
             checksum = _file_checksum(path, st.st_size)
-            existing = self._index._conn.execute(
-                "SELECT checksum FROM data_objects WHERE id = ?",
-                (f"local_files:{path}",)
-            ).fetchone()
-            if existing and existing[0] == checksum:
-                self._progress.files_skipped += 1
-                continue
+            if not self._force:
+                existing = self._index._conn.execute(
+                    "SELECT checksum FROM data_objects WHERE id = ?",
+                    (f"local_files:{path}",)
+                ).fetchone()
+                if existing and existing[0] == checksum:
+                    self._progress.files_skipped += 1
+                    continue
 
             # Extract content in thread pool (blocking I/O)
             ext = os.path.splitext(path)[1].lower()
