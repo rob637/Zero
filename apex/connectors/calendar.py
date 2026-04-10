@@ -24,10 +24,6 @@ Usage:
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    ZoneInfo = None
 from typing import Any, Dict, List, Optional
 import json
 
@@ -243,21 +239,28 @@ class CalendarConnector:
         else:
             calendar_ids = ['primary']
         
-        # Format time bounds as RFC 3339 (required by Google Calendar API).
-        # For naive datetimes (date-only queries like "2026-04-10"), pass them
-        # as-is and use Google's timeZone parameter to let the API interpret
-        # them in the user's local timezone. This avoids fragile ZoneInfo
-        # conversion that can fail on Windows without tzdata.
-        cal_tz = self._calendar_timezone or 'America/New_York'
+        # Format time bounds as RFC 3339 with mandatory timezone offset
+        # (required by Google Calendar API).
+        #
+        # For naive datetimes (from date-only queries like "2026-04-10"),
+        # use the local machine's timezone offset to build a proper RFC 3339
+        # string. This avoids ZoneInfo (needs tzdata on Windows) and ensures
+        # midnight means local midnight, not UTC midnight.
         if time_min.tzinfo:
             t_min = time_min.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
             t_max = time_max.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-            cal_tz = None  # Already UTC, no need for timeZone param
         else:
-            # Pass naive datetimes directly — Google will interpret them
-            # in the timeZone we specify in the API call
-            t_min = time_min.strftime('%Y-%m-%dT%H:%M:%S')
-            t_max = time_max.strftime('%Y-%m-%dT%H:%M:%S')
+            # Build UTC offset from local system clock (works on all platforms)
+            import time as _time
+            if _time.daylight and _time.localtime().tm_isdst:
+                _utc_offset_sec = -_time.altzone
+            else:
+                _utc_offset_sec = -_time.timezone
+            _offset_hours = _utc_offset_sec // 3600
+            _offset_mins = abs(_utc_offset_sec) % 3600 // 60
+            _offset_str = f"{_offset_hours:+03d}:{_offset_mins:02d}"
+            t_min = time_min.strftime(f'%Y-%m-%dT%H:%M:%S') + _offset_str
+            t_max = time_max.strftime(f'%Y-%m-%dT%H:%M:%S') + _offset_str
 
         errors = []
 
@@ -271,19 +274,17 @@ class CalendarConnector:
                     'singleEvents': single_events,
                     'orderBy': 'startTime',
                 }
-                # Only include optional params when they have values
+                # Only include q when there's an actual search query
                 if query:
                     list_kwargs['q'] = query
-                if cal_tz:
-                    list_kwargs['timeZone'] = cal_tz
-                print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max} (tz={cal_tz})")
+                print(f"[CALENDAR] Querying {cal_id}: {t_min} → {t_max}")
                 request = self._service.events().list(**list_kwargs)
                 result = await asyncio.to_thread(request.execute)
                 items = result.get('items', [])
                 print(f"[CALENDAR] {cal_id}: {len(items)} events found")
                 return [self._parse_event(e) for e in items]
             except Exception as e:
-                print(f"[CALENDAR] Skipping calendar {cal_id}: {e}")
+                print(f"[CALENDAR] ERROR querying {cal_id}: {type(e).__name__}: {e}")
                 errors.append(f"{cal_id}: {e}")
                 return []
 
