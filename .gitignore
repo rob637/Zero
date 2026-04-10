@@ -9,6 +9,7 @@ build/
 
 # Rust / Tauri
 apex/src-tauri/target/
+apex/src-tauri/binaries/apex-server-*
 
 # Node
 node_modules/

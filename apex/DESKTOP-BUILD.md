@@ -1,98 +1,105 @@
 # Telic Desktop App
 
-Native Windows desktop application built with Tauri.
+One-click installable Windows desktop app, built with Tauri + PyInstaller.
 
-## Development Setup
+## How It Works
+
+```
+┌──────────────────────────────────────────┐
+│      Tauri (Rust) — Native Window        │
+│  ┌────────────────────────────────────┐  │
+│  │  WebView → ui/index.html           │  │
+│  └────────────────────────────────────┘  │
+│        │ HTTP (localhost:8000)            │
+│        ▼                                 │
+│  ┌────────────────────────────────────┐  │
+│  │  apex-server.exe (PyInstaller)      │  │
+│  │  FastAPI + Connectors + Agent       │  │
+│  │  (bundled as Tauri sidecar)         │  │
+│  └────────────────────────────────────┘  │
+│                                          │
+│  System Tray: Show/Hide/Quit             │
+│  Close button → hides to tray            │
+└──────────────────────────────────────────┘
+```
+
+The user gets a single `.exe` installer. No Python installation needed.
+
+## Quick Build (Windows)
+
+```
+build-desktop.bat
+```
+
+This runs all steps automatically. The installer lands in:
+`apex/src-tauri/target/release/bundle/nsis/Telic_0.1.0_x64-setup.exe`
+
+## Manual Build Steps
 
 ### Prerequisites
 
-1. **Rust** - Install from [rustup.rs](https://rustup.rs/)
-2. **Node.js** - Install from [nodejs.org](https://nodejs.org/)
-3. **Python 3.11+** - For the backend server
+- **Python 3.11+** — [python.org](https://www.python.org/downloads/)
+- **Node.js 18+** — [nodejs.org](https://nodejs.org/)
+- **Rust** — [rustup.rs](https://rustup.rs/)
 
-### Install Dependencies
+### 1. Build Python backend
 
 ```bash
-# Install Tauri CLI
-npm install
-
-# Install Python dependencies
+cd apex
 pip install -r requirements.txt
+pip install pyinstaller
+pyinstaller apex-server.spec --noconfirm --clean
 ```
 
-### Run in Development
+This creates `dist/apex-server/` — the entire Python app as a standalone directory.
+
+### 2. Prepare sidecar
 
 ```bash
-# Option 1: Run everything together
-npm run dev
+# Get your Rust target triple
+rustc -vV | grep host
 
-# Option 2: Run separately (useful for debugging)
-# Terminal 1: Start Python server
-python server.py
-
-# Terminal 2: Start Tauri dev
-npm run tauri dev
+# Copy to Tauri's expected location (example for x86_64-pc-windows-msvc)
+mkdir -p src-tauri/binaries
+xcopy /E /I dist\apex-server src-tauri\binaries\apex-server-x86_64-pc-windows-msvc
+copy dist\apex-server\apex-server.exe src-tauri\binaries\apex-server-x86_64-pc-windows-msvc.exe
 ```
 
-### Build for Production
+### 3. Build Tauri app
 
 ```bash
+npm install
 npm run build
 ```
 
-This creates an installer in `src-tauri/target/release/bundle/`.
+### Output
 
-## Architecture
+| File | Location |
+|------|----------|
+| NSIS installer | `src-tauri/target/release/bundle/nsis/Telic_*_x64-setup.exe` |
+| MSI installer | `src-tauri/target/release/bundle/msi/Telic_*.msi` |
 
-```
-┌─────────────────────────────────────────┐
-│           Tauri (Rust)                  │
-│  ┌─────────────────────────────────┐    │
-│  │    Native Window + System Tray   │    │
-│  └─────────────────────────────────┘    │
-│              │                          │
-│              ▼                          │
-│  ┌─────────────────────────────────┐    │
-│  │      WebView (Chromium)         │    │
-│  │   ┌─────────────────────────┐   │    │
-│  │   │   Our UI (HTML/CSS/JS)   │   │    │
-│  │   └─────────────────────────┘   │    │
-│  └─────────────────────────────────┘    │
-└─────────────────────────────────────────┘
-              │ HTTP
-              ▼
-┌─────────────────────────────────────────┐
-│        Python Backend (FastAPI)         │
-│  ┌────────┐ ┌────────┐ ┌────────────┐  │
-│  │ Skills │ │ Memory │ │ LLM Client │  │
-│  └────────┘ └────────┘ └────────────┘  │
-└─────────────────────────────────────────┘
+## CI/CD
+
+Push a git tag (`v0.1.0`) to trigger automated builds via GitHub Actions.
+The workflow installs all toolchains, builds the backend, bundles the sidecar,
+and uploads the installer as a build artifact.
+
+## Development
+
+```bash
+# Terminal 1: Start Python server
+cd apex
+python server.py
+
+# Terminal 2: Start Tauri dev (live-reloads the window)
+cd apex
+npm run dev
 ```
 
 ## Icons
 
-Generate icons using [tauri-icon](https://tauri.app/v1/guides/features/icons):
-
+To regenerate icons from a source PNG:
 ```bash
-npm install -g @tauri-apps/cli
-tauri icon path/to/your/icon.png
+npx @tauri-apps/cli icon path/to/icon-1024x1024.png
 ```
-
-Place a 1024x1024 PNG and it generates all sizes.
-
-## Production Build (with bundled Python)
-
-For a fully standalone .exe that doesn't require Python:
-
-1. Build Python server with PyInstaller:
-   ```bash
-   pip install pyinstaller
-   pyinstaller --onefile --name apex-server server.py
-   ```
-
-2. Configure Tauri to use it as sidecar in `tauri.conf.json`
-
-3. Build the full app:
-   ```bash
-   npm run build
-   ```

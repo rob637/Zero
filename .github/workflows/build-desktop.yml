@@ -1,0 +1,72 @@
+name: Build Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            apex/src-tauri/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-${{ runner.os }}-${{ hashFiles('apex/src-tauri/Cargo.lock') }}
+
+      - name: Install Python dependencies
+        working-directory: apex
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Python backend (PyInstaller)
+        working-directory: apex
+        run: pyinstaller apex-server.spec --noconfirm --clean
+
+      - name: Prepare sidecar binary
+        working-directory: apex
+        shell: pwsh
+        run: |
+          $target = (rustc -vV | Select-String 'host:').Line.Split(': ')[1]
+          $sidecarDir = "src-tauri/binaries"
+          New-Item -ItemType Directory -Force -Path $sidecarDir
+          $sidecarName = "apex-server-$target"
+          Copy-Item -Path "dist/apex-server" -Destination "$sidecarDir/$sidecarName" -Recurse -Force
+          Copy-Item -Path "dist/apex-server/apex-server.exe" -Destination "$sidecarDir/$sidecarName.exe" -Force
+
+      - name: Install npm dependencies
+        run: npm install
+        working-directory: apex
+
+      - name: Build Tauri app
+        working-directory: apex
+        run: npm run build
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: telic-windows-installer
+          path: |
+            apex/src-tauri/target/release/bundle/nsis/*.exe
+            apex/src-tauri/target/release/bundle/msi/*.msi

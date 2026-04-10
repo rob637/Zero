@@ -38,6 +38,7 @@
     "active": true,
     "category": "Utility",
     "copyright": "Copyright © 2026 rob637",
+    "externalBin": ["binaries/apex-server"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -48,7 +49,7 @@
     "longDescription": "AI Operating System that lives on your PC. Connects all your services, organizes your digital life - always with your approval.",
     "shortDescription": "The AI Operating System with Purpose",
     "targets": "all",
-    "resources": ["../src/**/*", "../server.py", "../pyproject.toml"],
+    "resources": [],
     "linux": {
       "deb": {
         "depends": []
@@ -64,13 +65,16 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
       "nsis": {
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "displayIcon": "icons/icon.ico",
+        "installMode": "currentUser"
       }
     }
   },
   "plugins": {
     "shell": {
-      "open": true
+      "open": true,
+      "sidecar": true
     }
   }
 }
