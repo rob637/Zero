@@ -2994,6 +2994,28 @@
                         <div class="setup-status" id="setupStatus"></div>
                         <span class="setup-skip" onclick="skipSetup()">I'll set it up later via environment variables</span>
                     </div>
+
+                    <!-- Proxy mode — BYOK upsell (shown when proxy is active but no own key) -->
+                    <div class="setup-card" id="proxyCard" style="display: none;">
+                        <p class="setup-desc" style="margin-bottom:6px;">You're using the free tier (25 messages/day).</p>
+                        <details>
+                            <summary style="cursor:pointer; font-size:0.82rem; color:var(--accent);">Bring your own API key for unlimited use</summary>
+                            <div style="margin-top:8px;">
+                                <div class="setup-provider-btns">
+                                    <button class="setup-provider-btn" onclick="selectProvider('anthropic')">Anthropic</button>
+                                    <button class="setup-provider-btn" onclick="selectProvider('openai')">OpenAI</button>
+                                </div>
+                                <div class="step-hint" id="proxyProviderHint"></div>
+                                <input type="password" class="setup-key-input" id="proxyApiKeyInput" 
+                                       placeholder="sk-..." autocomplete="off" style="margin-top:6px;"
+                                       onkeydown="if(event.key==='Enter') submitApiKey('proxy')">
+                                <button class="setup-save-btn" id="proxySaveBtn" onclick="submitApiKey('proxy')" disabled style="margin-top:6px;">
+                                    Save Key
+                                </button>
+                                <div class="setup-status" id="proxySetupStatus"></div>
+                            </div>
+                        </details>
+                    </div>
                 </div>
             </div>
             
@@ -5926,9 +5948,15 @@
                 if (data.needs_setup) {
                     // Show setup card
                     document.getElementById('setupCard').style.display = '';
+                    document.getElementById('proxyCard').style.display = 'none';
+                } else if (data.llm_provider === 'proxy') {
+                    // Proxy mode — show subtle BYOK upsell
+                    document.getElementById('setupCard').style.display = 'none';
+                    document.getElementById('proxyCard').style.display = '';
                 } else {
                     // All good — show normal welcome
                     document.getElementById('setupCard').style.display = 'none';
+                    document.getElementById('proxyCard').style.display = 'none';
                 }
             } catch (e) {
                 // Server not reachable — don't block, just show normal UI
@@ -5947,7 +5975,10 @@
                 anthropic: 'Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>',
                 openai: 'Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>'
             };
-            document.getElementById('providerHint').innerHTML = hints[provider];
+            const hint = hints[provider];
+            document.getElementById('providerHint').innerHTML = hint;
+            const proxyHint = document.getElementById('proxyProviderHint');
+            if (proxyHint) proxyHint.innerHTML = hint;
             // Enable save if key is also filled
             updateSaveBtn();
         }
@@ -5955,17 +5986,25 @@
         function updateSaveBtn() {
             const key = document.getElementById('apiKeyInput').value.trim();
             document.getElementById('setupSaveBtn').disabled = !(selectedProvider && key.length >= 10);
+            // Also update proxy card button
+            const proxyInput = document.getElementById('proxyApiKeyInput');
+            const proxyBtn = document.getElementById('proxySaveBtn');
+            if (proxyInput && proxyBtn) {
+                proxyBtn.disabled = !(selectedProvider && proxyInput.value.trim().length >= 10);
+            }
         }
         
-        // Listen for input on the key field
+        // Listen for input on the key fields
         document.getElementById('apiKeyInput')?.addEventListener('input', updateSaveBtn);
+        document.getElementById('proxyApiKeyInput')?.addEventListener('input', updateSaveBtn);
         
-        async function submitApiKey() {
-            const key = document.getElementById('apiKeyInput').value.trim();
+        async function submitApiKey(source) {
+            const isProxy = source === 'proxy';
+            const key = document.getElementById(isProxy ? 'proxyApiKeyInput' : 'apiKeyInput').value.trim();
             if (!selectedProvider || key.length < 10) return;
             
-            const btn = document.getElementById('setupSaveBtn');
-            const status = document.getElementById('setupStatus');
+            const btn = document.getElementById(isProxy ? 'proxySaveBtn' : 'setupSaveBtn');
+            const status = document.getElementById(isProxy ? 'proxySetupStatus' : 'setupStatus');
             btn.disabled = true;
             btn.textContent = 'Saving...';
             status.className = 'setup-status';
@@ -5986,16 +6025,17 @@
                 status.className = 'setup-status success';
                 status.textContent = '✓ API key saved! Ziggy is ready.';
                 
-                // Transition: hide setup
+                // Transition: hide both cards
                 setTimeout(() => {
                     document.getElementById('setupCard').style.display = 'none';
+                    document.getElementById('proxyCard').style.display = 'none';
                 }, 1200);
                 
             } catch (e) {
                 status.className = 'setup-status error';
                 status.textContent = e.message || 'Failed to save. Try setting the environment variable manually.';
                 btn.disabled = false;
-                btn.textContent = 'Save & Start Chatting';
+                btn.textContent = isProxy ? 'Save Key' : 'Save & Start Chatting';
             }
         }
         

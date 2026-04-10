@@ -4,9 +4,21 @@
     {
       "src": "broker.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "proxy.py",
+      "use": "@vercel/python"
     }
   ],
   "routes": [
+    {
+      "src": "/v1/messages",
+      "dest": "proxy.py"
+    },
+    {
+      "src": "/status",
+      "dest": "proxy.py"
+    },
     {
       "src": "/(.*)",
       "dest": "broker.py"

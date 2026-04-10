@@ -473,12 +473,13 @@ def get_react_agent() -> Optional[ReActAgent]:
     logger.info(f"Loaded {len(tools)} tools from {len(engine._primitives)} primitives")
     
     # Create LLM client
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        import anthropic
-        llm_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    else:
-        import openai
-        llm_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    from llm_factory import create_anthropic_client, create_openai_client
+    llm_client, llm_mode = create_anthropic_client()
+    if not llm_client:
+        llm_client, llm_mode = create_openai_client()
+    if not llm_client:
+        return None
+    logger.info(f"LLM mode: {llm_mode}")
     
     # Share LLM client with the intent router for AI-based classification
     from intent_router import set_llm_client
@@ -1077,9 +1078,9 @@ async def get_session_agent(session: Optional[UserSession] = None, force_new: bo
     if session.agent is not None:
         return session.agent
     
-    # Need API key
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    # Need API key or proxy
+    from llm_factory import get_llm_mode
+    if get_llm_mode() == "none":
         return None
     
     # Get the Telic engine
@@ -1098,12 +1099,12 @@ async def get_session_agent(session: Optional[UserSession] = None, force_new: bo
     logger.info(f"Created agent with {len(tools)} tools")
     
     # Create LLM client
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        import anthropic
-        llm_client = anthropic.Anthropic()
-    else:
-        import openai
-        llm_client = openai.OpenAI()
+    from llm_factory import create_anthropic_client, create_openai_client
+    llm_client, llm_mode = create_anthropic_client()
+    if not llm_client:
+        llm_client, llm_mode = create_openai_client()
+    if not llm_client:
+        return None
     
     from datetime import datetime, timedelta
     now = datetime.now()

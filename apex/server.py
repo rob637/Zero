@@ -540,7 +540,9 @@ _credential_store = None
 @app.get("/api/setup-status")
 async def setup_status():
     """Lightweight first-run check — tells the UI what the user still needs to configure."""
-    has_llm = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    from llm_factory import get_llm_mode
+    llm_mode = get_llm_mode()
+    has_llm = llm_mode != "none"
     
     # Which LLM provider is set
     llm_provider = None
@@ -548,6 +550,8 @@ async def setup_status():
         llm_provider = "anthropic"
     elif os.environ.get("OPENAI_API_KEY"):
         llm_provider = "openai"
+    elif llm_mode == "proxy":
+        llm_provider = "proxy"
     
     # Count connected services
     connected = []
