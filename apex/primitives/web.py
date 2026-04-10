@@ -612,7 +612,7 @@ class MediaPrimitive(Primitive):
             "convert": "Convert media between formats (e.g. mp4→mp3, png→jpg)",
             "resize": "Resize an image to specific dimensions",
             "crop": "Crop an image — by coordinates (left/top/right/bottom) or by aspect ratio (e.g. '16:9', '1:1') with center-crop",
-            "analyze": "Analyze image quality — returns sharpness, brightness, contrast, colorfulness, resolution. Use this to compare and rank photos.",
+            "analyze": "Analyze image quality — returns sharpness, brightness, contrast, colorfulness, resolution, quality_score (0-100), and phash (perceptual hash — images with similar phash are near-duplicates, discard them for variety).",
             "generate": "Generate an image or audio using AI",
             "transcribe": "Transcribe audio/video to text",
             "play": "Play or queue media via a provider (Spotify, etc.)",
@@ -902,6 +902,14 @@ class MediaPrimitive(Primitive):
                             mean_root = math.sqrt(rg_mean**2 + yb_mean**2)
                             colorfulness = std_root + 0.3 * mean_root
 
+                        # Perceptual hash — 64-bit hash for duplicate detection
+                        # Two images with Hamming distance < 10 are near-duplicates
+                        thumb = gray.resize((8, 8), Image.LANCZOS)
+                        pixels = list(thumb.getdata())
+                        avg = sum(pixels) / 64
+                        bits = "".join("1" if p >= avg else "0" for p in pixels)
+                        phash = hex(int(bits, 2))[2:].zfill(16)
+
                         # Quality score — weighted composite (0-100)
                         s_score = min(sharpness / 30, 1.0) * 40       # sharpness: 0-40 pts
                         c_score = min(contrast / 80, 1.0) * 25        # contrast: 0-25 pts
@@ -918,6 +926,7 @@ class MediaPrimitive(Primitive):
                         "contrast": round(contrast, 1),
                         "colorfulness": round(colorfulness, 1),
                         "quality_score": quality_score,
+                        "phash": phash,
                     })
                 except ImportError:
                     return StepResult(False, error="Install Pillow for image analysis: pip install Pillow")
