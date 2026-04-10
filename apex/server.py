@@ -430,6 +430,47 @@ async def get_geotagged_photos():
         return JSONResponse({"photos": [], "error": str(e)})
 
 
+@app.post("/files/migrate-gps")
+async def migrate_gps_to_raw():
+    """One-time migration: parse GPS from body text into raw JSON field.
+    
+    Avoids a full rescan — reads existing indexed data and updates in place.
+    """
+    if not state._data_index:
+        raise HTTPException(400, "Index not available")
+
+    import re
+    gps_pattern = re.compile(r'GPS:\s*([-\d.]+),\s*([-\d.]+)')
+
+    rows = state._data_index._conn.execute(
+        "SELECT id, body, raw FROM data_objects "
+        "WHERE source = 'local_files' AND body LIKE '%GPS:%'"
+    ).fetchall()
+
+    updated = 0
+    for row in rows:
+        obj_id, body, raw_str = row
+        match = gps_pattern.search(body or "")
+        if not match:
+            continue
+
+        raw = json.loads(raw_str) if isinstance(raw_str, str) else (raw_str or {})
+        if "lat" in raw and "lng" in raw:
+            continue  # Already migrated
+
+        raw["lat"] = float(match.group(1))
+        raw["lng"] = float(match.group(2))
+
+        state._data_index._conn.execute(
+            "UPDATE data_objects SET raw = ? WHERE id = ?",
+            (json.dumps(raw), obj_id)
+        )
+        updated += 1
+
+    state._data_index._conn.commit()
+    return JSONResponse({"migrated": updated, "total_with_gps": len(rows)})
+
+
 @app.get("/files/thumb")
 async def get_file_thumbnail(path: str = ""):
     """Serve a photo thumbnail for the map popup."""

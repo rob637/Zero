@@ -6466,8 +6466,21 @@
             if (!_photoMap) return;
             try {
                 const resp = await fetch('/files/photos');
-                const data = await resp.json();
-                const photos = data.photos || [];
+                let data = await resp.json();
+                let photos = data.photos || [];
+
+                // Auto-migrate GPS data if none found yet
+                if (photos.length === 0) {
+                    document.getElementById('photoMapCount').textContent = 'Migrating GPS data...';
+                    const migResp = await fetch('/files/migrate-gps', { method: 'POST' });
+                    const migData = await migResp.json();
+                    if (migData.migrated > 0) {
+                        const resp2 = await fetch('/files/photos');
+                        data = await resp2.json();
+                        photos = data.photos || [];
+                    }
+                }
+
                 document.getElementById('photoMapCount').textContent = `${photos.length} geotagged photos`;
 
                 // Clear existing markers
