@@ -103,6 +103,13 @@ class ConnectorSyncAdapter(SyncAdapter):
         sync_token: Optional[str] = None,
         since: Optional[datetime] = None,
     ) -> tuple[List[DataObject], str]:
+        # If connector exposes connection state and is not connected, skip quietly.
+        if hasattr(self._connector, "connected"):
+            val = getattr(self._connector, "connected")
+            is_conn = val() if callable(val) else bool(val)
+            if not is_conn:
+                return [], ""
+
         method = getattr(self._connector, self._fetch_method)
         kwargs = dict(self._fetch_kwargs)
 

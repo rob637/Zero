@@ -763,3 +763,26 @@ class GmailConnector:
 
         except HttpError as e:
             raise RuntimeError(f"Gmail sync error: {e}")
+        except Exception as e:
+            msg = str(e)
+            if "WRONG_VERSION_NUMBER" in msg or "SSL:" in msg:
+                # Best-effort recovery for local proxy/TLS interception glitches.
+                try:
+                    await self.connect()
+                    profile = await asyncio.to_thread(
+                        self._service.users().getProfile(userId='me').execute
+                    )
+                    current_history_id = profile.get('historyId', '')
+                    emails = await self.list_messages(
+                        query="in:inbox OR in:sent",
+                        max_results=max_results,
+                        include_body=False,
+                    )
+                    return {
+                        "messages": emails,
+                        "deleted_ids": [],
+                        "history_id": current_history_id,
+                    }
+                except Exception as e2:
+                    raise RuntimeError(f"Gmail sync SSL recovery failed: {e2}")
+            raise RuntimeError(f"Gmail sync error: {e}")

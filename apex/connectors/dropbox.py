@@ -63,6 +63,8 @@ class DropboxConnector:
     def __init__(self, access_token: Optional[str] = None):
         self._token = access_token or os.environ.get("DROPBOX_ACCESS_TOKEN", "")
         self._http = None
+        self._scope_invalid = False
+        self._scope_error_logged = False
 
     async def connect(self):
         """Initialize HTTP client."""
@@ -74,6 +76,13 @@ class DropboxConnector:
             headers={"Authorization": f"Bearer {self._token}"},
             timeout=60,
         )
+        self._scope_invalid = False
+        self._scope_error_logged = False
+
+    @property
+    def connected(self) -> bool:
+        # Treat missing scope as disconnected so sync adapters can skip retries.
+        return self._http is not None and not self._scope_invalid
 
     async def _ensure_client(self):
         if not self._http:
@@ -81,6 +90,9 @@ class DropboxConnector:
 
     async def list_files(self, path: str = "", limit: int = 100) -> List[DropboxFile]:
         """List files and folders in a path. Use '' for root."""
+        if self._scope_invalid:
+            return []
+
         await self._ensure_client()
         resp = await self._http.post(
             f"{self.API_BASE}/files/list_folder",
@@ -88,6 +100,16 @@ class DropboxConnector:
         )
         if resp.status_code == 400:
             detail = resp.text[:200] if resp.text else "no details"
+            low = detail.lower()
+            if "required scope" in low or "not permitted" in low:
+                self._scope_invalid = True
+                if not self._scope_error_logged:
+                    logger.warning(
+                        "Dropbox disabled: app token lacks required scope (files.metadata.read). "
+                        "Update Dropbox app scopes and reconnect."
+                    )
+                    self._scope_error_logged = True
+                return []
             logger.error(f"Dropbox list_folder 400: {detail}")
             return []
         if resp.status_code == 401:
