@@ -868,6 +868,17 @@ async def startup_event(app=None):
     except Exception as e:
         logger.warning(f"Local file scanner init failed (non-fatal): {e}")
 
+    # Start routine scheduler
+    try:
+        from routines import get_routine_runner
+        _routine_runner = get_routine_runner()
+        await _routine_runner.start()
+        from routines import get_routine_store
+        count = len([r for r in get_routine_store().list() if r["enabled"]])
+        logger.info(f"Routine scheduler started ({count} active routines)")
+    except Exception as e:
+        logger.warning(f"Routine scheduler init failed (non-fatal): {e}")
+
 
 
 def get_cred_store():

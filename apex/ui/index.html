@@ -2597,6 +2597,36 @@
             color: var(--text-muted);
             margin-top: 2px;
         }
+        /* Routines */
+        .routine-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.15s;
+        }
+        .routine-item:hover { background: var(--bg-hover); }
+        .routine-item .routine-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .routine-item .routine-schedule { font-size: 0.7rem; color: var(--text-muted); }
+        .routine-item .routine-toggle { opacity: 0.6; cursor: pointer; font-size: 0.75rem; }
+        .routine-item .routine-toggle:hover { opacity: 1; }
+        .routine-item.disabled .routine-name { opacity: 0.4; text-decoration: line-through; }
+        .routine-form-group { margin-bottom: 14px; }
+        .routine-form-group label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary); }
+        .routine-form-group input, .routine-form-group textarea, .routine-form-group select {
+            width: 100%; padding: 8px 10px; border: 1px solid var(--border-light); border-radius: 6px;
+            background: var(--bg-tertiary); color: var(--text-primary); font-size: 0.85rem; font-family: inherit;
+        }
+        .routine-form-group textarea { resize: vertical; min-height: 60px; }
+        .routine-form-row { display: flex; gap: 10px; }
+        .routine-form-row .routine-form-group { flex: 1; }
+        .routine-days { display: flex; gap: 4px; margin-top: 4px; }
+        .routine-day-btn { padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-light); background: var(--bg-tertiary); color: var(--text-secondary); font-size: 0.75rem; cursor: pointer; }
+        .routine-day-btn.active { background: var(--accent-primary); color: white; border-color: var(--accent-primary); }
+        .routine-last-run { font-size: 0.7rem; color: var(--text-muted); padding: 2px 12px; }
         .toggle-switch {
             position: relative;
             width: 44px;
@@ -2846,6 +2876,22 @@
             </div>
         </div>
         
+        <div class="sidebar-section">
+            <div class="sidebar-section-title collapsible" onclick="toggleSection('routines')">
+                <span>Routines <span class="section-badge" id="routinesBadge"></span></span>
+                <span class="chevron collapsed" id="routinesChevron">▼</span>
+            </div>
+            <div class="sidebar-collapsible-content collapsed" id="routinesCollapsible">
+                <div id="routinesList">
+                    <div class="sidebar-item" style="color: var(--text-muted); font-size: 0.75rem;">Loading...</div>
+                </div>
+                <div class="sidebar-item" onclick="openRoutineModal()" style="margin-top: 4px;">
+                    <span class="sidebar-item-icon">➕</span>
+                    <span>New Routine</span>
+                </div>
+            </div>
+        </div>
+
         <div class="sidebar-section session-list">
             <div class="sidebar-section-title collapsible" onclick="toggleSection('sessions')">
                 <span>Recent Sessions</span>
@@ -5971,6 +6017,7 @@
             loadSessions();
             renderSidebarActions();
             loadPCIndexStatus();
+            loadRoutines();
         }, 500);
         
         // Periodic refresh — pause when tab hidden
@@ -5990,6 +6037,200 @@
         startPolling();
         // Warm cache on app open
         fetch('/prefetch', { method: 'POST' }).catch(() => {});
+
+        // ============================================
+        // Routines
+        // ============================================
+
+        async function loadRoutines() {
+            try {
+                const res = await fetch(`${API}/routines`);
+                const routines = await res.json();
+                const list = document.getElementById('routinesList');
+                const badge = document.getElementById('routinesBadge');
+                const active = routines.filter(r => r.enabled).length;
+                badge.textContent = active > 0 ? active : '';
+                if (routines.length === 0) {
+                    list.innerHTML = '<div style="padding:4px 12px;font-size:0.75rem;color:var(--text-muted);">No routines yet</div>';
+                    return;
+                }
+                list.innerHTML = routines.map(r => {
+                    const sched = _formatSchedule(r.schedule);
+                    const lastRun = r.last_run ? _timeAgo(r.last_run) : 'never';
+                    return `<div class="routine-item ${r.enabled ? '' : 'disabled'}" onclick="openRoutineModal('${r.id}')">
+                        <span class="routine-name" title="${_esc(r.prompt)}">${_esc(r.name)}</span>
+                        <span class="routine-schedule">${sched}</span>
+                        <span class="routine-toggle" onclick="event.stopPropagation();toggleRoutine('${r.id}')" title="${r.enabled ? 'Disable' : 'Enable'}">${r.enabled ? '⏸' : '▶'}</span>
+                    </div>
+                    <div class="routine-last-run">Last: ${lastRun}</div>`;
+                }).join('');
+            } catch (e) {
+                console.error('Failed to load routines:', e);
+            }
+        }
+
+        function _formatSchedule(s) {
+            const t = s.time || '08:00';
+            if (s.type === 'daily') return `Daily ${t}`;
+            if (s.type === 'weekdays') return `Weekdays ${t}`;
+            if (s.type === 'weekly') {
+                const names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+                const days = (s.days || []).map(d => names[d]).join(', ');
+                return `${days} ${t}`;
+            }
+            if (s.type === 'interval') return `Every ${s.minutes || 60}m`;
+            return s.type;
+        }
+
+        function _timeAgo(iso) {
+            const d = new Date(iso);
+            const now = new Date();
+            const mins = Math.floor((now - d) / 60000);
+            if (mins < 1) return 'just now';
+            if (mins < 60) return `${mins}m ago`;
+            const hrs = Math.floor(mins / 60);
+            if (hrs < 24) return `${hrs}h ago`;
+            const days = Math.floor(hrs / 24);
+            return `${days}d ago`;
+        }
+
+        function _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+        async function toggleRoutine(id) {
+            await fetch(`${API}/routines/${id}/toggle`, { method: 'POST' });
+            loadRoutines();
+        }
+
+        async function runRoutineNow(id) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Running...';
+            try {
+                await fetch(`${API}/routines/${id}/run`, { method: 'POST' });
+                setTimeout(() => { loadRoutines(); }, 2000);
+            } catch (e) { console.error(e); }
+            btn.disabled = false;
+            btn.textContent = '▶ Run Now';
+        }
+
+        async function deleteRoutine(id) {
+            if (!confirm('Delete this routine?')) return;
+            await fetch(`${API}/routines/${id}`, { method: 'DELETE' });
+            closeRoutineModal();
+            loadRoutines();
+        }
+
+        async function openRoutineModal(editId) {
+            let modal = document.getElementById('routineModal');
+            if (modal) modal.remove();
+
+            let routine = null;
+            if (editId) {
+                try {
+                    const res = await fetch(`${API}/routines/${editId}`);
+                    routine = await res.json();
+                } catch(e) {}
+            }
+
+            const isEdit = !!routine;
+            const sched = routine?.schedule || { type: 'daily', time: '08:00' };
+            const days = sched.days || [];
+            const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+            modal = document.createElement('div');
+            modal.id = 'routineModal';
+            modal.className = 'modal-overlay active';
+            modal.onclick = (e) => { if (e.target === modal) closeRoutineModal(); };
+            modal.innerHTML = `
+                <div class="modal" style="max-width:480px;" onclick="event.stopPropagation()">
+                    <div class="modal-header">
+                        <span>🔄</span>
+                        <span class="modal-title">${isEdit ? 'Edit' : 'New'} Routine</span>
+                        <button class="modal-close" onclick="closeRoutineModal()">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="routine-form-group">
+                            <label>Name</label>
+                            <input id="routineName" placeholder="Morning Briefing" value="${_esc(routine?.name || '')}">
+                        </div>
+                        <div class="routine-form-group">
+                            <label>Prompt</label>
+                            <textarea id="routinePrompt" rows="3" placeholder="Check my calendar, email, and tasks for today and give me a summary.">${_esc(routine?.prompt || '')}</textarea>
+                        </div>
+                        <div class="routine-form-row">
+                            <div class="routine-form-group">
+                                <label>Schedule</label>
+                                <select id="routineType" onchange="routineTypeChanged()">
+                                    <option value="daily" ${sched.type==='daily'?'selected':''}>Daily</option>
+                                    <option value="weekdays" ${sched.type==='weekdays'?'selected':''}>Weekdays</option>
+                                    <option value="weekly" ${sched.type==='weekly'?'selected':''}>Weekly</option>
+                                    <option value="interval" ${sched.type==='interval'?'selected':''}>Interval</option>
+                                </select>
+                            </div>
+                            <div class="routine-form-group" id="routineTimeGroup">
+                                <label>Time</label>
+                                <input id="routineTime" type="time" value="${sched.time || '08:00'}">
+                            </div>
+                            <div class="routine-form-group" id="routineIntervalGroup" style="display:none;">
+                                <label>Minutes</label>
+                                <input id="routineInterval" type="number" min="5" max="1440" value="${sched.minutes || 60}">
+                            </div>
+                        </div>
+                        <div id="routineDaysGroup" style="display:${sched.type==='weekly'?'block':'none'};">
+                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);">Days</label>
+                            <div class="routine-days" id="routineDays">
+                                ${dayNames.map((d,i) => `<button type="button" class="routine-day-btn ${days.includes(i)?'active':''}" onclick="this.classList.toggle('active')" data-day="${i}">${d}</button>`).join('')}
+                            </div>
+                        </div>
+                        ${isEdit && routine.last_result ? `<div style="margin-top:12px;padding:10px;background:var(--bg-tertiary);border-radius:6px;font-size:0.75rem;max-height:120px;overflow-y:auto;"><strong>Last result:</strong><br>${_esc(routine.last_result).substring(0,300)}</div>` : ''}
+                        <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+                            ${isEdit ? `<button onclick="deleteRoutine('${routine.id}')" style="margin-right:auto;padding:8px 14px;border-radius:6px;border:1px solid #e74c3c;background:transparent;color:#e74c3c;cursor:pointer;">Delete</button>` : ''}
+                            ${isEdit ? `<button onclick="runRoutineNow('${routine.id}')" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border-light);background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">▶ Run Now</button>` : ''}
+                            <button onclick="saveRoutine(${isEdit ? `'${routine.id}'` : 'null'})" style="padding:8px 18px;border-radius:6px;border:none;background:var(--accent-primary);color:white;cursor:pointer;font-weight:500;">${isEdit ? 'Save' : 'Create'}</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            routineTypeChanged();
+        }
+
+        function closeRoutineModal() {
+            const m = document.getElementById('routineModal');
+            if (m) m.remove();
+        }
+
+        function routineTypeChanged() {
+            const type = document.getElementById('routineType').value;
+            document.getElementById('routineTimeGroup').style.display = type === 'interval' ? 'none' : '';
+            document.getElementById('routineIntervalGroup').style.display = type === 'interval' ? '' : 'none';
+            document.getElementById('routineDaysGroup').style.display = type === 'weekly' ? 'block' : 'none';
+        }
+
+        async function saveRoutine(editId) {
+            const name = document.getElementById('routineName').value.trim();
+            const prompt = document.getElementById('routinePrompt').value.trim();
+            const type = document.getElementById('routineType').value;
+            if (!name || !prompt) { alert('Name and prompt are required'); return; }
+
+            const schedule = { type };
+            if (type === 'interval') {
+                schedule.minutes = parseInt(document.getElementById('routineInterval').value) || 60;
+            } else {
+                schedule.time = document.getElementById('routineTime').value || '08:00';
+                if (type === 'weekly') {
+                    schedule.days = [...document.querySelectorAll('.routine-day-btn.active')].map(b => parseInt(b.dataset.day));
+                    if (schedule.days.length === 0) { alert('Select at least one day'); return; }
+                }
+            }
+
+            const body = JSON.stringify(editId ? { name, prompt, schedule } : { name, prompt, schedule });
+            const method = editId ? 'PUT' : 'POST';
+            const url = editId ? `${API}/routines/${editId}` : `${API}/routines`;
+            await fetch(url, { method, headers: {'Content-Type':'application/json'}, body });
+            closeRoutineModal();
+            loadRoutines();
+        }
 
         // Theme toggle
         function toggleTheme() {
