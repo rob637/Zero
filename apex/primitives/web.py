@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from .base import Primitive, StepResult
+from .base import get_data_index
 
 logger = logging.getLogger(__name__)
 
@@ -1011,7 +1012,7 @@ class PhotoPrimitive(Primitive):
         return self.get_available_operations()
     
     def get_available_operations(self) -> Dict[str, str]:
-        return {
+        ops = {
             "list": "List photos",
             "upload": "Upload a photo",
             "download": "Download a photo",
@@ -1020,6 +1021,59 @@ class PhotoPrimitive(Primitive):
             "add_to_album": "Add photo to album",
             "metadata": "Get photo metadata",
             "edit": "Edit a photo",
+        }
+        connected = self.get_connected_providers()
+        if connected:
+            return ops
+
+        idx = get_data_index()
+        if idx:
+            return {
+                "list": ops["list"],
+                "search": ops["search"],
+                "metadata": ops["metadata"],
+            }
+
+        return {}
+
+    @staticmethod
+    def _looks_like_image_path(path: str) -> bool:
+        p = (path or "").lower()
+        return p.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tiff"))
+
+    @classmethod
+    def _is_image_object(cls, obj: Any) -> bool:
+        title = (getattr(obj, "title", "") or "").lower()
+        body = (getattr(obj, "body", "") or "").lower()
+        raw = getattr(obj, "raw", {}) or {}
+
+        mime = str(raw.get("mimeType") or raw.get("mime_type") or raw.get("contentType") or "").lower()
+        if mime.startswith("image/"):
+            return True
+
+        candidates = [
+            title,
+            body,
+            str(raw.get("name") or ""),
+            str(raw.get("path") or ""),
+            str(raw.get("filePath") or ""),
+            str(raw.get("filename") or ""),
+            str(raw.get("url") or ""),
+        ]
+        return any(cls._looks_like_image_path(c.lower()) for c in candidates)
+
+    @staticmethod
+    def _index_obj_to_photo(obj: Any) -> Dict[str, Any]:
+        raw = getattr(obj, "raw", {}) or {}
+        return {
+            "id": getattr(obj, "source_id", ""),
+            "name": getattr(obj, "title", "") or raw.get("name", ""),
+            "description": getattr(obj, "body", ""),
+            "source": getattr(obj, "source", ""),
+            "url": raw.get("webViewLink") or raw.get("url") or getattr(obj, "url", ""),
+            "path": raw.get("path") or raw.get("filePath") or raw.get("local_path") or "",
+            "mime_type": raw.get("mimeType") or raw.get("mime_type") or "",
+            "modified": getattr(obj, "timestamp", None).isoformat() if getattr(obj, "timestamp", None) else None,
         }
     
     def get_param_schema(self) -> Dict[str, Any]:
@@ -1046,6 +1100,22 @@ class PhotoPrimitive(Primitive):
                 elif operation == "search" and hasattr(provider, "search_photos"):
                     result = await provider.search_photos(params.get("query"))
                     return StepResult(True, data={"photos": result, "provider": name})
+
+            idx = get_data_index()
+            if idx and operation in {"list", "search"}:
+                limit = params.get("limit", 50)
+                if operation == "search":
+                    index_results = idx.search(params.get("query", ""), kind="file", limit=limit)
+                else:
+                    index_results = idx.query(kind="file", limit=limit)
+
+                photos = [
+                    self._index_obj_to_photo(obj)
+                    for obj in index_results
+                    if self._is_image_object(obj)
+                ]
+                if photos:
+                    return StepResult(True, data={"photos": photos[:limit], "provider": "index", "indexed": True})
             
             # Local file handling
             if operation == "list":
@@ -1062,7 +1132,17 @@ class PhotoPrimitive(Primitive):
                 return StepResult(True, data={"downloaded": True, "provider": "local"})
             
             elif operation == "search":
-                return StepResult(True, data={"photos": [], "provider": "local", "note": "Local search not implemented"})
+                query = (params.get("query") or "").lower().strip()
+                base = Path(params.get("directory", str(Path.home() / "Pictures")))
+                if not base.exists() or not base.is_dir():
+                    return StepResult(True, data={"photos": [], "provider": "local", "note": f"Directory not found: {base}"})
+
+                all_photos = list(base.rglob("*.jpg")) + list(base.rglob("*.jpeg")) + list(base.rglob("*.png")) + list(base.rglob("*.webp"))
+                if query:
+                    matched = [p for p in all_photos if query in p.name.lower() or query in str(p).lower()]
+                else:
+                    matched = all_photos
+                return StepResult(True, data={"photos": [str(p) for p in matched[:params.get("limit", 50)]], "provider": "local"})
             
             elif operation == "create_album":
                 name = params.get("name", "Album")

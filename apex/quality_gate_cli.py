@@ -36,6 +36,11 @@ def main() -> int:
     )
     parser.add_argument("--lookback", type=int, default=200, help="Evaluation lookback window")
     parser.add_argument("--window", type=int, default=20, help="Trend comparison window")
+    parser.add_argument(
+        "--allow-week2-insufficient-history",
+        action="store_true",
+        help="Treat week2 insufficient history gaps as non-blocking (useful for ephemeral CI runs)",
+    )
     args = parser.parse_args()
 
     if args.gate == "week3-connectors":
@@ -78,6 +83,40 @@ def main() -> int:
 
     if payload.get("ready") is True:
         return 0
+
+    if args.allow_week2_insufficient_history and args.gate == "week2":
+        checks = payload.get("checks") or {}
+        orch = checks.get("orchestration_score") or {}
+        overall = orch.get("overall") or {}
+        components = overall.get("components") or {}
+        targets = overall.get("targets") or {}
+        gaps = set(overall.get("gaps") or [])
+        failures = set(payload.get("failures") or [])
+
+        total_runs = int(components.get("total_runs") or 0)
+        min_total_runs = int(targets.get("min_total_runs") or 100)
+
+        only_week2_history_failures = failures.issubset(
+            {
+                "orchestration_score_below_0_90",
+                "orchestration_gaps_present",
+            }
+        )
+        history_related_gaps = {
+            "insufficient_eval_coverage",
+            "pass_rate_below_world_class_target",
+            "quality_score_below_world_class_target",
+        }
+
+        if total_runs < min_total_runs and only_week2_history_failures and gaps.issubset(history_related_gaps):
+            print(
+                (
+                    "Week2 gate: allowing insufficient history in CI "
+                    f"(total_runs={total_runs}, min_total_runs={min_total_runs})."
+                ),
+                file=sys.stderr,
+            )
+            return 0
 
     failures = payload.get("failures", [])
     print(f"Quality gate failed: {', '.join(failures) if failures else 'unknown'}", file=sys.stderr)

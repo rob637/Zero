@@ -61,6 +61,21 @@ class CalendarPrimitive(Primitive):
             "delete": "Delete an event by ID",
             "availability": "Check free/busy times in a date range",
         }
+
+    def get_available_operations(self) -> Dict[str, str]:
+        ops = self.get_operations()
+        connected = self.get_connected_providers()
+        if connected:
+            return ops
+
+        idx = get_data_index()
+        if idx and not idx.is_stale("google_calendar"):
+            return {
+                "list": ops["list"],
+                "search": ops["search"],
+            }
+
+        return {}
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
         return {

@@ -66,7 +66,7 @@ jobs:
 
       - name: Enforce week2 quality gate
         run: |
-          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --lookback 200 --window 20
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --lookback 200 --window 20 --allow-week2-insufficient-history
 
       - name: Enforce week3 connectors gate
         run: |

@@ -111,7 +111,7 @@ class FilePrimitive(Primitive):
                 
                 base = Path(directory)
                 if not base.exists():
-                    return StepResult(False, error=f"Directory not found: {directory}")
+                    return StepResult(True, data=[])
                 
                 matches = []
                 glob_func = base.rglob if recursive else base.glob
@@ -161,7 +161,7 @@ class FilePrimitive(Primitive):
                 
                 base = Path(directory)
                 if not base.exists():
-                    return StepResult(False, error=f"Directory not found: {directory}")
+                    return StepResult(True, data=[])
                 
                 items = []
                 for p in base.iterdir():

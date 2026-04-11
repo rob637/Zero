@@ -150,6 +150,26 @@ class Apex:
     def _init_primitives(self):
         """Initialize all primitives, wiring in connectors as providers."""
         c = self._connectors
+
+        def _is_connected(connector: Any) -> bool:
+            if not connector:
+                return False
+            if hasattr(connector, "connected"):
+                val = getattr(connector, "connected")
+                return val() if callable(val) else bool(val)
+            if hasattr(connector, "is_connected"):
+                val = getattr(connector, "is_connected")
+                return val() if callable(val) else bool(val)
+            return True
+
+        def _prefer_connected(*connectors: Any) -> Any:
+            for connector in connectors:
+                if _is_connected(connector):
+                    return connector
+            for connector in connectors:
+                if connector is not None:
+                    return connector
+            return None
         
         self._primitives["FILE"] = FilePrimitive()
         self._primitives["DOCUMENT"] = DocumentPrimitive(self._llm_complete)
@@ -163,7 +183,7 @@ class Apex:
             email_providers["gmail"] = gmail
         if outlook:
             email_providers["outlook"] = outlook
-        first_email = gmail or outlook
+        first_email = _prefer_connected(gmail, outlook)
         self._primitives["EMAIL"] = EmailPrimitive(
             providers=email_providers,
             send_func=first_email.send_email if first_email else None,
@@ -192,7 +212,7 @@ class Apex:
             cal_providers["google_calendar"] = gcal
         if ocal:
             cal_providers["outlook_calendar"] = ocal
-        first_cal = gcal or ocal
+        first_cal = _prefer_connected(gcal, ocal)
         self._primitives["CALENDAR"] = CalendarPrimitive(
             str(self._storage_path / "calendar.json"),
             create_func=first_cal.create_event if first_cal else None,

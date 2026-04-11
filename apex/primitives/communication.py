@@ -46,7 +46,8 @@ class EmailPrimitive(Primitive):
             "list": "List recent emails",
             "read": "Read a specific email by ID to get its full body content",
         }
-        if self._connector:
+        connector = self._resolve_connector()
+        if connector:
             ops.update({
                 "reply": "Reply to an email",
                 "forward": "Forward an email to another recipient",
@@ -61,6 +62,25 @@ class EmailPrimitive(Primitive):
                 "get_thread": "Get all messages in an email thread",
             })
         return ops
+
+    def _is_provider_connected(self, provider: Any) -> bool:
+        if not provider:
+            return False
+        if hasattr(provider, 'connected'):
+            val = getattr(provider, 'connected')
+            return val() if callable(val) else bool(val)
+        if hasattr(provider, 'is_connected'):
+            val = getattr(provider, 'is_connected')
+            return val() if callable(val) else bool(val)
+        return True
+
+    def _resolve_connector(self) -> Optional[Any]:
+        for provider in self._providers.values():
+            if self._is_provider_connected(provider):
+                return provider
+        if self._connector and self._is_provider_connected(self._connector):
+            return self._connector
+        return None
     
     def get_param_schema(self) -> Dict[str, Dict[str, Any]]:
         schema = {
@@ -126,16 +146,31 @@ class EmailPrimitive(Primitive):
         return schema
     
     def get_available_operations(self) -> Dict[str, str]:
-        """All email operations are always available - execute returns helpful errors if no provider."""
-        return self.get_operations()
+        """Only expose operations that have a live backend or a fresh local index."""
+        ops = self.get_operations()
+        connector = self._resolve_connector()
+
+        if connector:
+            return ops
+
+        idx = get_data_index()
+        if idx and not idx.is_stale("gmail"):
+            return {
+                "search": ops["search"],
+                "list": ops["list"],
+            }
+
+        return {}
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         try:
             if operation == "send":
-                if not self._send:
+                connector = self._resolve_connector()
+                send_func = self._send or (connector.send_email if connector and hasattr(connector, "send_email") else None)
+                if not send_func:
                     return StepResult(False, error="Email sending not configured")
                 
-                result = await self._send(
+                result = await send_func(
                     to=params.get("to"),
                     subject=params.get("subject"),
                     body=params.get("body"),
@@ -176,32 +211,37 @@ class EmailPrimitive(Primitive):
                     except Exception as e:
                         print(f"[EMAIL] Index query failed, falling through to API: {e}")
 
-                if not self._list:
+                connector = self._resolve_connector()
+                list_func = self._list or (connector.list_messages if connector and hasattr(connector, "list_messages") else None)
+                if not list_func:
                     return StepResult(False, error="Email listing not configured")
                 
-                result = await self._list(
+                result = await list_func(
                     query=params.get("query", ""),
                     max_results=params.get("limit", 10),
                 )
                 return StepResult(True, data=result)
             
             elif operation == "read":
-                if not self._read:
+                connector = self._resolve_connector()
+                read_func = self._read or (connector.get_message if connector and hasattr(connector, "get_message") else None)
+                if not read_func:
                     return StepResult(False, error="Email reading not configured")
                 
                 message_id = params.get("message_id")
                 if not message_id:
                     return StepResult(False, error="message_id is required")
                 
-                email = await self._read(message_id)
+                email = await read_func(message_id)
                 if hasattr(email, 'to_dict'):
                     return StepResult(True, data=email.to_dict())
                 return StepResult(True, data=email)
             
             elif operation == "reply":
-                if not self._connector or not hasattr(self._connector, "reply"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "reply"):
                     return StepResult(False, error="Reply not supported by this email provider")
-                result = await self._connector.reply(
+                result = await connector.reply(
                     message_id=params["message_id"],
                     body=params["body"],
                     html=params.get("html", False),
@@ -209,9 +249,10 @@ class EmailPrimitive(Primitive):
                 return StepResult(True, data=result)
             
             elif operation == "forward":
-                if not self._connector or not hasattr(self._connector, "forward"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "forward"):
                     return StepResult(False, error="Forward not supported by this email provider")
-                result = await self._connector.forward(
+                result = await connector.forward(
                     message_id=params["message_id"],
                     to=params["to"],
                     additional_body=params.get("body", ""),
@@ -219,57 +260,66 @@ class EmailPrimitive(Primitive):
                 return StepResult(True, data=result)
             
             elif operation == "delete":
-                if not self._connector or not hasattr(self._connector, "delete_message"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "delete_message"):
                     return StepResult(False, error="Delete not supported by this email provider")
-                await self._connector.delete_message(params["message_id"])
+                await connector.delete_message(params["message_id"])
                 return StepResult(True, data={"deleted": True})
             
             elif operation == "trash":
-                if not self._connector or not hasattr(self._connector, "trash_message"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "trash_message"):
                     return StepResult(False, error="Trash not supported by this email provider")
-                await self._connector.trash_message(params["message_id"])
+                await connector.trash_message(params["message_id"])
                 return StepResult(True, data={"trashed": True})
             
             elif operation == "archive":
-                if not self._connector or not hasattr(self._connector, "archive_message"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "archive_message"):
                     return StepResult(False, error="Archive not supported by this email provider")
-                await self._connector.archive_message(params["message_id"])
+                await connector.archive_message(params["message_id"])
                 return StepResult(True, data={"archived": True})
             
             elif operation == "mark_read":
-                if not self._connector or not hasattr(self._connector, "mark_read"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "mark_read"):
                     return StepResult(False, error="Mark read not supported by this email provider")
-                await self._connector.mark_read(params["message_id"])
+                await connector.mark_read(params["message_id"])
                 return StepResult(True, data={"marked_read": True})
             
             elif operation == "mark_unread":
-                if not self._connector or not hasattr(self._connector, "mark_unread"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "mark_unread"):
                     return StepResult(False, error="Mark unread not supported by this email provider")
-                await self._connector.mark_unread(params["message_id"])
+                await connector.mark_unread(params["message_id"])
                 return StepResult(True, data={"marked_unread": True})
             
             elif operation == "add_label":
-                if not self._connector or not hasattr(self._connector, "add_label"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "add_label"):
                     return StepResult(False, error="Labels not supported by this email provider")
-                await self._connector.add_label(params["message_id"], params["label_ids"])
+                await connector.add_label(params["message_id"], params["label_ids"])
                 return StepResult(True, data={"labels_added": True})
             
             elif operation == "remove_label":
-                if not self._connector or not hasattr(self._connector, "remove_label"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "remove_label"):
                     return StepResult(False, error="Labels not supported by this email provider")
-                await self._connector.remove_label(params["message_id"], params["label_ids"])
+                await connector.remove_label(params["message_id"], params["label_ids"])
                 return StepResult(True, data={"labels_removed": True})
             
             elif operation == "get_labels":
-                if not self._connector or not hasattr(self._connector, "get_labels"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "get_labels"):
                     return StepResult(False, error="Labels not supported by this email provider")
-                result = await self._connector.get_labels()
+                result = await connector.get_labels()
                 return StepResult(True, data=result)
             
             elif operation == "get_thread":
-                if not self._connector or not hasattr(self._connector, "get_thread"):
+                connector = self._resolve_connector()
+                if not connector or not hasattr(connector, "get_thread"):
                     return StepResult(False, error="Threads not supported by this email provider")
-                result = await self._connector.get_thread(params["thread_id"])
+                result = await connector.get_thread(params["thread_id"])
                 return StepResult(True, data=result)
             
             else:
