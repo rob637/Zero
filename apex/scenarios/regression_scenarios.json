@@ -1,0 +1,115 @@
+{
+  "defaults": {
+    "orchestration_mode": "balanced",
+    "timeout_seconds": 180,
+    "max_approvals": 8
+  },
+  "scenarios": [
+    {
+      "id": "morning-command-center",
+      "name": "Morning Command Center",
+      "prompt": "Give me a morning command center for today. Pull calendar events, unread Gmail, Todoist tasks, and any urgent GitHub notifications. Then rank top 5 priorities and suggest a realistic schedule.",
+      "checks": {
+        "required_tools": [
+          "calendar_list",
+          "email_list",
+          "task_list",
+          "devtools_list_notifications"
+        ],
+        "required_output_patterns": [
+          "top\\s*5\\s*priorit",
+          "schedule"
+        ],
+        "forbidden_error_patterns": [
+          "timed out after",
+          "maximum number of steps",
+          "not making enough progress"
+        ],
+        "max_failed_steps": 0
+      }
+    },
+    {
+      "id": "weekly-exec-recap",
+      "name": "Weekly Executive Recap",
+      "prompt": "Look back 7 days and produce an executive recap from Calendar, Gmail, and Todoist: wins, misses, follow-ups, and people I should contact this week.",
+      "checks": {
+        "required_tools": [
+          "calendar_list",
+          "email_list",
+          "task_list"
+        ],
+        "required_output_patterns": [
+          "wins",
+          "misses",
+          "follow-ups?",
+          "contact"
+        ],
+        "forbidden_error_patterns": [
+          "timed out after",
+          "maximum number of steps",
+          "not making enough progress"
+        ],
+        "max_failed_steps": 0
+      }
+    },
+    {
+      "id": "germany-photo-story",
+      "name": "Germany Photo Story Project",
+      "prompt": "Find my Germany photos, group them by city/day, draft captions, and create a picture-book outline. Save the draft to Drive and give me a share-ready summary.",
+      "checks": {
+        "required_tools": [
+          "photo_search"
+        ],
+        "required_output_patterns": [
+          "caption",
+          "outline",
+          "share"
+        ],
+        "forbidden_error_patterns": [
+          "No data provided",
+          "maximum number of steps",
+          "not making enough progress"
+        ],
+        "max_failed_steps": 0
+      }
+    },
+    {
+      "id": "research-to-deliverable",
+      "name": "Research to Deliverable (Agentic AI)",
+      "prompt": "Find the best current resources on Agentic AI (videos + articles), dedupe weak sources, and create a clean report with links and 1-line takeaways per source. Save to Drive and prepare an email draft to send it.",
+      "checks": {
+        "required_output_patterns": [
+          "takeaways?",
+          "report",
+          "email draft"
+        ],
+        "forbidden_error_patterns": [
+          "maximum number of steps",
+          "not making enough progress"
+        ],
+        "max_failed_steps": 4
+      }
+    },
+    {
+      "id": "inbox-to-action",
+      "name": "Inbox to Action Pipeline",
+      "prompt": "Process my unread email from the last 48 hours, extract action items, create Todoist tasks with due dates, and draft replies for the top 3 threads that need response.",
+      "checks": {
+        "required_tools": [
+          "email_list"
+        ],
+        "required_output_patterns": [
+          "action items?",
+          "due",
+          "draft"
+        ],
+        "forbidden_error_patterns": [
+          "timed out after",
+          "maximum number of steps",
+          "not making enough progress"
+        ],
+        "max_failed_steps": 3
+      }
+    }
+  ]
+}
