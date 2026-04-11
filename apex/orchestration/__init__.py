@@ -1,6 +1,8 @@
 from .contracts import ExecutionPolicy, OutcomeContract, WorkflowPhase, WorkflowState
 from .state_machine import InvalidTransitionError, OrchestrationStateMachine
 from .artifact_ledger import ArtifactLedger, ArtifactRecord, extract_artifact_candidates
+from .capability_graph import CapabilitySummary, OrchestrationCapabilityGraph
+from .verifier import VerificationResult, verify_outcome
 
 __all__ = [
     "ExecutionPolicy",
@@ -12,4 +14,8 @@ __all__ = [
     "ArtifactLedger",
     "ArtifactRecord",
     "extract_artifact_candidates",
+    "CapabilitySummary",
+    "OrchestrationCapabilityGraph",
+    "VerificationResult",
+    "verify_outcome",
 ]

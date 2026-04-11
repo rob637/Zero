@@ -23,10 +23,12 @@ from src.control.action_history import ActionStatus
 import sessions as session_store
 from orchestration import (
     ArtifactLedger,
+    OrchestrationCapabilityGraph,
     ExecutionPolicy,
     InvalidTransitionError,
     OrchestrationStateMachine,
     OutcomeContract,
+    verify_outcome,
     WorkflowPhase,
     WorkflowState,
     extract_artifact_candidates,
@@ -65,10 +67,15 @@ def _build_outcome_contract(user_message: str) -> OutcomeContract:
     )
 
 
-def _build_workflow_meta(state: WorkflowState) -> Dict[str, Any]:
+def _build_workflow_meta(
+    state: WorkflowState,
+    capability_graph: OrchestrationCapabilityGraph,
+    verification: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     artifacts = _artifact_ledger.list_artifacts(state.workflow_id, limit=20)
     return {
         "state": state.to_dict(),
+        "capabilities": capability_graph.summary().to_dict(),
         "artifact_count": len(artifacts),
         "artifacts": [
             {
@@ -80,6 +87,7 @@ def _build_workflow_meta(state: WorkflowState) -> Dict[str, Any]:
             }
             for a in artifacts
         ],
+        "verification": verification,
     }
 
 
@@ -388,6 +396,8 @@ Remember: References like "the first one", "send it to him", "the information ab
             logger.info(f"Filtered tools: {original_count} → {len(agent.tools)} (domains: {intent.domains})")
     except Exception as e:
         logger.warning(f"Intent classification failed (falling through to FULL): {e}")
+
+    capability_graph = OrchestrationCapabilityGraph.from_tools(list(agent.tools.values()))
 
     # Event queue for SSE
     queue = asyncio.Queue()
@@ -720,9 +730,15 @@ User request: {req.message}"""
             )
 
             complete_payload = ss.state_to_response(state)
+            artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
+            verification = verify_outcome(workflow_state.outcome, state, artifacts).to_dict()
             complete_payload["meta"] = {
                 "data_health": data_health_snapshot,
-                "orchestration": _build_workflow_meta(workflow_state),
+                "orchestration": _build_workflow_meta(
+                    workflow_state,
+                    capability_graph,
+                    verification=verification,
+                ),
             }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
@@ -839,7 +855,8 @@ async def react_approve_stream(req: ReactApproveRequest):
                     phase=WorkflowPhase.CANCELLED,
                     outcome=_build_outcome_contract("approval_rejected"),
                 )
-                orchestration_meta = _build_workflow_meta(ws)
+                capability_graph = OrchestrationCapabilityGraph.from_tools(list(agent.tools.values()))
+                orchestration_meta = _build_workflow_meta(ws, capability_graph, verification=None)
             payload["meta"] = {
                 "data_health": _build_data_health_snapshot(),
                 "orchestration": orchestration_meta,
@@ -861,6 +878,7 @@ async def react_approve_stream(req: ReactApproveRequest):
         policy=ExecutionPolicy(mode=os.environ.get("TELIC_ORCH_MODE", "balanced")),
     )
     workflow_sm = OrchestrationStateMachine(workflow_state)
+    capability_graph = OrchestrationCapabilityGraph.from_tools(list(agent.tools.values()))
 
     async def on_step(step):
         data = ss.step_to_sse_dict(step)
@@ -958,9 +976,15 @@ async def react_approve_stream(req: ReactApproveRequest):
                 session.messages.append({"role": "assistant", "content": state.final_response})
             session.auto_save()
             payload = ss.state_to_response(state)
+            artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
+            verification = verify_outcome(workflow_state.outcome, state, artifacts).to_dict()
             payload["meta"] = {
                 "data_health": _build_data_health_snapshot(),
-                "orchestration": _build_workflow_meta(workflow_state),
+                "orchestration": _build_workflow_meta(
+                    workflow_state,
+                    capability_graph,
+                    verification=verification,
+                ),
             }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"

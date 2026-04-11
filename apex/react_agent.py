@@ -11,6 +11,7 @@ import logging
 import os
 import random
 import hashlib
+from collections import Counter
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Callable, Dict, List, Optional, Awaitable
 from enum import Enum
@@ -293,6 +294,10 @@ When you have completed the task, respond with a summary of what was done."""
     MAX_ITERATIONS = int(os.environ.get("TELIC_MAX_ITERATIONS", "20"))
     # Keep tool results compact to prevent context bloat.
     MAX_TOOL_RESULT_CHARS = int(os.environ.get("TELIC_MAX_TOOL_RESULT_CHARS", "800"))
+    # Detect and stop low-novelty loops before hitting max iterations.
+    LOW_NOVELTY_WINDOW = int(os.environ.get("TELIC_LOW_NOVELTY_WINDOW", "12"))
+    LOW_NOVELTY_MAX_UNIQUE_TOOLS = int(os.environ.get("TELIC_LOW_NOVELTY_MAX_UNIQUE_TOOLS", "3"))
+    LOW_NOVELTY_DOMINANT_RATIO = float(os.environ.get("TELIC_LOW_NOVELTY_DOMINANT_RATIO", "0.58"))
 
     async def _execute_loop(self) -> AgentState:
         """Main execution loop."""
@@ -308,6 +313,16 @@ When you have completed the task, respond with a summary of what was done."""
                     f"The work so far is shown above. You can continue with a follow-up message."
                 )
                 logger.warning(f"Cost budget exceeded: ${self.state.estimated_cost_usd:.4f}")
+                return self.state
+
+            if self._is_low_novelty_loop():
+                self.state.is_complete = True
+                self.state.final_response = (
+                    "I'm not making enough progress with the current signals, so I stopped to avoid looping. "
+                    "I can continue if you confirm the exact target file/output, or I can proceed with the best current match."
+                )
+                logger.warning("Low-novelty loop guard triggered; stopping orchestration early")
+                self._log_cache_stats()
                 return self.state
 
             # Trim context window if too large to prevent exceeding token limits.
@@ -570,6 +585,37 @@ When you have completed the task, respond with a summary of what was done."""
             tool = self.tools.get(step.tool_call.name)
             if tool and not tool.side_effect and step.status == StepStatus.COMPLETED:
                 return False
+        return True
+
+    def _is_low_novelty_loop(self) -> bool:
+        """Detect read-only churn where orchestration keeps cycling with little novelty."""
+        window = self.LOW_NOVELTY_WINDOW
+        if len(self.state.steps) < window:
+            return False
+
+        recent = [s for s in self.state.steps[-window:] if s.status == StepStatus.COMPLETED]
+        if len(recent) < window:
+            return False
+
+        # If any recent completed step is side-effectful, we are still progressing.
+        for step in recent:
+            tool = self.tools.get(step.tool_call.name)
+            if tool and tool.side_effect:
+                return False
+
+        names = [s.tool_call.name for s in recent]
+        unique_names = set(names)
+        if len(unique_names) > self.LOW_NOVELTY_MAX_UNIQUE_TOOLS:
+            return False
+
+        dominant = Counter(names).most_common(1)[0][1] / max(len(names), 1)
+        if dominant < self.LOW_NOVELTY_DOMINANT_RATIO:
+            return False
+
+        # If we've produced explicit completion text recently, don't trip the guard.
+        if self.state.final_response:
+            return False
+
         return True
 
     @staticmethod
