@@ -152,6 +152,9 @@ class ReActAgent:
         # Request-scoped cache for idempotent/read-only tool calls.
         self._readonly_tool_cache: Dict[str, Any] = {}
         self._readonly_tool_cache_hits: int = 0
+        # Request-scoped set of executed side-effect signatures to prevent
+        # duplicate action loops from repeatedly prompting/executing.
+        self._executed_side_effect_signatures: set[str] = set()
     
     def _default_system_prompt(self) -> str:
         return """You are a helpful AI assistant that can perform actions on the user's behalf.
@@ -194,6 +197,7 @@ When you have completed the task, respond with a summary of what was done."""
         self.state = AgentState()
         self._readonly_tool_cache = {}
         self._readonly_tool_cache_hits = 0
+        self._executed_side_effect_signatures = set()
         self.state.messages = [
             {"role": "user", "content": user_message}
         ]
@@ -223,6 +227,9 @@ When you have completed the task, respond with a summary of what was done."""
                 self._execute_tool(step.tool_call),
                 timeout=self.TOOL_TIMEOUT_SECONDS,
             )
+            sig = self._tool_cache_key(step.tool_call)
+            if sig:
+                self._executed_side_effect_signatures.add(sig)
             step.result = serialize(result)
             step.status = StepStatus.COMPLETED
             
@@ -424,6 +431,21 @@ When you have completed the task, respond with a summary of what was done."""
                     })
                     if self.on_step:
                         await self.on_step(step)
+                    continue
+
+                # Skip duplicate side-effect calls in the same request to avoid
+                # repeat approval loops and duplicate external actions.
+                side_sig = self._tool_cache_key(tc)
+                if side_sig and side_sig in self._executed_side_effect_signatures:
+                    step.status = StepStatus.COMPLETED
+                    step.result = "Skipped duplicate side-effect action (already executed in this request)."
+                    if self.on_step:
+                        await self.on_step(step)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": "Skipped duplicate side-effect action (already executed in this request)."
+                    })
                     continue
 
                 # Side-effect tool — pause for user approval
