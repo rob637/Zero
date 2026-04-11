@@ -79,7 +79,7 @@ _STREAM_AGENT_TIMEOUT_S = _env_float("TELIC_STREAM_AGENT_TIMEOUT_S", 180.0)
 _RESPONSE_BUDGET_MS = _env_float("TELIC_RESPONSE_BUDGET_MS", 18000.0)
 _TIGHT_INTEL_TIMEOUT_S = _env_float("TELIC_TIGHT_INTEL_TIMEOUT_S", 1.2)
 _TIGHT_MAX_OUTPUT_TOKENS = _env_int("TELIC_TIGHT_MAX_OUTPUT_TOKENS", 900)
-_TIGHT_TOOL_TIMEOUT_SECONDS = _env_float("TELIC_TIGHT_TOOL_TIMEOUT_SECONDS", 10.0)
+_TIGHT_TOOL_TIMEOUT_SECONDS = _env_float("TELIC_TIGHT_TOOL_TIMEOUT_SECONDS", 25.0)
 
 _artifact_ledger = ArtifactLedger(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
 _eval_store = OrchestrationEvalStore(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
@@ -638,8 +638,10 @@ Remember: References like "the first one", "send it to him", "the information ab
             facts_text = "\n".join(f"- {f.content}" for f, _score in recalled[:5])
             intel_parts.append(
                 f"[BACKGROUND MEMORY - Remembered personal facts and preferences. "
-                f"These are NOT live calendar events or tasks. Use them only for context "
-                f"and personalisation — never invent calendar entries or task items from them.]\n{facts_text}"
+                f"These are NOT live calendar events or tasks or email. "
+                f"Use them only for personalisation. "
+                f"ALWAYS call live tools for real-time requests (briefings, email, calendar, tasks) — "
+                f"never substitute these facts for fresh data or skip tool calls because of them.]\n{facts_text}"
             )
 
         # Check what patterns are expected now
