@@ -220,6 +220,19 @@ class DriveConnector:
             return [self._parse_file(f) for f in result.get('files', [])]
             
         except HttpError as e:
+            # Some callers pass a file id/path as folder_id. If parent query is invalid,
+            # retry once without folder filter so callers still get usable results.
+            if folder_id and getattr(e, "resp", None) and getattr(e.resp, "status", None) == 400:
+                retry_parts = [p for p in q_parts if p != f"'{folder_id}' in parents"]
+                retry_q = " and ".join(retry_parts) if retry_parts else None
+                request = self._service.files().list(
+                    q=retry_q,
+                    pageSize=max_results,
+                    orderBy=order_by,
+                    fields="files(id, name, mimeType, size, modifiedTime, parents, webViewLink)",
+                )
+                result = await asyncio.to_thread(request.execute)
+                return [self._parse_file(f) for f in result.get('files', [])]
             raise RuntimeError(f"Drive API error: {e}")
     
     async def search(

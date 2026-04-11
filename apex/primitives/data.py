@@ -603,7 +603,7 @@ Start directly with: def process(data):"""
                     "isinstance": isinstance, "ValueError": ValueError,
                     "KeyError": KeyError, "IndexError": IndexError,
                     "print": lambda *a, **k: None,
-                    "__import__": lambda name, *a, **k: __import__(name) if name in ("math", "datetime", "json", "re") else (_ for _ in ()).throw(ImportError(f"Import of '{name}' not allowed")),
+                    "__import__": lambda name, *a, **k: __import__(name) if name in ("math", "datetime", "json", "re", "uuid") else (_ for _ in ()).throw(ImportError(f"Import of '{name}' not allowed")),
                 },
             }
             

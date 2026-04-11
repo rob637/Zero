@@ -91,10 +91,29 @@ class Primitive(ABC):
         Auto-detects from _providers dict or _connector attribute.
         """
         if hasattr(self, '_providers') and self._providers:
-            return list(self._providers.keys())
+            connected = []
+            for name, provider in self._providers.items():
+                is_connected = True
+                if hasattr(provider, 'connected'):
+                    val = getattr(provider, 'connected')
+                    is_connected = val() if callable(val) else bool(val)
+                elif hasattr(provider, 'is_connected'):
+                    val = getattr(provider, 'is_connected')
+                    is_connected = val() if callable(val) else bool(val)
+                if is_connected:
+                    connected.append(name)
+            return connected
         if hasattr(self, '_connector') and self._connector:
-            name = getattr(self._connector, 'name', None) or type(self._connector).__name__
-            return [name]
+            is_connected = True
+            if hasattr(self._connector, 'connected'):
+                val = getattr(self._connector, 'connected')
+                is_connected = val() if callable(val) else bool(val)
+            elif hasattr(self._connector, 'is_connected'):
+                val = getattr(self._connector, 'is_connected')
+                is_connected = val() if callable(val) else bool(val)
+            if is_connected:
+                name = getattr(self._connector, 'name', None) or type(self._connector).__name__
+                return [name]
         return []
     
     @abstractmethod

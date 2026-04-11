@@ -323,7 +323,7 @@ def _build_connectors_from_registry() -> Dict[str, Any]:
     # 1. Wire up already-initialized connectors (Google services from OAuth flow)
     if HAS_GOOGLE_CALENDAR and _google_calendar and _google_calendar.connected:
         connectors["calendar"] = _google_calendar
-    if _gmail_connector:
+    if _gmail_connector and _gmail_connector.connected:
         connectors["gmail"] = _gmail_connector
     
     # 2. Scan registry for all registered connectors and try to instantiate
@@ -483,6 +483,7 @@ async def _connect_engine_connectors(engine: TelicEngine):
     Called once after engine init from an async context.
     Connectors that are already connected or fail to connect are skipped.
     """
+    to_remove = []
     for key, connector in list(engine._connectors.items()):
         if hasattr(connector, 'connect'):
             # Check if already connected (supports .connected property/attr or .is_connected() method)
@@ -511,8 +512,14 @@ async def _connect_engine_connectors(engine: TelicEngine):
                         logger.info(f"Connected: {key}")
                     else:
                         logger.warning(f"Connect failed for {key}: connector returned not connected")
+                        to_remove.append(key)
                 except Exception as e:
                     logger.warning(f"Connect failed for {key}: {e}")
+                    to_remove.append(key)
+
+    # Remove connectors that failed to connect so they do not surface as usable tools.
+    for key in to_remove:
+        engine._connectors.pop(key, None)
 
 
 _connectors_initialized = False
@@ -820,7 +827,14 @@ async def startup_event(app=None):
         if engine:
             # Calendar gets a specialized adapter with syncToken support
             cal_connector = engine._connectors.get("calendar")
-            if cal_connector and hasattr(cal_connector, 'sync_events'):
+            cal_connected = False
+            if cal_connector and hasattr(cal_connector, 'connected'):
+                val = getattr(cal_connector, 'connected')
+                cal_connected = val() if callable(val) else bool(val)
+            elif cal_connector and hasattr(cal_connector, 'is_connected'):
+                val = getattr(cal_connector, 'is_connected')
+                cal_connected = val() if callable(val) else bool(val)
+            if cal_connector and cal_connected and hasattr(cal_connector, 'sync_events'):
                 _sync_engine.register(CalendarSyncAdapter(
                     connector=cal_connector,
                     default_interval=300,

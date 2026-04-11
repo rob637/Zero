@@ -1930,6 +1930,21 @@ class CloudStoragePrimitive(Primitive):
                         max_results=params.get("limit", 20),
                     )
                     return StepResult(True, data=result)
+                if hasattr(provider, "list_files"):
+                    query = (params.get("query", "") or "").lower().strip()
+                    items = await provider.list_files(max_results=max(100, params.get("limit", 20)))
+                    if not query:
+                        return StepResult(True, data=items[: params.get("limit", 20)])
+                    filtered = []
+                    for item in items:
+                        name = ""
+                        if isinstance(item, dict):
+                            name = str(item.get("name", ""))
+                        else:
+                            name = str(getattr(item, "name", ""))
+                        if query in name.lower():
+                            filtered.append(item)
+                    return StepResult(True, data=filtered[: params.get("limit", 20)])
                 return StepResult(False, error="Provider does not support search_files")
             
             elif operation == "download":
