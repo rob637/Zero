@@ -157,6 +157,37 @@ def _post_json(client: httpx.Client, url: str, payload: Dict[str, Any], timeout_
     return data
 
 
+def _preflight(client: httpx.Client, base_url: str, timeout_s: float = 20.0) -> Optional[str]:
+    """Return a configuration blocker message if runtime is not scenario-testable."""
+    try:
+        payload = _post_json(
+            client,
+            f"{base_url}/react/chat",
+            {
+                "message": "healthcheck",
+                "session_id": f"preflight-{uuid.uuid4().hex[:8]}",
+                "orchestration_mode": "fast",
+            },
+            timeout_s,
+        )
+    except Exception as e:
+        return f"preflight_request_failed: {e}"
+
+    response = str(payload.get("response") or "")
+    error = str(payload.get("error") or "")
+    text = "\n".join([response, error]).lower()
+    blockers = [
+        "incorrect api key",
+        "invalid_api_key",
+        "no api key configured",
+        "authentication",
+    ]
+    for marker in blockers:
+        if marker in text:
+            return f"llm_configuration_blocker: {marker}"
+    return None
+
+
 def _run_scenario(
     client: httpx.Client,
     base_url: str,
@@ -278,6 +309,11 @@ def main() -> int:
     parser.add_argument("--auto-approve", action="store_true", help="Automatically approve pending actions")
     parser.add_argument("--out-dir", default="apex/scenarios/reports/latest", help="Output report directory")
     parser.add_argument("--allow-failures", action="store_true", help="Always exit 0 even on scenario failures")
+    parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip runtime preflight checks (not recommended)",
+    )
     args = parser.parse_args()
 
     spec = _load_scenarios(Path(args.scenario_file))
@@ -307,6 +343,12 @@ def main() -> int:
     results: List[ScenarioResult] = []
 
     with httpx.Client(follow_redirects=True) as client:
+        if not args.skip_preflight:
+            blocker = _preflight(client, args.base_url.rstrip("/"))
+            if blocker:
+                print(f"[BLOCKED] {blocker}", file=sys.stderr)
+                return 0 if args.allow_failures else 3
+
         for scenario in scenarios:
             sid = scenario.get("id", "?")
             name = scenario.get("name", sid)
