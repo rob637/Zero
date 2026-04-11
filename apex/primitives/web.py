@@ -95,14 +95,37 @@ class WebPrimitive(Primitive):
                         headers={"User-Agent": "Mozilla/5.0 (compatible; Telic/1.0; +https://github.com/rob637/Zero)"}
                     ) as client:
                         resp = await client.get(url)
-                        resp.raise_for_status()
-                        text = resp.text[:max_len]
+                        text = (resp.text or "")[:max_len]
                 else:
                     req = urllib.request.Request(url, headers={"User-Agent": "Telic/1.0"})
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        text = resp.read().decode("utf-8", errors="ignore")[:max_len]
-                
-                return StepResult(True, data={"url": url, "content": text, "length": len(text)})
+                    try:
+                        with urllib.request.urlopen(req, timeout=30) as resp:
+                            status = getattr(resp, "status", 200)
+                            text = resp.read().decode("utf-8", errors="ignore")[:max_len]
+                    except Exception as e:
+                        return StepResult(True, data={
+                            "url": url,
+                            "ok": False,
+                            "error": str(e),
+                            "content": "",
+                            "length": 0,
+                        })
+                    return StepResult(True, data={
+                        "url": url,
+                        "ok": 200 <= int(status) < 400,
+                        "status": int(status),
+                        "content": text,
+                        "length": len(text),
+                    })
+
+                return StepResult(True, data={
+                    "url": url,
+                    "ok": 200 <= int(resp.status_code) < 400,
+                    "status": int(resp.status_code),
+                    "content": text,
+                    "length": len(text),
+                    "headers": dict(resp.headers),
+                })
             
             elif operation == "api":
                 if not _has_httpx:
@@ -118,20 +141,30 @@ class WebPrimitive(Primitive):
                     return StepResult(False, error="Missing 'url' parameter")
                 
                 async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-                    resp = await client.request(
-                        method, url,
-                        headers=headers,
-                        json=body if body else None,
-                        params=query_params,
-                    )
-                    
+                    try:
+                        resp = await client.request(
+                            method, url,
+                            headers=headers,
+                            json=body if body else None,
+                            params=query_params,
+                        )
+                    except Exception as e:
+                        return StepResult(True, data={
+                            "ok": False,
+                            "status": 0,
+                            "error": str(e),
+                            "data": None,
+                            "headers": {},
+                        })
+
                     try:
                         data = resp.json()
                     except Exception:
-                        data = resp.text[:10000]
-                    
+                        data = (resp.text or "")[:10000]
+
                     return StepResult(True, data={
-                        "status": resp.status_code,
+                        "ok": 200 <= int(resp.status_code) < 400,
+                        "status": int(resp.status_code),
                         "data": data,
                         "headers": dict(resp.headers),
                     })
@@ -144,7 +177,12 @@ class WebPrimitive(Primitive):
                     result = await self._search_provider.search(query=query, num_results=limit)
                     return StepResult(True, data=result)
                 
-                return StepResult(False, error="Web search not configured. Connect a search provider (Google, Bing, etc.)")
+                return StepResult(True, data={
+                    "ok": False,
+                    "query": query,
+                    "results": [],
+                    "note": "Web search provider not configured. Use web_fetch on known source URLs.",
+                })
             
             elif operation == "extract":
                 url = params.get("url", "")
@@ -187,7 +225,12 @@ Return ONLY a JSON object with the extracted data."""
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
         except Exception as e:
-            return StepResult(False, error=str(e))
+            return StepResult(True, data={
+                "ok": False,
+                "error": str(e),
+                "content": "",
+                "length": 0,
+            })
 
 
 # ============================================================
@@ -533,7 +576,12 @@ class NewsPrimitive(Primitive):
     
     async def execute(self, operation: str, params: Dict[str, Any]) -> StepResult:
         if not self._connector:
-            return StepResult(False, error="News is not configured. Connect a NewsAPI key in Settings to use news features.")
+            return StepResult(True, data={
+                "configured": False,
+                "count": 0,
+                "articles": [],
+                "note": "News is not configured. Connect a NewsAPI key in Settings to enable this source.",
+            })
         try:
             if operation == "headlines":
                 articles = await self._connector.top_headlines(
