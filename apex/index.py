@@ -637,7 +637,30 @@ class Index:
         _FTS_COLS = {"title", "body"}
         def _strip(m: re.Match) -> str:
             return m.group(0) if m.group(1).lower() in _FTS_COLS else m.group(2)
-        return re.sub(r'\b(\w+):(\S+)', _strip, text)
+        text = re.sub(r'\b(\w+):(\S+)', _strip, text)
+        # Normalize punctuation that commonly breaks MATCH parsing.
+        text = text.replace("/", " ")
+        # Date-like tokens can be interpreted as subtraction; split into terms.
+        text = re.sub(r'(?<=\d)-(?=\d)', ' ', text)
+        return re.sub(r'\s+', ' ', text).strip()
+
+    @staticmethod
+    def _fallback_fts_query(text: str) -> str:
+        """Build a conservative MATCH expression from raw text.
+
+        Quotes each token and joins with AND to avoid FTS syntax pitfalls from
+        punctuation-heavy input (dates, paths, etc.).
+        """
+        tokens = re.findall(r'[A-Za-z0-9@._-]+', text)
+        safe_tokens = []
+        for tok in tokens:
+            t = tok.strip("._-")
+            if len(t) < 2:
+                continue
+            safe_tokens.append(f'"{t}"')
+            if len(safe_tokens) >= 10:
+                break
+        return " AND ".join(safe_tokens)
 
     def search(self, text: str, kind: Optional[str] = None, limit: int = 50) -> List[DataObject]:
         """Full-text search across title and body.
@@ -648,22 +671,31 @@ class Index:
             return []
         text = self._sanitize_fts(text)
 
-        if kind:
-            rows = self._conn.execute("""
-                SELECT d.* FROM data_objects d
-                JOIN data_objects_fts f ON d.rowid = f.rowid
-                WHERE data_objects_fts MATCH ? AND d.kind = ?
-                ORDER BY rank
-                LIMIT ?
-            """, (text, kind, limit)).fetchall()
-        else:
-            rows = self._conn.execute("""
+        def _run(match_expr: str):
+            if kind:
+                return self._conn.execute("""
+                    SELECT d.* FROM data_objects d
+                    JOIN data_objects_fts f ON d.rowid = f.rowid
+                    WHERE data_objects_fts MATCH ? AND d.kind = ?
+                    ORDER BY rank
+                    LIMIT ?
+                """, (match_expr, kind, limit)).fetchall()
+            return self._conn.execute("""
                 SELECT d.* FROM data_objects d
                 JOIN data_objects_fts f ON d.rowid = f.rowid
                 WHERE data_objects_fts MATCH ?
                 ORDER BY rank
                 LIMIT ?
-            """, (text, limit)).fetchall()
+            """, (match_expr, limit)).fetchall()
+
+        try:
+            rows = _run(text)
+        except sqlite3.OperationalError as e:
+            fallback = self._fallback_fts_query(text)
+            if not fallback:
+                raise
+            logger.warning(f"FTS query fallback used for '{text}': {e}")
+            rows = _run(fallback)
         return [self._row_to_obj(r) for r in rows]
 
     def count(self, kind: Optional[str] = None, source: Optional[str] = None) -> int:

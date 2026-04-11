@@ -1522,355 +1522,6 @@
         }
 
         /* ============================================ */
-        /* Step Preview Card (Sprint 4) */
-        /* ============================================ */
-        .step-preview {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-light);
-            border-radius: 16px;
-            margin-top: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.3);
-        }
-        
-        .step-preview-header {
-            padding: 14px 18px;
-            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
-            border-bottom: 1px solid var(--border-subtle);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 0.85rem;
-        }
-        
-        .step-preview-type {
-            font-size: 1.2rem;
-        }
-        
-        .step-preview-title {
-            font-weight: 600;
-            flex: 1;
-        }
-        
-        .step-preview-badge {
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .step-preview-badge.pending { background: rgba(251, 191, 36, 0.2); color: var(--warning); }
-        .step-preview-badge.approved { background: rgba(16, 185, 129, 0.2); color: var(--success); }
-        .step-preview-badge.rejected { background: rgba(239, 68, 68, 0.2); color: var(--error); }
-        
-        .step-preview-content {
-            padding: 16px 18px;
-        }
-        
-        /* Document Preview */
-        .doc-preview {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-subtle);
-            border-radius: 10px;
-            padding: 14px;
-        }
-        
-        .doc-preview-filename {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
-            color: var(--text-primary);
-            margin-bottom: 10px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--border-subtle);
-        }
-        
-        .doc-preview-icon { font-size: 1.3rem; }
-        
-        .doc-preview-details {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-        
-        .doc-preview-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-        }
-        
-        .doc-preview-label { color: var(--text-muted); }
-        
-        .doc-preview-excerpt {
-            margin-top: 12px;
-            padding: 12px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            line-height: 1.6;
-            max-height: 150px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-        }
-        
-        /* Email Preview */
-        .email-preview {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-subtle);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        
-        .email-preview-header {
-            padding: 12px 14px;
-            background: var(--bg-hover);
-            font-size: 0.8rem;
-        }
-        
-        .email-preview-row {
-            display: flex;
-            gap: 8px;
-            padding: 4px 0;
-        }
-        
-        .email-preview-label {
-            color: var(--text-muted);
-            width: 60px;
-            flex-shrink: 0;
-        }
-        
-        .email-preview-value {
-            color: var(--text-primary);
-            flex: 1;
-        }
-        
-        .email-preview-body {
-            padding: 14px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            line-height: 1.6;
-            max-height: 200px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            cursor: text;
-        }
-        
-        .email-preview-body.editable {
-            border: 1px dashed var(--accent-primary);
-            background: rgba(139, 92, 246, 0.05);
-        }
-        
-        .email-preview-attachments {
-            padding: 10px 14px;
-            border-top: 1px solid var(--border-subtle);
-            background: rgba(0,0,0,0.15);
-        }
-        
-        .email-attachment {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 10px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-subtle);
-            border-radius: 6px;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            margin-right: 6px;
-        }
-        
-        /* Calculation Preview */
-        .calc-preview {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-subtle);
-            border-radius: 10px;
-            padding: 14px;
-        }
-        
-        .calc-preview-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin-bottom: 14px;
-        }
-        
-        .calc-preview-item {
-            padding: 10px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-        }
-        
-        .calc-preview-label {
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 4px;
-        }
-        
-        .calc-preview-value {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-        
-        .calc-preview-value.highlight {
-            color: var(--success);
-        }
-        
-        .calc-preview-table {
-            width: 100%;
-            font-size: 0.8rem;
-            border-collapse: collapse;
-        }
-        
-        .calc-preview-table th {
-            text-align: left;
-            padding: 8px 10px;
-            background: rgba(0,0,0,0.2);
-            color: var(--text-muted);
-            font-weight: 500;
-        }
-        
-        .calc-preview-table td {
-            padding: 8px 10px;
-            border-bottom: 1px solid var(--border-subtle);
-            color: var(--text-secondary);
-        }
-        
-        /* Step Preview Actions */
-        .step-preview-actions {
-            padding: 14px 18px;
-            display: flex;
-            gap: 10px;
-            background: rgba(0,0,0,0.2);
-        }
-        
-        .step-preview-actions .btn { flex: 1; }
-        
-        .btn-edit {
-            background: transparent;
-            color: var(--text-secondary);
-            border: 1px solid var(--border-light);
-        }
-        
-        .btn-edit:hover {
-            background: var(--bg-hover);
-            color: var(--accent-primary);
-            border-color: var(--accent-primary);
-        }
-        
-        /* Remember Pattern Toggle */
-        .remember-toggle {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            cursor: pointer;
-            padding: 4px 8px;
-            border-radius: 4px;
-            transition: all 0.15s ease;
-        }
-        
-        .remember-toggle:hover {
-            color: var(--text-secondary);
-            background: rgba(255,255,255,0.05);
-        }
-        
-        .remember-checkbox {
-            width: 14px;
-            height: 14px;
-            accent-color: var(--accent-primary);
-            cursor: pointer;
-        }
-        
-        .remember-toggle:has(.remember-checkbox:checked) {
-            color: var(--accent-primary);
-        }
-
-        /* ============================================ */
-        /* Inline Editor (Sprint 4) */
-        /* ============================================ */
-        .inline-editor {
-            background: var(--bg-tertiary);
-            border: 2px solid var(--accent-primary);
-            border-radius: 10px;
-            padding: 14px;
-            margin-top: 12px;
-        }
-        
-        .inline-editor-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--border-subtle);
-        }
-        
-        .inline-editor-label {
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: var(--accent-primary);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        
-        .inline-editor-close {
-            margin-left: auto;
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
-            border: none;
-            background: transparent;
-            color: var(--text-muted);
-            cursor: pointer;
-        }
-        
-        .inline-editor-close:hover {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--error);
-        }
-        
-        .inline-editor-field {
-            width: 100%;
-            padding: 10px 12px;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-light);
-            border-radius: 6px;
-            color: var(--text-primary);
-            font-size: 0.85rem;
-            font-family: inherit;
-            outline: none;
-            transition: border-color 0.15s;
-            margin-bottom: 8px;
-        }
-        
-        .inline-editor-field:focus {
-            border-color: var(--accent-primary);
-        }
-        
-        .inline-editor-field.textarea {
-            min-height: 120px;
-            resize: vertical;
-            line-height: 1.5;
-        }
-        
-        .inline-editor-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 10px;
-        }
-        
-        .btn-sm {
-            padding: 8px 14px;
-            font-size: 0.8rem;
-        }
-
-        /* ============================================ */
         /* Audit Log Modal (Sprint 4) */
         /* ============================================ */
         .modal-overlay {
@@ -3136,7 +2787,8 @@
         const API = 'http://localhost:8000';
         let alertsPanelOpen = false;
         let alerts = [];
-        let currentEditContext = null;  // For inline editing
+        let _pendingApprovalStep = null;
+        let _pendingApprovalEdits = null;
 
         // ============================================
         // Sidebar Quick Actions (customizable)
@@ -4721,7 +4373,7 @@
             const p = params || {};
             
             // Email preview
-            if (tool.includes('gmail') && (tool.includes('send') || tool.includes('draft') || tool.includes('reply'))) {
+            if ((tool.includes('gmail') || tool.includes('email')) && (tool.includes('send') || tool.includes('draft') || tool.includes('reply') || tool.includes('forward'))) {
                 return `
                     <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #4285F4;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">📧 EMAIL PREVIEW</div>
@@ -4784,10 +4436,281 @@
             // Default: show raw params nicely
             return null;
         }
+
+        function renderApprovalSummary(summary) {
+            if (!summary || !summary.highlights || !summary.highlights.length) return '';
+            const rows = summary.highlights.map(item => `
+                <div style="display:flex; gap:10px; margin-bottom:6px;">
+                    <span style="min-width:88px; color: var(--text-muted); font-size: 0.76rem;">${escapeHtml(String(item.label || 'Field'))}</span>
+                    <span style="color: var(--text-primary); font-size: 0.82rem; line-height:1.4;">${escapeHtml(String(item.value || ''))}</span>
+                </div>
+            `).join('');
+            return `
+                <div style="background: rgba(0,0,0,0.22); border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--border-subtle);">
+                    <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                        Decision Summary
+                    </div>
+                    ${rows}
+                </div>
+            `;
+        }
+
+        function safeJson(value) {
+            try {
+                return JSON.stringify(value, null, 2);
+            } catch (e) {
+                return '{}';
+            }
+        }
+
+        function _isObject(v) {
+            return v && typeof v === 'object' && !Array.isArray(v);
+        }
+
+        function _cloneApprovalParams(v) {
+            try {
+                return JSON.parse(JSON.stringify(v || {}));
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function getApprovalEditableFields(step) {
+            const tool = (step?.tool || '').toLowerCase();
+            if (tool.includes('email') && (tool.includes('send') || tool.includes('draft') || tool.includes('reply') || tool.includes('forward'))) {
+                return [
+                    { key: 'to', label: 'To' },
+                    { key: 'cc', label: 'Cc' },
+                    { key: 'subject', label: 'Subject' },
+                    { key: 'body', label: 'Body', multiline: true },
+                ];
+            }
+            if (tool.includes('document') && tool.includes('create')) {
+                return [
+                    { key: 'name', label: 'Name' },
+                    { key: 'filename', label: 'Filename' },
+                    { key: 'path', label: 'Path' },
+                    { key: 'format', label: 'Format' },
+                    { key: 'content', label: 'Content', multiline: true },
+                ];
+            }
+            if (tool.includes('calendar') && (tool.includes('create') || tool.includes('add') || tool.includes('schedule'))) {
+                return [
+                    { key: 'title', label: 'Title' },
+                    { key: 'summary', label: 'Summary' },
+                    { key: 'start', label: 'Start' },
+                    { key: 'end', label: 'End' },
+                    { key: 'location', label: 'Location' },
+                    { key: 'description', label: 'Description', multiline: true },
+                ];
+            }
+            const params = step?.params || {};
+            return Object.keys(params)
+                .filter(k => typeof params[k] === 'string' || typeof params[k] === 'number' || typeof params[k] === 'boolean')
+                .slice(0, 6)
+                .map(k => ({ key: k, label: k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }));
+        }
+
+        function renderApprovalQuickEditor(step) {
+            const fields = getApprovalEditableFields(step);
+            if (!fields.length) return '';
+            const params = _pendingApprovalEdits || step?.params || {};
+            const inputs = fields.map(field => {
+                const key = field.key;
+                const value = params[key] == null ? '' : String(params[key]);
+                if (field.multiline) {
+                    return `
+                        <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+                            <label style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(field.label)}</label>
+                            <textarea data-approval-field="${escapeHtml(key)}" oninput="updateApprovalField('${escapeHtml(key)}', this.value)" style="width:100%; min-height:84px; border-radius:8px; border:1px solid var(--border-light); background:var(--bg-tertiary); color:var(--text-primary); padding:8px; font-size:0.78rem;">${escapeHtml(value)}</textarea>
+                        </div>`;
+                }
+                return `
+                    <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+                        <label style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(field.label)}</label>
+                        <input data-approval-field="${escapeHtml(key)}" value="${escapeHtml(value)}" oninput="updateApprovalField('${escapeHtml(key)}', this.value)" style="width:100%; border-radius:8px; border:1px solid var(--border-light); background:var(--bg-tertiary); color:var(--text-primary); padding:8px; font-size:0.78rem;" />
+                    </div>`;
+            }).join('');
+
+            return `
+                <div style="background: rgba(0,0,0,0.2); border:1px solid var(--border-subtle); border-radius:10px; padding:12px; margin-bottom:12px;">
+                    <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Quick Fix Fields</div>
+                    ${inputs}
+                </div>
+            `;
+        }
+
+        function renderApprovalDiff(originalParams, editedParams) {
+            const original = _isObject(originalParams) ? originalParams : {};
+            const edited = _isObject(editedParams) ? editedParams : {};
+            const keys = Array.from(new Set([...Object.keys(original), ...Object.keys(edited)]));
+            const changed = keys.filter(k => safeJson(original[k]) !== safeJson(edited[k]));
+            if (!changed.length) {
+                return '<div style="font-size:0.78rem; color:var(--text-muted);">No edits yet.</div>';
+            }
+            const rows = changed.slice(0, 12).map(k => {
+                const beforeVal = original[k] == null ? '' : String(original[k]);
+                const afterVal = edited[k] == null ? '' : String(edited[k]);
+                return `
+                    <div style="display:grid; grid-template-columns: 120px 1fr 1fr; gap:8px; align-items:start; margin-bottom:8px;">
+                        <span style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(k)}</span>
+                        <span style="font-size:0.75rem; color:#fca5a5; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.25); border-radius:6px; padding:6px;">${escapeHtml(beforeVal.substring(0, 140)) || '<empty>'}</span>
+                        <span style="font-size:0.75rem; color:#6ee7b7; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.25); border-radius:6px; padding:6px;">${escapeHtml(afterVal.substring(0, 140)) || '<empty>'}</span>
+                    </div>`;
+            }).join('');
+            return rows;
+        }
+
+        function getApprovalValidation(step, params) {
+            const tool = (step?.tool || '').toLowerCase();
+            const p = _isObject(params) ? params : {};
+            const blockers = [];
+            const warnings = [];
+
+            const _has = (k) => {
+                const v = p[k];
+                return v !== undefined && v !== null && String(v).trim() !== '';
+            };
+
+            if (tool.includes('email') && tool.includes('send')) {
+                if (!_has('to') && !_has('recipient')) blockers.push('Recipient is required');
+                if (!_has('subject')) blockers.push('Subject is required');
+                if (!_has('body') && !_has('message') && !_has('text')) warnings.push('Email body is empty');
+            }
+
+            if (tool.includes('document') && tool.includes('create')) {
+                if (!_has('name') && !_has('filename') && !_has('title')) blockers.push('Document name is required');
+                if (!_has('content')) warnings.push('Document content is empty');
+                if (!_has('path') && !_has('folder') && !_has('directory')) warnings.push('No explicit save path provided');
+            }
+
+            if (tool.includes('calendar') && (tool.includes('create') || tool.includes('add') || tool.includes('schedule'))) {
+                if (!_has('title') && !_has('summary')) blockers.push('Event title is required');
+                if (!_has('start') && !_has('start_time')) blockers.push('Event start time is required');
+            }
+
+            return {
+                ok: blockers.length === 0,
+                blockers,
+                warnings,
+            };
+        }
+
+        function renderApprovalValidation(validation) {
+            if (!validation) return '';
+            const blockerHtml = (validation.blockers || []).map(b => `
+                <span style="font-size:0.72rem; color:#fecaca; background:rgba(239,68,68,0.16); border:1px solid rgba(239,68,68,0.35); border-radius:999px; padding:4px 10px;">${escapeHtml(b)}</span>
+            `).join('');
+            const warningHtml = (validation.warnings || []).map(w => `
+                <span style="font-size:0.72rem; color:#fde68a; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); border-radius:999px; padding:4px 10px;">${escapeHtml(w)}</span>
+            `).join('');
+            const status = validation.ok
+                ? '<span style="font-size:0.76rem; color:var(--success);">Ready to approve</span>'
+                : '<span style="font-size:0.76rem; color:var(--error);">Fix blockers before approve</span>';
+            return `
+                <div id="approvalValidationPanel" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:12px;">
+                    ${status}
+                    ${blockerHtml}
+                    ${warningHtml}
+                </div>
+            `;
+        }
+
+        function refreshApprovalDiff() {
+            if (!_pendingApprovalStep) return;
+            const target = document.getElementById('approvalDiffBody');
+            if (!target) return;
+            target.innerHTML = renderApprovalDiff(_pendingApprovalStep.params || {}, _pendingApprovalEdits || {});
+        }
+
+        function refreshApprovalValidation() {
+            if (!_pendingApprovalStep) return;
+            const validation = getApprovalValidation(_pendingApprovalStep, _pendingApprovalEdits || {});
+            const panel = document.getElementById('approvalValidationPanel');
+            const approveBtn = document.getElementById('approvalApproveBtn');
+            if (panel) {
+                panel.outerHTML = renderApprovalValidation(validation);
+            }
+            if (approveBtn) {
+                approveBtn.disabled = !validation.ok;
+                approveBtn.style.opacity = validation.ok ? '1' : '0.5';
+                approveBtn.style.cursor = validation.ok ? 'pointer' : 'not-allowed';
+            }
+        }
+
+        function updateApprovalField(key, value) {
+            if (!_pendingApprovalEdits || !_isObject(_pendingApprovalEdits)) {
+                _pendingApprovalEdits = {};
+            }
+            _pendingApprovalEdits[key] = value;
+            const input = document.getElementById('approvalParamsInput');
+            if (input) input.value = safeJson(_pendingApprovalEdits);
+            const status = document.getElementById('approvalEditStatus');
+            if (status) {
+                status.textContent = 'Edited';
+                status.style.color = 'var(--accent-primary)';
+            }
+            refreshApprovalDiff();
+            refreshApprovalValidation();
+        }
+
+        function toggleApprovalEditor() {
+            const editor = document.getElementById('approvalEditor');
+            const toggle = document.getElementById('approvalEditorToggle');
+            if (!editor || !toggle) return;
+            const isHidden = editor.style.display === 'none' || !editor.style.display;
+            editor.style.display = isHidden ? 'block' : 'none';
+            toggle.textContent = isHidden ? 'Hide editor' : 'Fix details before approve';
+            if (isHidden) {
+                const input = document.getElementById('approvalParamsInput');
+                if (input) input.focus();
+            }
+            refreshApprovalDiff();
+        }
+
+        function collectApprovalEdits() {
+            const input = document.getElementById('approvalParamsInput');
+            if (!input) return _pendingApprovalEdits || (_pendingApprovalStep ? _pendingApprovalStep.params : null);
+            const text = input.value || '{}';
+            try {
+                const parsed = JSON.parse(text);
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error('JSON must be an object with key/value fields.');
+                }
+                _pendingApprovalEdits = parsed;
+                const quickInputs = document.querySelectorAll('[data-approval-field]');
+                quickInputs.forEach(el => {
+                    const key = el.getAttribute('data-approval-field');
+                    if (key && Object.prototype.hasOwnProperty.call(parsed, key)) {
+                        el.value = String(parsed[key] ?? '');
+                    }
+                });
+                const status = document.getElementById('approvalEditStatus');
+                if (status) {
+                    status.textContent = 'Edits ready';
+                    status.style.color = 'var(--success)';
+                }
+                refreshApprovalDiff();
+                refreshApprovalValidation();
+                return parsed;
+            } catch (err) {
+                const status = document.getElementById('approvalEditStatus');
+                if (status) {
+                    status.textContent = 'Invalid JSON: ' + err.message;
+                    status.style.color = 'var(--error)';
+                }
+                return null;
+            }
+        }
         
         function renderApprovalRequest(step) {
+            _pendingApprovalStep = step;
+            _pendingApprovalEdits = _cloneApprovalParams(step.params || {});
             // Try to render a rich preview
             const preview = renderStepPreview(step.tool, step.params);
+            const summary = step.approval_summary;
+            const actionLabel = summary?.action || formatToolName(step.tool) || 'Action';
+            const validation = getApprovalValidation(step, _pendingApprovalEdits || {});
             
             // Format params for display (fallback or supplemental)
             const paramsHtml = Object.entries(step.params || {}).map(([k, v]) => {
@@ -4797,25 +4720,57 @@
                     <span style="color: var(--text-secondary)">${escapeHtml(valStr.substring(0, 200))}</span>
                 </div>`;
             }).join('');
+
+            const jsonParams = escapeHtml(safeJson(_pendingApprovalEdits));
             
             return `
-                <div style="border: 2px solid var(--warning); border-radius: 10px; padding: 16px; 
-                            background: rgba(245, 158, 11, 0.08); margin-bottom: 12px;">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                        <span style="font-size: 1.2rem;">⚠️</span>
-                        <span style="font-size: 0.8rem; font-weight: 600; color: var(--warning); 
-                                     text-transform: uppercase; letter-spacing: 0.05em;">
-                            REVIEW BEFORE APPROVING
+                <div style="position: sticky; top: 10px; z-index: 3; border: 1px solid var(--border-light); border-radius: 14px; padding: 16px; 
+                            background: linear-gradient(180deg, rgba(26,32,46,0.97), rgba(14,18,28,0.97)); margin-bottom: 12px; box-shadow: 0 12px 36px rgba(0,0,0,0.38);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="font-size: 1rem;">🛡️</span>
+                            <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.06em;">
+                                Confirm External Action
+                            </span>
+                        </div>
+                        <span style="font-size: 0.7rem; color: var(--warning); background: rgba(245,158,11,0.16); border:1px solid rgba(245,158,11,0.35); border-radius: 999px; padding: 4px 10px;">
+                            ${escapeHtml(actionLabel)}
                         </span>
+                    </div>
+
+                    <div style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 12px; line-height:1.45;">
+                        Review details below. You can fix parameters before execution, then approve with one click.
                     </div>
                     
                     ${preview || ''}
+                    ${renderApprovalSummary(summary)}
+                    ${renderApprovalValidation(validation)}
+                    ${renderApprovalQuickEditor(step)}
                     
-                    <div style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px; ${preview ? 'font-size: 0.75rem;' : ''}">
-                        <div style="font-size: ${preview ? '0.8rem' : '0.9rem'}; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
-                            ${escapeHtml(step.tool)}
+                    <div style="background: rgba(0,0,0,0.22); border-radius: 10px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--border-subtle); ${preview ? 'font-size: 0.75rem;' : ''}">
+                        <div style="font-size: ${preview ? '0.8rem' : '0.9rem'}; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                            <span>${escapeHtml(actionLabel)}</span>
+                            <span style="color: var(--text-muted); font-size: 0.75rem;">${escapeHtml(step.tool || 'unknown_tool')}</span>
                         </div>
                         ${preview ? `<details style="cursor: pointer;"><summary style="font-size: 0.75rem; color: var(--text-muted);">Raw parameters</summary><div style="margin-top: 8px; font-size: 0.8rem;">${paramsHtml}</div></details>` : `<div style="font-size: 0.8rem;">${paramsHtml}</div>`}
+                    </div>
+
+                    <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+                        <button id="approvalEditorToggle" onclick="toggleApprovalEditor()" style="padding:8px 12px; border-radius:8px; border:1px solid var(--border-light); background:var(--bg-tertiary); color:var(--text-secondary); cursor:pointer; font-size:0.78rem;">
+                            Fix details before approve
+                        </button>
+                        <a href="/setup" target="_blank" style="font-size:0.78rem; color: var(--accent-primary); text-decoration:none;">Open setup</a>
+                        <a href="/setup" target="_blank" style="font-size:0.78rem; color: var(--text-secondary); text-decoration:none;">Fix providers</a>
+                        <span id="approvalEditStatus" style="font-size:0.76rem; color:var(--text-muted);"></span>
+                    </div>
+
+                    <div id="approvalEditor" style="display:none; margin-bottom:12px;">
+                        <label style="display:block; font-size:0.72rem; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Editable parameters (JSON)</label>
+                        <textarea id="approvalParamsInput" oninput="collectApprovalEdits()" style="width:100%; min-height:150px; border-radius:10px; border:1px solid var(--border-light); background:var(--bg-tertiary); color:var(--text-primary); padding:10px; font-size:0.78rem; font-family: 'JetBrains Mono', monospace;">${jsonParams}</textarea>
+                        <div style="margin-top:10px; background: rgba(0,0,0,0.24); border:1px solid var(--border-subtle); border-radius:8px; padding:10px;">
+                            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Before vs Edited</div>
+                            <div id="approvalDiffBody">${renderApprovalDiff(step.params || {}, _pendingApprovalEdits || {})}</div>
+                        </div>
                     </div>
                     
                     <div style="display: flex; align-items: center; gap: 12px; justify-content: center; flex-wrap: wrap;">
@@ -4824,7 +4779,7 @@
                             <input type="checkbox" id="rememberApproval" style="accent-color: var(--accent-primary);">
                             Always allow <strong style="color: var(--text-secondary)">${escapeHtml(step.tool)}</strong>
                         </label>
-                        <button class="btn btn-approve" onclick="approveAction(true)" 
+                        <button id="approvalApproveBtn" class="btn btn-approve" onclick="approveAction(true)" 
                                 style="padding: 12px 28px; font-size: 1rem; font-weight: 600;">
                             ✓ Approve & Run
                         </button>
@@ -4842,12 +4797,32 @@
 
             // Create live activity feed for continuation
             const activityEl = approved ? addActivityFeed() : null;
+            const updatedParams = approved ? collectApprovalEdits() : null;
+            if (approved && !updatedParams) {
+                setThinking(false);
+                if (activityEl) activityEl.remove();
+                return;
+            }
+            if (approved && _pendingApprovalStep) {
+                const validation = getApprovalValidation(_pendingApprovalStep, updatedParams || {});
+                if (!validation.ok) {
+                    setThinking(false);
+                    if (activityEl) activityEl.remove();
+                    const status = document.getElementById('approvalEditStatus');
+                    if (status) {
+                        status.textContent = 'Please resolve blockers before approving';
+                        status.style.color = 'var(--error)';
+                    }
+                    refreshApprovalValidation();
+                    return;
+                }
+            }
 
             try {
                 const res = await fetch(`${API}/react/approve/stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ approved })
+                    body: JSON.stringify({ approved, updated_params: updatedParams })
                 });
 
                 if (!res.ok || !res.body) {
@@ -4856,7 +4831,7 @@
                     const fallback = await fetch(`${API}/react/approve`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ approved })
+                        body: JSON.stringify({ approved, updated_params: updatedParams })
                     });
                     const data = await fallback.json();
                     setThinking(false);
@@ -5375,199 +5350,10 @@
             }
         }
 
-        // ============================================
-        // Step Preview Rendering (Sprint 4)
-        // ============================================
-
-        function renderStepPreview(step) {
-            const typeIcons = {
-                document: '📄',
-                email: '📧',
-                calculation: '📊',
-                calendar: '📅',
-                file: '📁',
-                search: '🔍'
-            };
-            
-            const icon = typeIcons[step.type] || '📋';
-            let contentHtml = '';
-            
-            if (step.type === 'document') {
-                contentHtml = `
-                    <div class="doc-preview">
-                        <div class="doc-preview-filename">
-                            <span class="doc-preview-icon">${icon}</span>
-                            <span>${step.filename || 'Document'}</span>
-                        </div>
-                        <div class="doc-preview-details">
-                            <div class="doc-preview-row">
-                                <span class="doc-preview-label">Location:</span>
-                                <span>${step.path || 'Unknown'}</span>
-                            </div>
-                            <div class="doc-preview-row">
-                                <span class="doc-preview-label">Size:</span>
-                                <span>${step.size || 'Unknown'}</span>
-                            </div>
-                        </div>
-                        ${step.excerpt ? `<div class="doc-preview-excerpt">${escapeHtml(step.excerpt)}</div>` : ''}
-                    </div>
-                `;
-            } else if (step.type === 'email') {
-                contentHtml = `
-                    <div class="email-preview">
-                        <div class="email-preview-header">
-                            <div class="email-preview-row">
-                                <span class="email-preview-label">To:</span>
-                                <span class="email-preview-value">${step.to || ''}</span>
-                            </div>
-                            <div class="email-preview-row">
-                                <span class="email-preview-label">Subject:</span>
-                                <span class="email-preview-value">${step.subject || ''}</span>
-                            </div>
-                        </div>
-                        <div class="email-preview-body ${step.editable ? 'editable' : ''}" 
-                             id="emailBody-${step.id}" 
-                             ${step.editable ? 'contenteditable="true"' : ''}>${escapeHtml(step.body || '')}</div>
-                        ${step.attachments?.length ? `
-                            <div class="email-preview-attachments">
-                                ${step.attachments.map(a => `
-                                    <div class="email-attachment">📎 ${a.name} (${a.size})</div>
-                                `).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            } else if (step.type === 'calculation') {
-                contentHtml = `
-                    <div class="calc-preview">
-                        <div class="calc-preview-grid">
-                            ${step.results?.map(r => `
-                                <div class="calc-preview-item">
-                                    <div class="calc-preview-label">${r.label}</div>
-                                    <div class="calc-preview-value ${r.highlight ? 'highlight' : ''}">${r.value}</div>
-                                </div>
-                            `).join('') || ''}
-                        </div>
-                        ${step.table ? `
-                            <table class="calc-preview-table">
-                                <thead>
-                                    <tr>
-                                        ${step.table.headers.map(h => `<th>${h}</th>`).join('')}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${step.table.rows.slice(0, 5).map(row => `
-                                        <tr>${row.map(c => `<td>${c}</td>`).join('')}</tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        ` : ''}
-                    </div>
-                `;
-            } else {
-                contentHtml = `
-                    <div class="doc-preview">
-                        <div class="doc-preview-filename">
-                            <span class="doc-preview-icon">${icon}</span>
-                            <span>${step.title || 'Action'}</span>
-                        </div>
-                        ${step.description ? `<div class="doc-preview-excerpt">${escapeHtml(step.description)}</div>` : ''}
-                    </div>
-                `;
-            }
-            
-            return `
-                <div class="step-preview" data-step-id="${step.id}">
-                    <div class="step-preview-header">
-                        <span class="step-preview-type">${icon}</span>
-                        <span class="step-preview-title">${step.title || `Step ${step.step_number}`}</span>
-                        <span class="step-preview-badge pending">Pending</span>
-                    </div>
-                    <div class="step-preview-content">
-                        ${contentHtml}
-                    </div>
-                    <div class="step-preview-actions">
-                        <label class="remember-toggle" title="Auto-approve similar actions in the future">
-                            <input type="checkbox" class="remember-checkbox" data-step-id="${step.id}">
-                            <span>Remember</span>
-                        </label>
-                        ${step.editable ? `<button class="btn btn-edit btn-sm" onclick="editStep('${step.id}')">✏️ Edit</button>` : ''}
-                        <button class="btn btn-reject btn-sm" onclick="rejectStep('${step.id}')">✗ Reject</button>
-                        <button class="btn btn-approve btn-sm" onclick="approveStep('${step.id}')">✓ Approve</button>
-                    </div>
-                </div>
-            `;
-        }
-        
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-        
-        async function approveStep(stepId) {
-            // Check if "Remember" checkbox is checked
-            const checkbox = document.querySelector(`.remember-checkbox[data-step-id="${stepId}"]`);
-            const rememberPattern = checkbox ? checkbox.checked : false;
-            
-            setThinking(true);
-            try {
-                const res = await fetch(`${API}/control/approve`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        action_id: stepId,
-                        remember_pattern: rememberPattern,
-                        pattern_context: rememberPattern ? { action_id: stepId } : null
-                    })
-                });
-                const data = await res.json();
-                setThinking(false);
-                
-                if (data.success) {
-                    const preview = document.querySelector(`[data-step-id="${stepId}"]`);
-                    if (preview) {
-                        preview.querySelector('.step-preview-badge').className = 'step-preview-badge approved';
-                        preview.querySelector('.step-preview-badge').textContent = 'Approved';
-                        const msg = rememberPattern ? '✓ Executed (pattern saved)' : '✓ Executed';
-                        preview.querySelector('.step-preview-actions').innerHTML = `<span style="color:var(--success)">${msg}</span>`;
-                    }
-                    showToast(rememberPattern ? '✓ Action completed & pattern remembered' : '✓ Action completed', stepId);
-                } else {
-                    addMessage(`Failed: ${data.error || 'Unknown error'}`, 'system');
-                }
-            } catch (e) {
-                setThinking(false);
-                addMessage('Failed to approve step.', 'system');
-            }
-        }
-        
-        async function rejectStep(stepId) {
-            try {
-                await fetch(`${API}/control/reject`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action_id: stepId })
-                });
-                
-                const preview = document.querySelector(`[data-step-id="${stepId}"]`);
-                if (preview) {
-                    preview.querySelector('.step-preview-badge').className = 'step-preview-badge rejected';
-                    preview.querySelector('.step-preview-badge').textContent = 'Rejected';
-                    preview.querySelector('.step-preview-actions').innerHTML = '<span style="color:var(--text-muted)">Cancelled</span>';
-                }
-            } catch (e) {
-                addMessage('Failed to reject step.', 'system');
-            }
-        }
-        
-        function editStep(stepId) {
-            currentEditContext = { stepId };
-            const emailBody = document.getElementById(`emailBody-${stepId}`);
-            if (emailBody) {
-                emailBody.focus();
-                emailBody.classList.add('editable');
-            }
         }
 
         // ============================================

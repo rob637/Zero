@@ -8,6 +8,7 @@ import json
 import os
 import logging
 import time as _time
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException
@@ -31,6 +32,75 @@ _BLUEPRINT_TTL = 300  # 5 minutes
 _ENABLE_BLUEPRINT = os.environ.get("TELIC_ENABLE_BLUEPRINT", "0").strip().lower() in {
     "1", "true", "yes", "on"
 }
+
+
+def _build_data_health_snapshot() -> Dict[str, Any]:
+    """Build a lightweight freshness/health snapshot from sync state."""
+    snapshot: Dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_sources": 0,
+        "fresh_sources": 0,
+        "stale_sources": 0,
+        "degraded_sources": [],
+        "freshness": {},
+        "freshest_age_seconds": None,
+        "stalest_age_seconds": None,
+    }
+
+    index = getattr(ss, "_data_index", None)
+    if not index:
+        return snapshot
+
+    try:
+        states = index.all_sync_states()
+    except Exception:
+        return snapshot
+
+    now = datetime.now(timezone.utc)
+    ages: List[int] = []
+    degraded_sources = set()
+    stale_count = 0
+    fresh_count = 0
+
+    for state in states:
+        age_s: Optional[int] = None
+        if state.last_sync:
+            age_s = max(0, int((now - state.last_sync).total_seconds()))
+            ages.append(age_s)
+
+        status_val = getattr(state.status, "value", str(state.status))
+        if status_val == "error":
+            degraded_sources.add(state.source)
+
+        if age_s is not None:
+            if age_s <= 600 and status_val in {"idle", "syncing"}:
+                fresh_count += 1
+            if age_s > 3600:
+                stale_count += 1
+
+        snapshot["freshness"][state.source] = {
+            "status": status_val,
+            "last_sync": state.last_sync.isoformat() if state.last_sync else None,
+            "age_seconds": age_s,
+            "item_count": state.item_count,
+        }
+
+    sync_engine = getattr(ss, "_sync_engine", None)
+    if sync_engine is not None:
+        failures = getattr(sync_engine, "_consecutive_failures", {}) or {}
+        for source, fail_count in failures.items():
+            if fail_count >= 3:
+                degraded_sources.add(source)
+
+    snapshot["total_sources"] = len(states)
+    snapshot["fresh_sources"] = fresh_count
+    snapshot["stale_sources"] = stale_count
+    snapshot["degraded_sources"] = sorted(degraded_sources)
+    if ages:
+        snapshot["freshest_age_seconds"] = min(ages)
+        snapshot["stalest_age_seconds"] = max(ages)
+
+    return snapshot
 
 
 @router.post("/react/chat")
@@ -100,8 +170,10 @@ Remember: References like "the first one", "send it to him", "the information ab
         
         if state.is_complete:
             logger.info(f"Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
-        
-        return JSONResponse(ss.state_to_response(state))
+
+        payload = ss.state_to_response(state)
+        payload["meta"] = {"data_health": _build_data_health_snapshot()}
+        return JSONResponse(payload)
         
     except Exception as e:
         logger.exception("Request error")
@@ -163,6 +235,19 @@ Remember: References like "the first one", "send it to him", "the information ab
     else:
         full_message = req.message
 
+    data_health_snapshot = _build_data_health_snapshot()
+    degraded_sources = data_health_snapshot.get("degraded_sources") or []
+    if degraded_sources:
+        degraded_text = ", ".join(degraded_sources[:10])
+        full_message = (
+            f"[DATA HEALTH NOTICE]\n"
+            f"Some connectors are currently degraded: {degraded_text}.\n"
+            f"Prefer cached/indexed data and avoid unnecessary live tool calls for degraded sources "
+            f"unless the user explicitly asks for a live refresh. If freshness could affect confidence, "
+            f"state that clearly.\n\n"
+            f"{full_message}"
+        )
+
     # Gather intelligence context before running agent
     intel_context = ""
     try:
@@ -219,7 +304,13 @@ Remember: References like "the first one", "send it to him", "the information ab
                     session.messages.append({"role": "user", "content": req.message})
                     session.messages.append({"role": "assistant", "content": response_text})
                     session.auto_save()
-                    yield f"data: {json.dumps({'event': 'complete', 'data': {'response': response_text, 'steps': [], 'is_complete': True}})}\n\n"
+                    payload = {
+                        "response": response_text,
+                        "steps": [],
+                        "is_complete": True,
+                        "meta": {"data_health": data_health_snapshot},
+                    }
+                    yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
                 return StreamingResponse(
                     index_direct_generator(),
                     media_type="text/event-stream",
@@ -521,7 +612,19 @@ User request: {req.message}"""
                 top_tools_str,
             )
 
-            yield f"data: {json.dumps({'event': 'complete', 'data': ss.state_to_response(state)})}\n\n"
+            logger.info(
+                "Data freshness | sources=%d fresh=%d stale=%d degraded=%s freshest=%ss stalest=%ss",
+                data_health_snapshot.get("total_sources", 0),
+                data_health_snapshot.get("fresh_sources", 0),
+                data_health_snapshot.get("stale_sources", 0),
+                ",".join(data_health_snapshot.get("degraded_sources", [])[:10]) or "none",
+                data_health_snapshot.get("freshest_age_seconds"),
+                data_health_snapshot.get("stalest_age_seconds"),
+            )
+
+            complete_payload = ss.state_to_response(state)
+            complete_payload["meta"] = {"data_health": data_health_snapshot}
+            yield f"data: {json.dumps({'event': 'complete', 'data': complete_payload})}\n\n"
 
         except (Exception, asyncio.CancelledError) as e:
             logger.exception("Request error")
@@ -574,14 +677,16 @@ async def react_approve(req: ReactApproveRequest):
             logger.info(f"{action}: {session.react_state.pending_approval.tool_call.name}")
         
         # Continue with approval decision
-        state = await agent.continue_with_approval(req.approved)
+        state = await agent.continue_with_approval(req.approved, updated_params=req.updated_params)
         session.react_state = state
         
         # Record result in session history
         if state.final_response:
             session.messages.append({"role": "assistant", "content": state.final_response})
-        
-        return JSONResponse(ss.state_to_response(state))
+
+        payload = ss.state_to_response(state)
+        payload["meta"] = {"data_health": _build_data_health_snapshot()}
+        return JSONResponse(payload)
         
     except Exception as e:
         logger.exception("Request error")
@@ -616,9 +721,11 @@ async def react_approve_stream(req: ReactApproveRequest):
     if not req.approved:
         # Rejection is instant — no streaming needed
         async def reject_stream():
-            state = await agent.continue_with_approval(False)
+            state = await agent.continue_with_approval(False, updated_params=req.updated_params)
             session.react_state = state
-            yield f"data: {json.dumps({'event': 'complete', 'data': ss.state_to_response(state)})}\n\n"
+            payload = ss.state_to_response(state)
+            payload["meta"] = {"data_health": _build_data_health_snapshot()}
+            yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
         return StreamingResponse(reject_stream(), media_type="text/event-stream")
 
     # Approved — stream the continuation
@@ -646,7 +753,7 @@ async def react_approve_stream(req: ReactApproveRequest):
 
     async def event_generator():
         yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
-        task = asyncio.create_task(agent.continue_with_approval(True))
+        task = asyncio.create_task(agent.continue_with_approval(True, updated_params=req.updated_params))
         try:
             while True:
                 if not queue.empty():
@@ -686,7 +793,9 @@ async def react_approve_stream(req: ReactApproveRequest):
             if state.final_response:
                 session.messages.append({"role": "assistant", "content": state.final_response})
             session.auto_save()
-            yield f"data: {json.dumps({'event': 'complete', 'data': ss.state_to_response(state)})}\n\n"
+            payload = ss.state_to_response(state)
+            payload["meta"] = {"data_health": _build_data_health_snapshot()}
+            yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
         except (Exception, asyncio.CancelledError) as e:
             logger.exception("Request error")
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)

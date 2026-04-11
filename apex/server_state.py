@@ -1065,6 +1065,7 @@ class ReactRequest(BaseModel):
 class ReactApproveRequest(BaseModel):
     approved: bool
     session_id: Optional[str] = None
+    updated_params: Optional[Dict[str, Any]] = None
 
 
 
@@ -1085,6 +1086,65 @@ def serialize_result(result: Any) -> Any:
     return str(result)
 
 
+def _friendly_tool_name(tool_name: str) -> str:
+    return (tool_name or "action").replace("_", " ").strip().title()
+
+
+def _approval_summary(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a compact, human-readable approval summary for side-effect actions."""
+    p = params or {}
+    highlights = []
+    action = _friendly_tool_name(tool_name)
+
+    def _add(label: str, value: Any, max_len: int = 180) -> None:
+        if value is None:
+            return
+        text = str(value).strip()
+        if not text:
+            return
+        if len(text) > max_len:
+            text = text[:max_len] + "..."
+        highlights.append({"label": label, "value": text})
+
+    t = (tool_name or "").lower()
+
+    if "email" in t and any(k in t for k in ("send", "draft", "reply", "forward")):
+        action = "Send Email" if "send" in t else _friendly_tool_name(tool_name)
+        _add("To", p.get("to") or p.get("recipient"))
+        _add("Cc", p.get("cc"))
+        _add("Subject", p.get("subject"))
+        attachments = p.get("attachments")
+        if isinstance(attachments, list) and attachments:
+            _add("Attachments", ", ".join(str(a) for a in attachments[:4]))
+    elif "document" in t and "create" in t:
+        action = "Create Document"
+        _add("Name", p.get("name") or p.get("filename") or p.get("title"))
+        _add("Path", p.get("path") or p.get("folder") or p.get("directory"))
+        _add("Format", p.get("format") or p.get("type"))
+        _add("Content", p.get("content"), max_len=240)
+    elif "calendar" in t and any(k in t for k in ("create", "add", "schedule")):
+        action = "Create Calendar Event"
+        _add("Title", p.get("title") or p.get("summary"))
+        _add("Start", p.get("start") or p.get("start_time"))
+        _add("End", p.get("end") or p.get("end_time"))
+        _add("Attendees", p.get("attendees"))
+    else:
+        for key in ("name", "title", "to", "subject", "path", "message", "content"):
+            if key in p:
+                _add(key.title(), p.get(key), max_len=200)
+        if not highlights:
+            for idx, (k, v) in enumerate((p or {}).items()):
+                if idx >= 4:
+                    break
+                _add(k.replace("_", " ").title(), v, max_len=120)
+
+    return {
+        "action": action,
+        "tool": tool_name,
+        "highlights": highlights,
+    }
+
+
 def step_to_dict(step: Step) -> Dict[str, Any]:
     """Convert a Step to a JSON-serializable dict."""
     return {
@@ -1094,6 +1154,7 @@ def step_to_dict(step: Step) -> Dict[str, Any]:
         "result": serialize_result(step.result),
         "error": step.error,
         "requires_approval": step.requires_approval,
+        "approval_summary": _approval_summary(step.tool_call.name, step.tool_call.params) if step.requires_approval else None,
     }
 
 
@@ -1109,13 +1170,17 @@ def step_to_sse_dict(step: Step) -> Dict[str, Any]:
         if len(result_json) > 1500:
             result_data = f"[{len(result_json)} bytes — see final results]"
     params = step.tool_call.params or {}
+    compact_params = params
+    if step.status != StepStatus.PENDING_APPROVAL:
+        compact_params = {k: (v if len(str(v)) < 100 else str(v)[:100] + "...") for k, v in params.items()}
     return {
         "tool": step.tool_call.name,
-        "params": {k: (v if len(str(v)) < 100 else str(v)[:100] + "...") for k, v in params.items()},
+        "params": compact_params,
         "status": step.status.value,
         "result": result_data,
         "error": step.error,
         "requires_approval": step.requires_approval,
+        "approval_summary": _approval_summary(step.tool_call.name, params) if step.requires_approval else None,
     }
 
 

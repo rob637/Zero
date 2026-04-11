@@ -200,7 +200,7 @@ When you have completed the task, respond with a summary of what was done."""
         
         return await self._execute_loop()
     
-    async def continue_with_approval(self, approved: bool) -> AgentState:
+    async def continue_with_approval(self, approved: bool, updated_params: Optional[Dict[str, Any]] = None) -> AgentState:
         """Continue after user approves or rejects a pending action."""
         if not self.state.pending_approval:
             return self.state
@@ -216,6 +216,8 @@ When you have completed the task, respond with a summary of what was done."""
         tool_use_id = step.tool_call.id
         
         if approved:
+            if isinstance(updated_params, dict):
+                step.tool_call.params = updated_params
             # Execute the approved tool
             result = await asyncio.wait_for(
                 self._execute_tool(step.tool_call),
