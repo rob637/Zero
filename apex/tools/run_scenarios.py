@@ -269,6 +269,12 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Telic API base URL")
     parser.add_argument("--scenario-file", default="apex/scenarios/regression_scenarios.json", help="Scenario spec JSON file")
     parser.add_argument("--scenario", action="append", default=[], help="Scenario ID to run (repeatable)")
+    parser.add_argument(
+        "--suite",
+        default="all",
+        choices=["all", "core", "nightly"],
+        help="Run scenarios in a named suite (all/core/nightly)",
+    )
     parser.add_argument("--auto-approve", action="store_true", help="Automatically approve pending actions")
     parser.add_argument("--out-dir", default="apex/scenarios/reports/latest", help="Output report directory")
     parser.add_argument("--allow-failures", action="store_true", help="Always exit 0 even on scenario failures")
@@ -280,6 +286,16 @@ def main() -> int:
     if not scenarios:
         print("No scenarios found.", file=sys.stderr)
         return 2
+
+    if args.suite != "all":
+        selected_suite = args.suite
+        scenarios = [
+            s for s in scenarios
+            if selected_suite in (s.get("suites") or [])
+        ]
+        if not scenarios:
+            print(f"No scenarios found for suite='{selected_suite}'", file=sys.stderr)
+            return 2
 
     selected_ids = set(args.scenario)
     if selected_ids:
