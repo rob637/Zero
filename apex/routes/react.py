@@ -424,12 +424,18 @@ User request: {req.message}"""
 
         try:
             while True:
-                # Exit immediately once work is complete and no events remain.
-                if task.done() and queue.empty():
+                # Always flush any pending events first.
+                if not queue.empty():
+                    event = await queue.get()
+                    yield f"data: {json.dumps(event)}\n\n"
+                    continue
+
+                # Exit once work is complete and no events remain.
+                if task.done():
                     break
 
                 queue_get = asyncio.create_task(queue.get())
-                done, pending = await asyncio.wait(
+                done, _ = await asyncio.wait(
                     {task, queue_get},
                     timeout=2.0,
                     return_when=asyncio.FIRST_COMPLETED,
@@ -643,11 +649,16 @@ async def react_approve_stream(req: ReactApproveRequest):
         task = asyncio.create_task(agent.continue_with_approval(True))
         try:
             while True:
-                if task.done() and queue.empty():
+                if not queue.empty():
+                    event = await queue.get()
+                    yield f"data: {json.dumps(event)}\n\n"
+                    continue
+
+                if task.done():
                     break
 
                 queue_get = asyncio.create_task(queue.get())
-                done, pending = await asyncio.wait(
+                done, _ = await asyncio.wait(
                     {task, queue_get},
                     timeout=2.0,
                     return_when=asyncio.FIRST_COMPLETED,
