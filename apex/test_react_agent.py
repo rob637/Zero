@@ -208,5 +208,89 @@ async def test_multi_step_flow():
     assert state.steps[1].tool_call.name == "file.read"
 
 
+@pytest.mark.asyncio
+async def test_data_tool_auto_wires_from_prior_step_same_turn():
+    """data_* calls without explicit data should run after producer tools in same turn."""
+
+    calls = []
+
+    async def photo_handler(params):
+        calls.append("photo.search")
+        return {"photos": [{"name": "a.jpg", "path": "/tmp/a.jpg"}]}
+
+    async def data_handler(params):
+        calls.append("data.query")
+        assert "data" in params and isinstance(params["data"], list)
+        assert params["data"][0]["name"] == "a.jpg"
+        return {"rows": [{"ok": True}]}
+
+    responses = [
+        MockResponse("tool_use", [
+            MockToolUse("1", "photo.search", {"query": "germany"}),
+            MockToolUse("2", "data.query", {"query": "group by day"}),
+        ]),
+        MockResponse("end_turn", [MockText("Done")]),
+    ]
+
+    tools = [
+        Tool(
+            name="photo.search",
+            description="Search photos",
+            parameters={"properties": {}, "required": []},
+            handler=photo_handler,
+            side_effect=False,
+        ),
+        Tool(
+            name="data.query",
+            description="Query data",
+            parameters={"properties": {}, "required": []},
+            handler=data_handler,
+            side_effect=False,
+        ),
+    ]
+
+    agent = ReActAgent(llm_client=MockLLMClient(responses), tools=tools)
+    state = await agent.run("group germany photos")
+
+    assert state.is_complete
+    assert calls == ["photo.search", "data.query"]
+
+
+@pytest.mark.asyncio
+async def test_repeated_readonly_failures_are_short_circuited():
+    """After repeated failures, readonly tools should be skipped to avoid loops."""
+
+    attempts = {"count": 0}
+
+    async def flaky_handler(_params):
+        attempts["count"] += 1
+        raise RuntimeError("flaky source")
+
+    responses = [
+        MockResponse("tool_use", [MockToolUse("1", "web.fetch", {"url": "https://x"})]),
+        MockResponse("tool_use", [MockToolUse("2", "web.fetch", {"url": "https://x"})]),
+        MockResponse("tool_use", [MockToolUse("3", "web.fetch", {"url": "https://x"})]),
+        MockResponse("tool_use", [MockToolUse("4", "web.fetch", {"url": "https://x"})]),
+        MockResponse("end_turn", [MockText("best effort")]),
+    ]
+
+    tools = [
+        Tool(
+            name="web.fetch",
+            description="Fetch URL",
+            parameters={"properties": {}, "required": []},
+            handler=flaky_handler,
+            side_effect=False,
+        )
+    ]
+
+    agent = ReActAgent(llm_client=MockLLMClient(responses), tools=tools)
+    state = await agent.run("fetch")
+
+    assert state.is_complete
+    # First three attempts fail, fourth is short-circuited without calling handler.
+    assert attempts["count"] == 3
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -154,6 +154,8 @@ class ReActAgent:
         # Request-scoped cache for idempotent/read-only tool calls.
         self._readonly_tool_cache: Dict[str, Any] = {}
         self._readonly_tool_cache_hits: int = 0
+        # Request-scoped failure counters to prevent repeated non-productive retries.
+        self._tool_failure_counts: Dict[str, int] = {}
         # Request-scoped set of executed side-effect signatures to prevent
         # duplicate action loops from repeatedly prompting/executing.
         self._executed_side_effect_signatures: set[str] = set()
@@ -205,6 +207,7 @@ When you have completed the task, respond with a summary of what was done."""
         self.state = AgentState()
         self._readonly_tool_cache = {}
         self._readonly_tool_cache_hits = 0
+        self._tool_failure_counts = {}
         self._executed_side_effect_signatures = set()
         self._last_approved_tool_name = None
         self._steps_len_at_last_approval = 0
@@ -396,6 +399,17 @@ When you have completed the task, respond with a summary of what was done."""
                               if self.tools.get(tc.name) and not self.tools[tc.name].side_effect]
             sideeffect_calls = [(tc, self.tools.get(tc.name)) for tc in tool_calls
                                 if not self.tools.get(tc.name) or self.tools[tc.name].side_effect]
+
+            # Some read-only calls depend on data produced by earlier calls in the same turn.
+            # Keep this generic by looking at missing required payloads, not scenario/tool names.
+            dep_readonly_calls: List[tuple[ToolCall, Any]] = []
+            indep_readonly_calls: List[tuple[ToolCall, Any]] = []
+            for tc, tool in readonly_calls:
+                params = tc.params or {}
+                if tc.name.startswith("data_") and not params.get("data"):
+                    dep_readonly_calls.append((tc, tool))
+                else:
+                    indep_readonly_calls.append((tc, tool))
             
             # Run read-only tools in parallel
             async def _run_tool(tc, tool):
@@ -415,6 +429,21 @@ When you have completed the task, respond with a summary of what was done."""
                 if self.on_step:
                     await self.on_step(step)
                 try:
+                    if self._tool_failure_counts.get(tc.name, 0) >= 3:
+                        step.status = StepStatus.COMPLETED
+                        step.result = {
+                            "ok": False,
+                            "skipped": True,
+                            "reason": f"Skipped repeated failing tool '{tc.name}' after multiple failures in this request.",
+                        }
+                        if self.on_step:
+                            await self.on_step(step)
+                        return {
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": json.dumps(step.result),
+                        }
+
                     cache_key = self._tool_cache_key(tc)
                     if cache_key and cache_key in self._readonly_tool_cache:
                         self._readonly_tool_cache_hits += 1
@@ -428,6 +457,7 @@ When you have completed the task, respond with a summary of what was done."""
                             self._readonly_tool_cache[cache_key] = result
                     step.result = serialize(result)
                     step.status = StepStatus.COMPLETED
+                    self._tool_failure_counts[tc.name] = 0
                     result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
                     if len(result_str) > self.MAX_TOOL_RESULT_CHARS:
                         result_str = result_str[:self.MAX_TOOL_RESULT_CHARS] + f"\n... [truncated, {len(result_str)} chars total]"
@@ -441,6 +471,7 @@ When you have completed the task, respond with a summary of what was done."""
                 except Exception as e:
                     step.status = StepStatus.FAILED
                     step.error = str(e)
+                    self._tool_failure_counts[tc.name] = self._tool_failure_counts.get(tc.name, 0) + 1
                     logger.error(f"Tool {tc.name} failed: {e}", exc_info=True)
                     if self.on_step:
                         await self.on_step(step)
@@ -452,7 +483,7 @@ When you have completed the task, respond with a summary of what was done."""
                     }
             
             # Parallel execution of read-only tools
-            if readonly_calls:
+            if indep_readonly_calls:
                 sem = asyncio.Semaphore(max(1, max_parallel_read))
 
                 async def _run_tool_limited(tc, tool):
@@ -460,9 +491,13 @@ When you have completed the task, respond with a summary of what was done."""
                         return await _run_tool(tc, tool)
 
                 parallel_results = await asyncio.gather(
-                    *[_run_tool_limited(tc, tool) for tc, tool in readonly_calls]
+                    *[_run_tool_limited(tc, tool) for tc, tool in indep_readonly_calls]
                 )
                 tool_results.extend(parallel_results)
+
+            # Run dependent read-only calls after upstream calls complete in this turn.
+            for tc, tool in dep_readonly_calls:
+                tool_results.append(await _run_tool(tc, tool))
             
             # Sequential execution of side-effect tools (require approval)
             for tc, tool in sideeffect_calls:
