@@ -496,8 +496,21 @@ async def _connect_engine_connectors(engine: TelicEngine):
             
             if not is_connected:
                 try:
-                    await connector.connect()
-                    logger.info(f"Connected: {key}")
+                    result = await connector.connect()
+                    connected_now = False
+                    if isinstance(result, bool):
+                        connected_now = result
+                    elif hasattr(connector, 'connected'):
+                        val = getattr(connector, 'connected')
+                        connected_now = val() if callable(val) else bool(val)
+                    elif hasattr(connector, 'is_connected'):
+                        val = getattr(connector, 'is_connected')
+                        connected_now = val() if callable(val) else bool(val)
+
+                    if connected_now:
+                        logger.info(f"Connected: {key}")
+                    else:
+                        logger.warning(f"Connect failed for {key}: connector returned not connected")
                 except Exception as e:
                     logger.warning(f"Connect failed for {key}: {e}")
 
