@@ -6,7 +6,8 @@ Add-Type -AssemblyName System.Drawing
 
 # Configuration
 $port = 8000
-$url = "http://localhost:$port"
+$url = "http://127.0.0.1:$port"
+$healthUrl = "$url/health"
 
 # Create notification icon
 $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
@@ -53,11 +54,22 @@ $notifyIcon.ShowBalloonTip(3000, "Telic", "Starting...", [System.Windows.Forms.T
 
 $global:serverProcess = Start-Process -FilePath "python" -ArgumentList "server.py" -WorkingDirectory $scriptDir -PassThru -WindowStyle Hidden
 
-# Wait for server to start
-Start-Sleep -Seconds 2
-
-# Open browser
-Start-Process $url
+# Wait for server readiness, then open browser (fallback open after timeout)
+$opened = $false
+for ($i = 0; $i -lt 120; $i++) {
+    try {
+        $r = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 1
+        if ($r.StatusCode -ge 200) {
+            Start-Process $url
+            $opened = $true
+            break
+        }
+    } catch {}
+    Start-Sleep -Milliseconds 500
+}
+if (-not $opened) {
+    Start-Process $url
+}
 
 $notifyIcon.ShowBalloonTip(3000, "Telic", "Ready! Click the tray icon to open.", [System.Windows.Forms.ToolTipIcon]::Info)
 

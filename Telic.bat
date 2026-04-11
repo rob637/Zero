@@ -59,8 +59,9 @@ if not exist ".venv" (
 echo Starting Telic...
 echo.
 
-:: Start the browser after a short delay
-start "" cmd /c "timeout /t 2 >nul && start http://localhost:8000"
+:: Open browser when server is ready (poll /health), fallback after timeout.
+:: Use 127.0.0.1 (not localhost) to avoid IPv6 localhost resolution delays/refusals on Windows.
+start "" powershell -NoProfile -ExecutionPolicy Bypass -Command "$health='http://127.0.0.1:8000/health'; $ui='http://127.0.0.1:8000'; for($i=0;$i -lt 120;$i++){ try { $r=Invoke-WebRequest -Uri $health -UseBasicParsing -TimeoutSec 1; if($r.StatusCode -ge 200){ Start-Process $ui; exit 0 } } catch {}; Start-Sleep -Milliseconds 500 }; Start-Process $ui"
 
 :: Run the server
 python server.py
