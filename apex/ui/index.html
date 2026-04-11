@@ -4413,11 +4413,15 @@
             
             // File operation preview
             if (tool.includes('drive') || tool.includes('file') || tool.includes('document')) {
+                const dataPreview = Array.isArray(p.data)
+                    ? `<div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 6px;">Rows: <strong>${p.data.length}</strong>${p.data.length && typeof p.data[0] === 'object' ? ` · Columns: ${escapeHtml(Object.keys(p.data[0]).slice(0, 5).join(', '))}` : ''}</div>`
+                    : '';
                 return `
                     <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #EA4335;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">📁 FILE OPERATION</div>
                         ${p.name || p.filename || p.title ? `<div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">${escapeHtml(String(p.name || p.filename || p.title))}</div>` : ''}
                         ${p.content ? `<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px; max-height: 150px; overflow-y: auto;">${escapeHtml(String(p.content).substring(0, 300))}</div>` : ''}
+                        ${dataPreview}
                     </div>`;
             }
             
@@ -4579,8 +4583,12 @@
             }
 
             if (tool.includes('document') && tool.includes('create')) {
-                if (!_has('name') && !_has('filename') && !_has('title')) blockers.push('Document name is required');
-                if (!_has('content')) warnings.push('Document content is empty');
+                const hasPathLike = _has('path') || _has('folder') || _has('directory');
+                const hasNamedTarget = _has('name') || _has('filename') || _has('title') || hasPathLike;
+                const hasBody = _has('content') || (_isObject(p.data) || Array.isArray(p.data));
+
+                if (!hasNamedTarget) blockers.push('Document target is required (name, filename, or path)');
+                if (!hasBody) warnings.push('Document content/data is empty');
                 if (!_has('path') && !_has('folder') && !_has('directory')) warnings.push('No explicit save path provided');
             }
 

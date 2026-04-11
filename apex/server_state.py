@@ -1118,10 +1118,23 @@ def _approval_summary(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
             _add("Attachments", ", ".join(str(a) for a in attachments[:4]))
     elif "document" in t and "create" in t:
         action = "Create Document"
-        _add("Name", p.get("name") or p.get("filename") or p.get("title"))
-        _add("Path", p.get("path") or p.get("folder") or p.get("directory"))
+        path_val = p.get("path") or p.get("folder") or p.get("directory")
+        name_val = p.get("name") or p.get("filename") or p.get("title")
+        if not name_val and isinstance(path_val, str) and path_val.strip():
+            # Derive filename from path-like values for clearer approval context.
+            parts = path_val.replace("\\", "/").split("/")
+            name_val = parts[-1] if parts else None
+        _add("Name", name_val)
+        _add("Path", path_val)
         _add("Format", p.get("format") or p.get("type"))
         _add("Content", p.get("content"), max_len=240)
+        data_val = p.get("data")
+        if isinstance(data_val, list):
+            _add("Rows", len(data_val))
+            if data_val and isinstance(data_val[0], dict):
+                sample_keys = list(data_val[0].keys())[:4]
+                if sample_keys:
+                    _add("Columns", ", ".join(sample_keys))
     elif "calendar" in t and any(k in t for k in ("create", "add", "schedule")):
         action = "Create Calendar Event"
         _add("Title", p.get("title") or p.get("summary"))
