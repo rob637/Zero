@@ -442,6 +442,8 @@ User request: {req.message}"""
                     queue_get.cancel()
                     try:
                         await queue_get
+                    except asyncio.CancelledError:
+                        pass
                     except Exception:
                         pass
 
@@ -658,6 +660,8 @@ async def react_approve_stream(req: ReactApproveRequest):
                     queue_get.cancel()
                     try:
                         await queue_get
+                    except asyncio.CancelledError:
+                        pass
                     except Exception:
                         pass
 
