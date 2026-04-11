@@ -631,12 +631,16 @@ Remember: References like "the first one", "send it to him", "the information ab
 
         # Recall relevant facts from semantic memory
         recalled = await asyncio.wait_for(
-            hub.recall(req.message, limit=5, min_relevance=0.3),
+            hub.recall(req.message, limit=5, min_relevance=0.45),
             timeout=latency_budget["intel_timeout_s"],
         )
         if recalled:
             facts_text = "\n".join(f"- {f.content}" for f, _score in recalled[:5])
-            intel_parts.append(f"[MEMORY - Things I remember]\n{facts_text}")
+            intel_parts.append(
+                f"[BACKGROUND MEMORY - Remembered personal facts and preferences. "
+                f"These are NOT live calendar events or tasks. Use them only for context "
+                f"and personalisation — never invent calendar entries or task items from them.]\n{facts_text}"
+            )
 
         # Check what patterns are expected now
         expected = []

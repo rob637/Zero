@@ -115,20 +115,20 @@ class TodoistConnector:
     async def _request(self, method: str, path: str, **kwargs):
         """Make a Todoist API request, falling back to legacy API if v2 returns 410."""
         await self._ensure_client()
-        resp = await self._http.request(method, path, **kwargs)
 
-        if resp.status_code == 410:
-            legacy_url = f"{TODOIST_API_LEGACY}{path}"
-            resp = await self._http.request(method, legacy_url, **kwargs)
-            if resp.status_code < 400:
-                if not self._using_legacy_api:
-                    self._using_legacy_api = True
-                    logger.warning(
-                        "Todoist REST v2 returned 410 Gone; using legacy API endpoint for compatibility"
-                    )
+        # Skip v2 entirely once we've confirmed it's gone for this instance.
+        if not self._using_legacy_api:
+            resp = await self._http.request(method, path, **kwargs)
+            if resp.status_code == 410:
+                self._using_legacy_api = True
+                logger.warning(
+                    "Todoist REST v2 returned 410 Gone; using legacy API endpoint for all future requests"
+                )
+            else:
                 return resp
 
-        return resp
+        legacy_url = f"{TODOIST_API_LEGACY}{path}"
+        return await self._http.request(method, legacy_url, **kwargs)
 
     @staticmethod
     def _unwrap_list_payload(payload: Any) -> List[Dict[str, Any]]:
