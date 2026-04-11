@@ -14,6 +14,7 @@ Architecture:
 
 Embedding strategy:
   - Primary: sentence-transformers (local, no API call, ~5ms per embed)
+    - Secondary fallback: local char-gram + token hashed embeddings (dependency-free)
   - Fallback: OpenAI text-embedding-3-small (if local model unavailable)
   - Vectors stored as numpy float32 blobs in SQLite
   - Cosine similarity search — brute force is fast enough for <100k objects
@@ -68,7 +69,7 @@ class Embedder:
 
     @property
     def backend(self) -> str:
-        """Which backend is active: 'local', 'openai', 'hash', or 'none'."""
+        """Which backend is active: 'local', 'openai', 'charhash', 'hash', or 'none'."""
         return self._backend
 
     def initialize(self) -> bool:
@@ -99,6 +100,13 @@ class Embedder:
             except Exception as e:
                 logger.warning(f"OpenAI embedding fallback failed: {e}")
 
+        # Dependency-free local fallback with richer lexical signal than pure token hash
+        if os.environ.get("TELIC_ENABLE_CHARHASH_EMBEDDINGS", "1").strip().lower() in {"1", "true", "yes", "on"}:
+            self._dimension = 512
+            self._backend = "charhash"
+            logger.info("Embedder: using local charhash embeddings (512d)")
+            return True
+
         # Last resort: deterministic local hash embeddings (lower quality but always available)
         self._dimension = 384
         self._backend = "hash"
@@ -114,6 +122,8 @@ class Embedder:
             return self._embed_local(texts)
         elif self._backend == "openai":
             return self._embed_openai(texts)
+        elif self._backend == "charhash":
+            return self._embed_charhash(texts)
         elif self._backend == "hash":
             return self._embed_hash(texts)
         else:
@@ -170,6 +180,44 @@ class Embedder:
                 idx = int.from_bytes(digest[:4], "little") % self._dimension
                 sign = 1.0 if (digest[4] & 1) == 0 else -1.0
                 vectors[row, idx] += sign
+
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1, norms)
+        return vectors / norms
+
+    def _embed_charhash(self, texts: List[str]) -> np.ndarray:
+        """Embed using combined token + character n-gram hashing.
+
+        This backend remains deterministic and dependency-free while capturing
+        better lexical similarity than plain token hashing.
+        """
+        import hashlib
+        import re
+
+        vectors = np.zeros((len(texts), self._dimension), dtype=np.float32)
+        for row, text in enumerate(texts):
+            raw = (text or "").lower().strip()
+            tokens = re.findall(r"\w+", raw)[:512]
+            if not tokens:
+                tokens = [""]
+
+            seen = {}
+            for token in tokens:
+                seen[token] = seen.get(token, 0) + 1
+                freq = float(seen[token])
+                weight = 1.0 / np.sqrt(freq)
+                digest = hashlib.blake2b(token.encode("utf-8", errors="ignore"), digest_size=8).digest()
+                idx = int.from_bytes(digest[:4], "little") % self._dimension
+                sign = 1.0 if (digest[4] & 1) == 0 else -1.0
+                vectors[row, idx] += sign * weight
+
+            compact = re.sub(r"\s+", " ", raw)[:1600]
+            grams = [compact[i:i + 3] for i in range(max(0, len(compact) - 2))][:1500]
+            for gram in grams:
+                digest = hashlib.blake2b(gram.encode("utf-8", errors="ignore"), digest_size=8).digest()
+                idx = int.from_bytes(digest[:4], "little") % self._dimension
+                sign = 1.0 if (digest[5] & 1) == 0 else -1.0
+                vectors[row, idx] += sign * 0.35
 
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         norms = np.where(norms == 0, 1, norms)

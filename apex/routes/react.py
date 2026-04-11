@@ -54,6 +54,17 @@ def _env_float(name: str, default: float) -> float:
     except (TypeError, ValueError):
         return default
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
 # ---------------------------------------------------------------------------
 # Blueprint cache — same request pattern → same plan, skip LLM call
 # ---------------------------------------------------------------------------
@@ -65,6 +76,10 @@ _ENABLE_BLUEPRINT = os.environ.get("TELIC_ENABLE_BLUEPRINT", "0").strip().lower(
 _INTEL_SECTION_TIMEOUT_S = _env_float("TELIC_INTEL_SECTION_TIMEOUT_S", 2.5)
 _INTENT_CLASSIFY_TIMEOUT_S = _env_float("TELIC_INTENT_CLASSIFY_TIMEOUT_S", 3.0)
 _STREAM_AGENT_TIMEOUT_S = _env_float("TELIC_STREAM_AGENT_TIMEOUT_S", 180.0)
+_RESPONSE_BUDGET_MS = _env_float("TELIC_RESPONSE_BUDGET_MS", 18000.0)
+_TIGHT_INTEL_TIMEOUT_S = _env_float("TELIC_TIGHT_INTEL_TIMEOUT_S", 1.2)
+_TIGHT_MAX_OUTPUT_TOKENS = _env_int("TELIC_TIGHT_MAX_OUTPUT_TOKENS", 900)
+_TIGHT_TOOL_TIMEOUT_SECONDS = _env_float("TELIC_TIGHT_TOOL_TIMEOUT_SECONDS", 10.0)
 
 _artifact_ledger = ArtifactLedger(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
 _eval_store = OrchestrationEvalStore(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
@@ -193,6 +208,115 @@ def _resolve_orchestration_mode(requested_mode: str) -> tuple[Optional[str], Opt
 
 def _effective_orchestration_mode(applied_mode: Optional[str]) -> str:
     return (applied_mode or os.environ.get("TELIC_ORCH_MODE") or "balanced").strip().lower()
+
+
+def _mode_rank(mode: str) -> int:
+    return {"fast": 0, "balanced": 1, "strict": 2}.get((mode or "balanced").strip().lower(), 1)
+
+
+def _health_mode_recommendation(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    total = max(1, int(snapshot.get("total_sources", 0) or 0))
+    stale = int(snapshot.get("stale_sources", 0) or 0)
+    degraded = len(snapshot.get("degraded_sources") or [])
+    stale_ratio = stale / total
+    degraded_ratio = degraded / total
+
+    reasons: List[str] = []
+    if degraded_ratio >= 0.35:
+        reasons.append("connector_error_ratio_high")
+    if stale_ratio >= 0.55:
+        reasons.append("freshness_staleness_ratio_high")
+    if reasons:
+        return {
+            "mode": "strict",
+            "reasons": reasons,
+            "stale_ratio": round(stale_ratio, 3),
+            "degraded_ratio": round(degraded_ratio, 3),
+        }
+
+    reasons = []
+    if degraded_ratio == 0.0:
+        reasons.append("no_degraded_connectors")
+    if stale_ratio <= 0.15:
+        reasons.append("freshness_within_budget")
+    if len(reasons) == 2:
+        return {
+            "mode": "fast",
+            "reasons": reasons,
+            "stale_ratio": round(stale_ratio, 3),
+            "degraded_ratio": round(degraded_ratio, 3),
+        }
+
+    return {
+        "mode": "balanced",
+        "reasons": ["mixed_reliability_signals"],
+        "stale_ratio": round(stale_ratio, 3),
+        "degraded_ratio": round(degraded_ratio, 3),
+    }
+
+
+def _semantic_backend() -> str:
+    ss_instance = getattr(ss, "_semantic_search", None)
+    if not ss_instance:
+        return "none"
+    try:
+        stats = getattr(ss_instance, "stats", {}) or {}
+        return str(stats.get("backend") or "none").strip().lower()
+    except Exception:
+        return "none"
+
+
+def _confidence_from_runtime(
+    *,
+    data_health: Dict[str, Any],
+    evaluation: Optional[Dict[str, Any]],
+    wall_time_ms: float,
+) -> Dict[str, Any]:
+    score = 0.93
+    total = max(1, int(data_health.get("total_sources", 0) or 0))
+    stale_ratio = (int(data_health.get("stale_sources", 0) or 0) / total)
+    degraded_ratio = (len(data_health.get("degraded_sources") or []) / total)
+
+    score -= min(0.32, stale_ratio * 0.20)
+    score -= min(0.38, degraded_ratio * 0.35)
+
+    backend = _semantic_backend()
+    if backend == "hash":
+        score -= 0.12
+    elif backend in {"charhash", "subword"}:
+        score -= 0.06
+    elif backend == "openai":
+        score -= 0.02
+
+    if wall_time_ms > _RESPONSE_BUDGET_MS:
+        over = (wall_time_ms - _RESPONSE_BUDGET_MS) / max(_RESPONSE_BUDGET_MS, 1.0)
+        score -= min(0.12, over * 0.08)
+
+    if evaluation:
+        eval_score = float(evaluation.get("score", 0.0) or 0.0)
+        score += max(-0.05, min(0.05, (eval_score - 0.8) * 0.25))
+
+    score = max(0.05, min(0.99, score))
+    level = "high" if score >= 0.90 else "medium" if score >= 0.75 else "low"
+
+    reasons: List[str] = []
+    if degraded_ratio > 0.0:
+        reasons.append("connector_degradation_present")
+    if stale_ratio > 0.25:
+        reasons.append("source_freshness_mixed")
+    if backend in {"hash", "charhash", "subword"}:
+        reasons.append(f"semantic_backend_{backend}")
+    if wall_time_ms > _RESPONSE_BUDGET_MS:
+        reasons.append("latency_budget_exceeded")
+    if not reasons:
+        reasons.append("runtime_signals_healthy")
+
+    return {
+        "score": round(score, 3),
+        "level": level,
+        "reasons": reasons,
+        "response_budget_ms": int(_RESPONSE_BUDGET_MS),
+    }
 
 
 def _build_data_health_snapshot() -> Dict[str, Any]:
@@ -372,14 +496,24 @@ async def react_chat_stream(req: ReactRequest):
     import json
     request_t0 = _time.perf_counter()
     prev_orch_mode = os.environ.get("TELIC_ORCH_MODE")
+    orch_mode_mutated = False
+    runtime_orch_mode: Optional[str] = None
     applied_orch_mode, orch_policy_recommendation = _resolve_orchestration_mode(req.orchestration_mode or "")
     if applied_orch_mode:
         os.environ["TELIC_ORCH_MODE"] = applied_orch_mode
+        runtime_orch_mode = applied_orch_mode
+        orch_mode_mutated = True
     timing: Dict[str, float] = {
         "classify_ms": 0.0,
         "blueprint_ms": 0.0,
         "agent_run_ms": 0.0,
     }
+    latency_budget: Dict[str, Any] = {
+        "target_ms": int(_RESPONSE_BUDGET_MS),
+        "pressure": False,
+        "intel_timeout_s": _INTEL_SECTION_TIMEOUT_S,
+    }
+    agent_knob_restore: Dict[str, Any] = {}
     tool_start_times: Dict[str, float] = {}
     tool_durations: Dict[str, List[float]] = {}
 
@@ -431,6 +565,52 @@ Remember: References like "the first one", "send it to him", "the information ab
         full_message = req.message
 
     data_health_snapshot = _build_data_health_snapshot()
+    health_mode = _health_mode_recommendation(data_health_snapshot)
+    explicit_mode = (req.orchestration_mode or "").strip().lower() in {"strict", "balanced", "fast"}
+    base_mode = _effective_orchestration_mode(applied_orch_mode)
+    selected_mode = base_mode
+    if not explicit_mode:
+        if applied_orch_mode is None:
+            selected_mode = health_mode["mode"]
+        else:
+            selected_mode = health_mode["mode"]
+            if _mode_rank(applied_orch_mode) > _mode_rank(selected_mode):
+                selected_mode = applied_orch_mode
+
+    if selected_mode != (os.environ.get("TELIC_ORCH_MODE") or "balanced").strip().lower():
+        os.environ["TELIC_ORCH_MODE"] = selected_mode
+        orch_mode_mutated = True
+    runtime_orch_mode = selected_mode
+
+    if orch_policy_recommendation is None:
+        orch_policy_recommendation = {
+            "requested": req.orchestration_mode or "runtime",
+            "recommended": selected_mode,
+            "reasons": list(health_mode.get("reasons") or []),
+        }
+    else:
+        merged_reasons = list(orch_policy_recommendation.get("reasons") or [])
+        for reason in (health_mode.get("reasons") or []):
+            if reason not in merged_reasons:
+                merged_reasons.append(reason)
+        orch_policy_recommendation["reasons"] = merged_reasons
+        orch_policy_recommendation["health_mode"] = health_mode
+        orch_policy_recommendation["recommended"] = selected_mode
+
+    total_sources = max(1, int(data_health_snapshot.get("total_sources", 0) or 0))
+    degraded_ratio = len(data_health_snapshot.get("degraded_sources") or []) / total_sources
+    stale_ratio = int(data_health_snapshot.get("stale_sources", 0) or 0) / total_sources
+    latency_pressure = (degraded_ratio + stale_ratio) >= 0.45
+    latency_budget["pressure"] = latency_pressure
+    if latency_pressure:
+        latency_budget["intel_timeout_s"] = min(_INTEL_SECTION_TIMEOUT_S, _TIGHT_INTEL_TIMEOUT_S)
+        if hasattr(agent, "MAX_MODEL_OUTPUT_TOKENS"):
+            agent_knob_restore["MAX_MODEL_OUTPUT_TOKENS"] = agent.MAX_MODEL_OUTPUT_TOKENS
+            agent.MAX_MODEL_OUTPUT_TOKENS = min(int(agent.MAX_MODEL_OUTPUT_TOKENS), _TIGHT_MAX_OUTPUT_TOKENS)
+        if hasattr(agent, "TOOL_TIMEOUT_SECONDS"):
+            agent_knob_restore["TOOL_TIMEOUT_SECONDS"] = agent.TOOL_TIMEOUT_SECONDS
+            agent.TOOL_TIMEOUT_SECONDS = min(float(agent.TOOL_TIMEOUT_SECONDS), _TIGHT_TOOL_TIMEOUT_SECONDS)
+
     degraded_sources = data_health_snapshot.get("degraded_sources") or []
     if degraded_sources:
         degraded_text = ", ".join(degraded_sources[:10])
@@ -452,26 +632,30 @@ Remember: References like "the first one", "send it to him", "the information ab
         # Recall relevant facts from semantic memory
         recalled = await asyncio.wait_for(
             hub.recall(req.message, limit=5, min_relevance=0.3),
-            timeout=_INTEL_SECTION_TIMEOUT_S,
+            timeout=latency_budget["intel_timeout_s"],
         )
         if recalled:
             facts_text = "\n".join(f"- {f.content}" for f, _score in recalled[:5])
             intel_parts.append(f"[MEMORY - Things I remember]\n{facts_text}")
 
         # Check what patterns are expected now
-        expected = await asyncio.wait_for(
-            hub.whats_expected_now(),
-            timeout=_INTEL_SECTION_TIMEOUT_S,
-        )
+        expected = []
+        if not latency_budget["pressure"]:
+            expected = await asyncio.wait_for(
+                hub.whats_expected_now(),
+                timeout=latency_budget["intel_timeout_s"],
+            )
         if expected:
             patterns_text = "\n".join(f"- {p['pattern']}: {p['description']}" for p in expected[:3])
             intel_parts.append(f"[PATTERNS - What usually happens now]\n{patterns_text}")
 
         # Get proactive suggestions
-        suggestions = await asyncio.wait_for(
-            hub.get_suggestions(max_suggestions=3),
-            timeout=_INTEL_SECTION_TIMEOUT_S,
-        )
+        suggestions = []
+        if not latency_budget["pressure"]:
+            suggestions = await asyncio.wait_for(
+                hub.get_suggestions(max_suggestions=3),
+                timeout=latency_budget["intel_timeout_s"],
+            )
         if suggestions:
             sugg_text = "\n".join(f"- {s.title}: {s.description}" for s in suggestions[:3])
             intel_parts.append(f"[SUGGESTIONS]\n{sugg_text}")
@@ -884,14 +1068,25 @@ User request: {req.message}"""
                 verification=verification,
             )
             gate = check_quality_gate(evaluation, thresholds=QualityGateThresholds())
+            confidence = _confidence_from_runtime(
+                data_health=data_health_snapshot,
+                evaluation=evaluation.to_dict(),
+                wall_time_ms=total_ms,
+            )
             _record_eval_run(
                 workflow_state=workflow_state,
                 request_text=req.message,
                 evaluation=evaluation.to_dict(),
                 verification=verification,
                 gate=gate,
-                orchestration_mode=_effective_orchestration_mode(applied_orch_mode),
+                orchestration_mode=_effective_orchestration_mode(runtime_orch_mode),
             )
+            if complete_payload.get("response") and confidence["level"] != "high":
+                confidence_line = (
+                    f"\n\nConfidence: {confidence['level']} ({int(confidence['score'] * 100)}%) "
+                    f"based on runtime reliability signals."
+                )
+                complete_payload["response"] = (complete_payload.get("response") or "") + confidence_line
             complete_payload["meta"] = {
                 "data_health": data_health_snapshot,
                 "orchestration": _build_workflow_meta(
@@ -901,8 +1096,10 @@ User request: {req.message}"""
                     evaluation=evaluation.to_dict(),
                     gate=gate,
                 ),
+                "confidence": confidence,
+                "latency_budget": latency_budget,
                 "policy_recommendation": orch_policy_recommendation,
-                "applied_orchestration_mode": applied_orch_mode,
+                "applied_orchestration_mode": runtime_orch_mode,
             }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
@@ -918,11 +1115,15 @@ User request: {req.message}"""
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
             yield f"data: {json.dumps({'event': 'complete', 'data': {'response': f'Error: {error_msg}', 'steps': [], 'pending_approval': None, 'is_complete': True, 'meta': {'data_health': data_health_snapshot}}})}\n\n"
         finally:
-            if applied_orch_mode:
+            if orch_mode_mutated:
                 if prev_orch_mode is None:
                     os.environ.pop("TELIC_ORCH_MODE", None)
                 else:
                     os.environ["TELIC_ORCH_MODE"] = prev_orch_mode
+            if "MAX_MODEL_OUTPUT_TOKENS" in agent_knob_restore:
+                agent.MAX_MODEL_OUTPUT_TOKENS = agent_knob_restore["MAX_MODEL_OUTPUT_TOKENS"]
+            if "TOOL_TIMEOUT_SECONDS" in agent_knob_restore:
+                agent.TOOL_TIMEOUT_SECONDS = agent_knob_restore["TOOL_TIMEOUT_SECONDS"]
             agent.on_step = prev_on_step
             agent.on_thinking = prev_on_thinking
             agent.on_token = prev_on_token

@@ -909,9 +909,10 @@ async def startup_event(app=None):
                 # Embed any existing un-embedded objects in background
                 asyncio.create_task(_semantic_search.embed_all())
                 ss_stats = _semantic_search.stats
-                if ss_stats.get("backend") == "hash":
+                if ss_stats.get("backend") in {"hash", "charhash"}:
                     logger.warning(
-                        "Semantic search running in hash mode (fallback): results are available but lower quality"
+                        "Semantic search running in fallback mode (%s): results are available but lower quality",
+                        ss_stats.get("backend"),
                     )
                 logger.info(f"Semantic search ready: {ss_stats}")
             else:
