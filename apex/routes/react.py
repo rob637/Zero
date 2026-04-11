@@ -624,6 +624,8 @@ User request: {req.message}"""
 
             complete_payload = ss.state_to_response(state)
             complete_payload["meta"] = {"data_health": data_health_snapshot}
+            if state.pending_approval:
+                yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
             yield f"data: {json.dumps({'event': 'complete', 'data': complete_payload})}\n\n"
 
         except (Exception, asyncio.CancelledError) as e:
@@ -725,6 +727,8 @@ async def react_approve_stream(req: ReactApproveRequest):
             session.react_state = state
             payload = ss.state_to_response(state)
             payload["meta"] = {"data_health": _build_data_health_snapshot()}
+            if state.pending_approval:
+                yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
             yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
         return StreamingResponse(reject_stream(), media_type="text/event-stream")
 

@@ -4073,6 +4073,10 @@
                         const canvasHtml = renderCanvasCards(event.data.steps || []);
                         addMessage(event.data.response, 'assistant', canvasHtml);
                     }
+                    if (event.data?.pending_approval) {
+                        const approvalHtml = renderApprovalRequest(event.data.pending_approval);
+                        addMessage('', 'assistant', approvalHtml);
+                    }
                     // Show cost if available
                     if (event.data?.usage) {
                         const u = event.data.usage;
@@ -4802,6 +4806,17 @@
 
         async function approveAction(approved) {
             setThinking(true);
+            const approveBtn = document.getElementById('approvalApproveBtn');
+            const cancelBtn = document.querySelector('.btn.btn-reject');
+            if (approveBtn) {
+                approveBtn.disabled = true;
+                approveBtn.textContent = approved ? 'Approving...' : 'Working...';
+                approveBtn.style.opacity = '0.7';
+            }
+            if (cancelBtn) {
+                cancelBtn.disabled = true;
+                cancelBtn.style.opacity = '0.6';
+            }
 
             // Create live activity feed for continuation
             const activityEl = approved ? addActivityFeed() : null;
@@ -4809,6 +4824,15 @@
             if (approved && !updatedParams) {
                 setThinking(false);
                 if (activityEl) activityEl.remove();
+                if (approveBtn) {
+                    approveBtn.disabled = false;
+                    approveBtn.textContent = '✓ Approve & Run';
+                    approveBtn.style.opacity = '1';
+                }
+                if (cancelBtn) {
+                    cancelBtn.disabled = false;
+                    cancelBtn.style.opacity = '1';
+                }
                 return;
             }
             if (approved && _pendingApprovalStep) {
@@ -4822,6 +4846,15 @@
                         status.style.color = 'var(--error)';
                     }
                     refreshApprovalValidation();
+                    if (approveBtn) {
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = '✓ Approve & Run';
+                        approveBtn.style.opacity = '1';
+                    }
+                    if (cancelBtn) {
+                        cancelBtn.disabled = false;
+                        cancelBtn.style.opacity = '1';
+                    }
                     return;
                 }
             }
@@ -4874,6 +4907,15 @@
                 setThinking(false);
                 if (activityEl) activityEl.remove();
                 addMessage('Error approving action: ' + e.message, 'system');
+                if (approveBtn) {
+                    approveBtn.disabled = false;
+                    approveBtn.textContent = '✓ Approve & Run';
+                    approveBtn.style.opacity = '1';
+                }
+                if (cancelBtn) {
+                    cancelBtn.disabled = false;
+                    cancelBtn.style.opacity = '1';
+                }
             }
         }
 
