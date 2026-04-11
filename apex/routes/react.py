@@ -61,9 +61,9 @@ async def react_chat(req: ReactRequest):
         if session.messages:
             # Summarize recent conversation for context
             context_lines = []
-            for m in session.messages[-10:]:  # Last 10 messages
+            for m in session.messages[-6:]:  # Last 6 messages
                 role = 'User' if m['role'] == 'user' else 'Assistant'
-                content = m['content'][:300] + "..." if len(m['content']) > 300 else m['content']
+                content = m['content'][:180] + "..." if len(m['content']) > 180 else m['content']
                 context_lines.append(f"{role}: {content}")
             context_summary = "\n".join(context_lines)
             
@@ -146,9 +146,9 @@ async def react_chat_stream(req: ReactRequest):
 
     if session.messages:
         context_lines = []
-        for m in session.messages[-10:]:
+        for m in session.messages[-6:]:
             role = 'User' if m['role'] == 'user' else 'Assistant'
-            content = m['content'][:300] + "..." if len(m['content']) > 300 else m['content']
+            content = m['content'][:180] + "..." if len(m['content']) > 180 else m['content']
             context_lines.append(f"{role}: {content}")
         context_summary = "\n".join(context_lines)
 

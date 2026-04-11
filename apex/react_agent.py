@@ -149,6 +149,9 @@ class ReActAgent:
         self.on_thinking = on_thinking  # Callback before each LLM call
         self.on_token = on_token  # Sync callback for streaming text tokens
         self.state = AgentState()
+        # Request-scoped cache for idempotent/read-only tool calls.
+        self._readonly_tool_cache: Dict[str, Any] = {}
+        self._readonly_tool_cache_hits: int = 0
     
     def _default_system_prompt(self) -> str:
         return """You are a helpful AI assistant that can perform actions on the user's behalf.
@@ -189,6 +192,8 @@ When you have completed the task, respond with a summary of what was done."""
         caller should get approval and call continue_with_approval().
         """
         self.state = AgentState()
+        self._readonly_tool_cache = {}
+        self._readonly_tool_cache_hits = 0
         self.state.messages = [
             {"role": "user", "content": user_message}
         ]
@@ -221,9 +226,8 @@ When you have completed the task, respond with a summary of what was done."""
             
             # Prepare truncated result
             result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
-            MAX_RESULT_LEN = 2000
-            if len(result_str) > MAX_RESULT_LEN:
-                result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
+            if len(result_str) > self.MAX_TOOL_RESULT_CHARS:
+                result_str = result_str[:self.MAX_TOOL_RESULT_CHARS] + f"\n... [truncated, {len(result_str)} chars total]"
             
             new_content = result_str
         else:
@@ -258,6 +262,8 @@ When you have completed the task, respond with a summary of what was done."""
     
     # Configurable model name
     ANTHROPIC_MODEL = os.environ.get("TELIC_MODEL", "claude-sonnet-4-20250514")
+    # Lower default output budget to reduce synthesis latency.
+    MAX_MODEL_OUTPUT_TOKENS = int(os.environ.get("TELIC_MAX_OUTPUT_TOKENS", "1200"))
 
     # Max cost per request (USD). Agent stops gracefully if exceeded.
     MAX_REQUEST_COST_USD = float(os.environ.get("TELIC_MAX_REQUEST_COST", "2.00"))
@@ -265,6 +271,8 @@ When you have completed the task, respond with a summary of what was done."""
     TOOL_TIMEOUT_SECONDS = float(os.environ.get("TELIC_TOOL_TIMEOUT_SECONDS", "12"))
     # Global cap on orchestration iterations.
     MAX_ITERATIONS = int(os.environ.get("TELIC_MAX_ITERATIONS", "20"))
+    # Keep tool results compact to prevent context bloat.
+    MAX_TOOL_RESULT_CHARS = int(os.environ.get("TELIC_MAX_TOOL_RESULT_CHARS", "800"))
 
     async def _execute_loop(self) -> AgentState:
         """Main execution loop."""
@@ -303,6 +311,7 @@ When you have completed the task, respond with a summary of what was done."""
                         "role": "assistant",
                         "content": self.state.final_response
                     })
+                self._log_cache_stats()
                 return self.state
             
             # Process tool calls
@@ -317,6 +326,7 @@ When you have completed the task, respond with a summary of what was done."""
                         "role": "assistant",
                         "content": self.state.final_response
                     })
+                self._log_cache_stats()
                 return self.state
             
             # IMPORTANT: Add assistant's response (with tool_use) to messages FIRST
@@ -353,16 +363,22 @@ When you have completed the task, respond with a summary of what was done."""
                 if self.on_step:
                     await self.on_step(step)
                 try:
-                    result = await asyncio.wait_for(
-                        self._execute_tool(tc),
-                        timeout=self.TOOL_TIMEOUT_SECONDS,
-                    )
+                    cache_key = self._tool_cache_key(tc)
+                    if cache_key and cache_key in self._readonly_tool_cache:
+                        self._readonly_tool_cache_hits += 1
+                        result = self._readonly_tool_cache[cache_key]
+                    else:
+                        result = await asyncio.wait_for(
+                            self._execute_tool(tc),
+                            timeout=self.TOOL_TIMEOUT_SECONDS,
+                        )
+                        if cache_key:
+                            self._readonly_tool_cache[cache_key] = result
                     step.result = serialize(result)
                     step.status = StepStatus.COMPLETED
                     result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
-                    MAX_RESULT_LEN = 2000
-                    if len(result_str) > MAX_RESULT_LEN:
-                        result_str = result_str[:MAX_RESULT_LEN] + f"\n... [truncated, {len(result_str)} chars total]"
+                    if len(result_str) > self.MAX_TOOL_RESULT_CHARS:
+                        result_str = result_str[:self.MAX_TOOL_RESULT_CHARS] + f"\n... [truncated, {len(result_str)} chars total]"
                     if self.on_step:
                         await self.on_step(step)
                     return {
@@ -431,7 +447,27 @@ When you have completed the task, respond with a summary of what was done."""
         # Hit iteration limit
         self.state.is_complete = True
         self.state.final_response = "I've reached the maximum number of steps. Please try a simpler request."
+        self._log_cache_stats()
         return self.state
+
+    @staticmethod
+    def _tool_cache_key(tool_call: ToolCall) -> Optional[str]:
+        """Stable cache key for idempotent read-only tool calls.
+
+        Returns None when params cannot be serialized safely.
+        """
+        try:
+            params_json = json.dumps(tool_call.params or {}, sort_keys=True, default=str)
+            return f"{tool_call.name}|{params_json}"
+        except Exception:
+            return None
+
+    def _log_cache_stats(self) -> None:
+        if self._readonly_tool_cache_hits:
+            logger.info(
+                f"Read-only tool cache hits: {self._readonly_tool_cache_hits} "
+                f"(entries={len(self._readonly_tool_cache)})"
+            )
     
     async def _call_llm(self) -> Any:
         """Call the LLM with current messages and tools."""
@@ -473,7 +509,7 @@ When you have completed the task, respond with a summary of what was done."""
             def _stream_sync():
                 with self.llm_client.messages.stream(
                     model=self.ANTHROPIC_MODEL,
-                    max_tokens=4096,
+                    max_tokens=self.MAX_MODEL_OUTPUT_TOKENS,
                     system=system_blocks,
                     tools=cached_tools,
                     messages=self.state.messages,
@@ -486,7 +522,7 @@ When you have completed the task, respond with a summary of what was done."""
             response = await _retry_with_backoff(lambda: asyncio.to_thread(
                 self.llm_client.messages.create,
                 model=self.ANTHROPIC_MODEL,
-                max_tokens=4096,
+                max_tokens=self.MAX_MODEL_OUTPUT_TOKENS,
                 system=system_blocks,
                 tools=cached_tools,
                 messages=self.state.messages
@@ -543,6 +579,7 @@ When you have completed the task, respond with a summary of what was done."""
             self.llm_client.chat.completions.create,
             model="gpt-4o",
             messages=messages,
+            max_tokens=self.MAX_MODEL_OUTPUT_TOKENS,
             tools=openai_tools if openai_tools else None
         ))
         return self._wrap_openai_response(response)
@@ -614,9 +651,9 @@ When you have completed the task, respond with a summary of what was done."""
             raise ValueError(f"Unknown tool: {tool_call.name}")
         
         try:
-            return await asyncio.wait_for(tool.handler(tool_call.params), timeout=120.0)
+            return await asyncio.wait_for(tool.handler(tool_call.params), timeout=self.TOOL_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
-            raise TimeoutError(f"Tool '{tool_call.name}' timed out after 120s")
+            raise TimeoutError(f"Tool '{tool_call.name}' timed out after {self.TOOL_TIMEOUT_SECONDS:.0f}s")
 
     def _trim_context_window(self, max_chars: int = 600_000) -> None:
         """Trim conversation history when approaching context limit.
