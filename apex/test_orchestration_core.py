@@ -3,6 +3,7 @@ from pathlib import Path
 from orchestration.artifact_ledger import ArtifactLedger, extract_artifact_candidates
 from orchestration.capability_graph import OrchestrationCapabilityGraph
 from orchestration.contracts import OutcomeContract, WorkflowPhase, WorkflowState
+from orchestration.evaluator import evaluate_runtime_snapshot
 from orchestration.state_machine import InvalidTransitionError, OrchestrationStateMachine
 from orchestration.verifier import check_side_effect_preconditions, verify_outcome
 
@@ -160,3 +161,18 @@ def test_side_effect_preconditions_pass_with_attachment_reference():
 
     issues = check_side_effect_preconditions(outcome, pending, artifacts=[])
     assert issues == []
+
+
+def test_evaluator_scores_runtime_snapshot():
+    verification = {"satisfied": True, "score": 0.9}
+    ev = evaluate_runtime_snapshot(
+        llm_calls=6,
+        tool_calls=14,
+        wall_time_ms=12000,
+        verification=verification,
+    )
+    d = ev.to_dict()
+
+    assert d["score"] >= 0.7
+    assert d["success"] is True
+    assert 0.0 <= d["efficiency"] <= 1.0

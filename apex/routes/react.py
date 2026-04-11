@@ -29,6 +29,7 @@ from orchestration import (
     OrchestrationStateMachine,
     OutcomeContract,
     check_side_effect_preconditions,
+    evaluate_runtime_snapshot,
     verify_outcome,
     WorkflowPhase,
     WorkflowState,
@@ -101,6 +102,7 @@ def _build_workflow_meta(
     state: WorkflowState,
     capability_graph: OrchestrationCapabilityGraph,
     verification: Optional[Dict[str, Any]] = None,
+    evaluation: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     artifacts = _artifact_ledger.list_artifacts(state.workflow_id, limit=20)
     return {
@@ -118,6 +120,7 @@ def _build_workflow_meta(
             for a in artifacts
         ],
         "verification": verification,
+        "evaluation": evaluation,
     }
 
 
@@ -766,12 +769,19 @@ User request: {req.message}"""
             complete_payload = ss.state_to_response(state)
             artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
             verification = verify_outcome(workflow_state.outcome, state, artifacts).to_dict()
+            evaluation = evaluate_runtime_snapshot(
+                llm_calls=state.llm_calls,
+                tool_calls=len(state.steps),
+                wall_time_ms=total_ms,
+                verification=verification,
+            ).to_dict()
             complete_payload["meta"] = {
                 "data_health": data_health_snapshot,
                 "orchestration": _build_workflow_meta(
                     workflow_state,
                     capability_graph,
                     verification=verification,
+                    evaluation=evaluation,
                 ),
             }
             if state.pending_approval:
@@ -929,7 +939,12 @@ async def react_approve_stream(req: ReactApproveRequest):
                 ws.phase = WorkflowPhase.CANCELLED
                 ws.touch()
                 capability_graph = OrchestrationCapabilityGraph.from_tools(list(agent.tools.values()))
-                orchestration_meta = _build_workflow_meta(ws, capability_graph, verification=None)
+                orchestration_meta = _build_workflow_meta(
+                    ws,
+                    capability_graph,
+                    verification=None,
+                    evaluation=None,
+                )
             payload["meta"] = {
                 "data_health": _build_data_health_snapshot(),
                 "orchestration": orchestration_meta,
@@ -1022,6 +1037,12 @@ async def react_approve_stream(req: ReactApproveRequest):
                     workflow_state,
                     capability_graph,
                     verification=verification,
+                    evaluation=evaluate_runtime_snapshot(
+                        llm_calls=getattr(session.react_state, "llm_calls", 0),
+                        tool_calls=len(getattr(session.react_state, "steps", []) or []),
+                        wall_time_ms=0.0,
+                        verification=verification,
+                    ).to_dict(),
                 ),
             }
             yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
@@ -1079,12 +1100,19 @@ async def react_approve_stream(req: ReactApproveRequest):
             payload = ss.state_to_response(state)
             artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
             verification = verify_outcome(workflow_state.outcome, state, artifacts).to_dict()
+            evaluation = evaluate_runtime_snapshot(
+                llm_calls=state.llm_calls,
+                tool_calls=len(state.steps),
+                wall_time_ms=0.0,
+                verification=verification,
+            ).to_dict()
             payload["meta"] = {
                 "data_health": _build_data_health_snapshot(),
                 "orchestration": _build_workflow_meta(
                     workflow_state,
                     capability_graph,
                     verification=verification,
+                    evaluation=evaluation,
                 ),
             }
             if state.pending_approval:
