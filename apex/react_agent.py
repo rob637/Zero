@@ -832,15 +832,55 @@ When you have completed the task, respond with a summary of what was done."""
             if getattr(block, 'type', None) == 'text':
                 texts.append(block.text)
         return "\n".join(texts)
+
+    def _infer_data_input_from_recent_steps(self) -> Optional[Any]:
+        """Infer a data payload from recent completed tool results.
+
+        This is generic glue for DATA tools so plans can compose naturally
+        without brittle parameter handoffs.
+        """
+        candidate_keys = (
+            "data", "rows", "items", "results", "records", "photos",
+            "files", "matches", "objects", "events", "emails", "tasks",
+        )
+
+        for step in reversed(self.state.steps):
+            if step.status != StepStatus.COMPLETED:
+                continue
+            result = step.result
+            if result is None:
+                continue
+
+            if isinstance(result, list) and result:
+                return result
+
+            if isinstance(result, dict):
+                for key in candidate_keys:
+                    value = result.get(key)
+                    if isinstance(value, list) and value:
+                        return value
+
+                # Fallback: single-list dict payloads.
+                list_values = [v for v in result.values() if isinstance(v, list) and v]
+                if len(list_values) == 1:
+                    return list_values[0]
+
+        return None
     
     async def _execute_tool(self, tool_call: ToolCall) -> Any:
         """Execute a tool call with a timeout guard."""
         tool = self.tools.get(tool_call.name)
         if not tool:
             raise ValueError(f"Unknown tool: {tool_call.name}")
+
+        params = dict(tool_call.params or {})
+        if tool_call.name.startswith("data_") and not params.get("data"):
+            inferred = self._infer_data_input_from_recent_steps()
+            if inferred is not None:
+                params["data"] = inferred
         
         try:
-            result = await asyncio.wait_for(tool.handler(tool_call.params), timeout=self.TOOL_TIMEOUT_SECONDS)
+            result = await asyncio.wait_for(tool.handler(params), timeout=self.TOOL_TIMEOUT_SECONDS)
             # Primitive handlers frequently return StepResult(success=..., data=..., error=...).
             # Surface failed StepResults as actual tool errors instead of silently marking them completed.
             if hasattr(result, "success") and hasattr(result, "data"):

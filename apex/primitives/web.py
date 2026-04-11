@@ -1075,6 +1075,85 @@ class PhotoPrimitive(Primitive):
             "mime_type": raw.get("mimeType") or raw.get("mime_type") or "",
             "modified": getattr(obj, "timestamp", None).isoformat() if getattr(obj, "timestamp", None) else None,
         }
+
+    @staticmethod
+    def _as_float(value: Any) -> float:
+        """Convert EXIF rational-like values to float safely."""
+        if isinstance(value, tuple) and len(value) == 2 and value[1]:
+            return float(value[0]) / float(value[1])
+        return float(value)
+
+    @classmethod
+    def _parse_exif(cls, path: Path) -> Dict[str, Any]:
+        """Best-effort EXIF extraction including decimal GPS coordinates."""
+        try:
+            from PIL import Image
+            from PIL.ExifTags import TAGS, GPSTAGS
+        except Exception:
+            return {}
+
+        exif_out: Dict[str, Any] = {}
+        try:
+            with Image.open(path) as img:
+                exif_data = img._getexif() or {}
+                gps_payload = None
+                for tag_id, value in exif_data.items():
+                    tag = TAGS.get(tag_id, tag_id)
+                    if tag == "DateTimeOriginal" and value:
+                        exif_out["date_taken"] = str(value)
+                    elif tag == "Make" and value:
+                        exif_out["camera_make"] = str(value)
+                    elif tag == "Model" and value:
+                        exif_out["camera_model"] = str(value)
+                    elif tag == "GPSInfo" and isinstance(value, dict):
+                        gps_payload = {GPSTAGS.get(k, k): v for k, v in value.items()}
+
+                if gps_payload and "GPSLatitude" in gps_payload and "GPSLongitude" in gps_payload:
+                    lat_ref = gps_payload.get("GPSLatitudeRef", "N")
+                    lon_ref = gps_payload.get("GPSLongitudeRef", "E")
+                    lat_vals = gps_payload["GPSLatitude"]
+                    lon_vals = gps_payload["GPSLongitude"]
+
+                    lat = cls._as_float(lat_vals[0]) + cls._as_float(lat_vals[1]) / 60.0 + cls._as_float(lat_vals[2]) / 3600.0
+                    lon = cls._as_float(lon_vals[0]) + cls._as_float(lon_vals[1]) / 60.0 + cls._as_float(lon_vals[2]) / 3600.0
+                    if str(lat_ref).upper().startswith("S"):
+                        lat *= -1.0
+                    if str(lon_ref).upper().startswith("W"):
+                        lon *= -1.0
+
+                    exif_out["gps_latitude"] = round(lat, 6)
+                    exif_out["gps_longitude"] = round(lon, 6)
+        except Exception:
+            return exif_out
+
+        return exif_out
+
+    @classmethod
+    def _local_photo_record(cls, path_like: Any, include_exif: bool = True) -> Dict[str, Any]:
+        """Normalize local photo path into a structured metadata-rich record."""
+        p = Path(str(path_like)).expanduser()
+        record: Dict[str, Any] = {
+            "id": str(p),
+            "name": p.name,
+            "path": str(p),
+            "source": "local",
+        }
+        if not p.exists():
+            record["exists"] = False
+            return record
+
+        stat = p.stat()
+        record.update({
+            "exists": True,
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "mime_type": f"image/{p.suffix.lower().lstrip('.')}" if p.suffix else "",
+        })
+        if include_exif:
+            exif = cls._parse_exif(p)
+            if exif:
+                record["metadata"] = exif
+        return record
     
     def get_param_schema(self) -> Dict[str, Any]:
         return {
@@ -1122,7 +1201,11 @@ class PhotoPrimitive(Primitive):
                 path = Path(params.get("album", str(Path.home() / "Pictures")))
                 if path.exists() and path.is_dir():
                     photos = list(path.glob("*.jpg")) + list(path.glob("*.png")) + list(path.glob("*.jpeg"))
-                    return StepResult(True, data={"photos": [str(p) for p in photos[:params.get("limit", 50)]], "provider": "local"})
+                    limit = params.get("limit", 50)
+                    return StepResult(True, data={
+                        "photos": [self._local_photo_record(p, include_exif=True) for p in photos[:limit]],
+                        "provider": "local",
+                    })
                 return StepResult(True, data={"photos": [], "provider": "local"})
             
             elif operation == "upload":
@@ -1142,7 +1225,12 @@ class PhotoPrimitive(Primitive):
                     matched = [p for p in all_photos if query in p.name.lower() or query in str(p).lower()]
                 else:
                     matched = all_photos
-                return StepResult(True, data={"photos": [str(p) for p in matched[:params.get("limit", 50)]], "provider": "local"})
+                limit = params.get("limit", 50)
+                return StepResult(True, data={
+                    "photos": [self._local_photo_record(p, include_exif=True) for p in matched[:limit]],
+                    "provider": "local",
+                    "note": "Returned metadata-rich photo records (including EXIF GPS/date when present).",
+                })
             
             elif operation == "create_album":
                 name = params.get("name", "Album")
@@ -1156,8 +1244,8 @@ class PhotoPrimitive(Primitive):
             elif operation == "metadata":
                 photo_path = params.get("photo_id")
                 if Path(photo_path).exists():
-                    stat = Path(photo_path).stat()
-                    return StepResult(True, data={"metadata": {"size": stat.st_size, "modified": stat.st_mtime}, "provider": "local"})
+                    photo = self._local_photo_record(photo_path, include_exif=True)
+                    return StepResult(True, data={"metadata": photo.get("metadata", {}), "photo": photo, "provider": "local"})
                 return StepResult(False, error="Photo not found")
             
             elif operation == "edit":
