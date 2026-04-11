@@ -28,6 +28,7 @@ from orchestration import (
     InvalidTransitionError,
     OrchestrationStateMachine,
     OutcomeContract,
+    check_side_effect_preconditions,
     verify_outcome,
     WorkflowPhase,
     WorkflowState,
@@ -49,6 +50,35 @@ _ENABLE_BLUEPRINT = os.environ.get("TELIC_ENABLE_BLUEPRINT", "0").strip().lower(
 
 _artifact_ledger = ArtifactLedger(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
 _session_workflow_ids: Dict[str, str] = {}
+_session_workflows: Dict[str, WorkflowState] = {}
+
+
+def _session_key(session_id: Optional[str]) -> str:
+    return session_id or "default"
+
+
+def _get_or_create_workflow_state(
+    session_id: Optional[str],
+    user_message: str,
+    *,
+    phase: WorkflowPhase = WorkflowPhase.INIT,
+) -> WorkflowState:
+    key = _session_key(session_id)
+    existing = _session_workflows.get(key)
+    if existing is not None:
+        return existing
+
+    workflow_id = _session_workflow_ids.get(key) or str(uuid.uuid4())
+    _session_workflow_ids[key] = workflow_id
+    state = WorkflowState(
+        workflow_id=workflow_id,
+        session_id=key,
+        phase=phase,
+        outcome=_build_outcome_contract(user_message),
+        policy=ExecutionPolicy(mode=os.environ.get("TELIC_ORCH_MODE", "balanced")),
+    )
+    _session_workflows[key] = state
+    return state
 
 
 def _build_outcome_contract(user_message: str) -> OutcomeContract:
@@ -261,16 +291,20 @@ async def react_chat_stream(req: ReactRequest):
     tool_start_times: Dict[str, float] = {}
     tool_durations: Dict[str, List[float]] = {}
 
-    workflow_id = str(uuid.uuid4())
-    policy = ExecutionPolicy(mode=os.environ.get("TELIC_ORCH_MODE", "balanced"))
-    workflow_state = WorkflowState(
-        workflow_id=workflow_id,
-        session_id=req.session_id or "default",
-        outcome=_build_outcome_contract(req.message),
-        policy=policy,
+    workflow_state = _get_or_create_workflow_state(
+        req.session_id,
+        req.message,
+        phase=WorkflowPhase.INIT,
     )
+    # New user request defines a new orchestration objective for this session.
+    workflow_state.outcome = _build_outcome_contract(req.message)
+    workflow_state.phase = WorkflowPhase.INIT
+    workflow_state.llm_calls = 0
+    workflow_state.tool_calls = 0
+    workflow_state.last_error = None
+    workflow_state.touch()
     workflow_sm = OrchestrationStateMachine(workflow_state)
-    _session_workflow_ids[workflow_state.session_id] = workflow_id
+    _session_workflow_ids[workflow_state.session_id] = workflow_state.workflow_id
     workflow_sm.transition(WorkflowPhase.PLANNING)
 
     session = ss.get_user_session(req.session_id)
@@ -797,17 +831,59 @@ async def react_approve(req: ReactApproveRequest):
         action = "Approved" if req.approved else "Rejected"
         if session.react_state.pending_approval:
             logger.info(f"{action}: {session.react_state.pending_approval.tool_call.name}")
+
+        workflow_state = _get_or_create_workflow_state(
+            req.session_id,
+            "approval_continuation",
+            phase=WorkflowPhase.WAITING_APPROVAL,
+        )
+        capability_graph = OrchestrationCapabilityGraph.from_tools(list(agent.tools.values()))
+
+        if req.approved and session.react_state.pending_approval:
+            artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
+            preflight_issues = check_side_effect_preconditions(
+                workflow_state.outcome,
+                session.react_state.pending_approval,
+                artifacts,
+            )
+            if preflight_issues:
+                verification = verify_outcome(workflow_state.outcome, session.react_state, artifacts).to_dict()
+                payload = ss.state_to_response(session.react_state)
+                payload["error"] = "Preflight check failed"
+                payload["meta"] = {
+                    "data_health": _build_data_health_snapshot(),
+                    "orchestration": _build_workflow_meta(
+                        workflow_state,
+                        capability_graph,
+                        verification={
+                            **verification,
+                            "issues": verification.get("issues", []) + preflight_issues,
+                        },
+                    ),
+                }
+                return JSONResponse(payload)
         
         # Continue with approval decision
         state = await agent.continue_with_approval(req.approved, updated_params=req.updated_params)
         session.react_state = state
+        workflow_state.llm_calls = state.llm_calls
+        workflow_state.touch()
         
         # Record result in session history
         if state.final_response:
             session.messages.append({"role": "assistant", "content": state.final_response})
 
         payload = ss.state_to_response(state)
-        payload["meta"] = {"data_health": _build_data_health_snapshot()}
+        artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
+        verification = verify_outcome(workflow_state.outcome, state, artifacts).to_dict()
+        payload["meta"] = {
+            "data_health": _build_data_health_snapshot(),
+            "orchestration": _build_workflow_meta(
+                workflow_state,
+                capability_graph,
+                verification=verification,
+            ),
+        }
         return JSONResponse(payload)
         
     except Exception as e:
@@ -846,15 +922,12 @@ async def react_approve_stream(req: ReactApproveRequest):
             state = await agent.continue_with_approval(False, updated_params=req.updated_params)
             session.react_state = state
             payload = ss.state_to_response(state)
-            workflow_id = _session_workflow_ids.get(req.session_id or "default")
+            key = _session_key(req.session_id)
+            ws = _session_workflows.get(key)
             orchestration_meta = None
-            if workflow_id:
-                ws = WorkflowState(
-                    workflow_id=workflow_id,
-                    session_id=req.session_id or "default",
-                    phase=WorkflowPhase.CANCELLED,
-                    outcome=_build_outcome_contract("approval_rejected"),
-                )
+            if ws is not None:
+                ws.phase = WorkflowPhase.CANCELLED
+                ws.touch()
                 capability_graph = OrchestrationCapabilityGraph.from_tools(list(agent.tools.values()))
                 orchestration_meta = _build_workflow_meta(ws, capability_graph, verification=None)
             payload["meta"] = {
@@ -868,17 +941,24 @@ async def react_approve_stream(req: ReactApproveRequest):
 
     # Approved — stream the continuation
     queue = asyncio.Queue()
-    workflow_id = _session_workflow_ids.get(req.session_id or "default") or str(uuid.uuid4())
-    _session_workflow_ids[req.session_id or "default"] = workflow_id
-    workflow_state = WorkflowState(
-        workflow_id=workflow_id,
-        session_id=req.session_id or "default",
+    workflow_state = _get_or_create_workflow_state(
+        req.session_id,
+        "approval_continuation",
         phase=WorkflowPhase.WAITING_APPROVAL,
-        outcome=_build_outcome_contract("approval_continuation"),
-        policy=ExecutionPolicy(mode=os.environ.get("TELIC_ORCH_MODE", "balanced")),
     )
+    workflow_state.phase = WorkflowPhase.WAITING_APPROVAL
+    workflow_state.touch()
     workflow_sm = OrchestrationStateMachine(workflow_state)
     capability_graph = OrchestrationCapabilityGraph.from_tools(list(agent.tools.values()))
+
+    preflight_issues: List[str] = []
+    if session.react_state and session.react_state.pending_approval:
+        artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
+        preflight_issues = check_side_effect_preconditions(
+            workflow_state.outcome,
+            session.react_state.pending_approval,
+            artifacts,
+        )
 
     async def on_step(step):
         data = ss.step_to_sse_dict(step)
@@ -925,6 +1005,27 @@ async def react_approve_stream(req: ReactApproveRequest):
 
     async def event_generator():
         yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
+        if preflight_issues:
+            verification = verify_outcome(
+                workflow_state.outcome,
+                session.react_state,
+                _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200),
+            ).to_dict()
+            verification["issues"] = verification.get("issues", []) + preflight_issues
+            if session.react_state and session.react_state.pending_approval:
+                yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(session.react_state.pending_approval)})}\n\n"
+            payload = ss.state_to_response(session.react_state)
+            payload["error"] = "Preflight check failed"
+            payload["meta"] = {
+                "data_health": _build_data_health_snapshot(),
+                "orchestration": _build_workflow_meta(
+                    workflow_state,
+                    capability_graph,
+                    verification=verification,
+                ),
+            }
+            yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
+            return
         task = asyncio.create_task(agent.continue_with_approval(True, updated_params=req.updated_params))
         try:
             while True:

@@ -13,6 +13,35 @@ from .artifact_ledger import ArtifactRecord
 from .contracts import OutcomeContract
 
 
+def _is_delivery_like_action(tool_name: str) -> bool:
+    name = (tool_name or "").lower()
+    return any(v in name for v in ["send", "share", "publish", "forward", "post"])
+
+
+def _has_explicit_artifact_reference(params: Dict[str, Any]) -> bool:
+    if not isinstance(params, dict):
+        return False
+
+    fields = [
+        "attachments",
+        "attachment_paths",
+        "files",
+        "file_ids",
+        "artifact_ids",
+        "path",
+        "file_path",
+        "uri",
+        "url",
+    ]
+    for key in fields:
+        val = params.get(key)
+        if isinstance(val, str) and val.strip():
+            return True
+        if isinstance(val, list) and any(isinstance(x, str) and x.strip() for x in val):
+            return True
+    return False
+
+
 @dataclass
 class VerificationResult:
     satisfied: bool
@@ -85,3 +114,31 @@ def verify_outcome(
         issues=issues,
         recommendations=recommendations,
     )
+
+
+def check_side_effect_preconditions(
+    outcome: OutcomeContract | None,
+    pending_step: Any,
+    artifacts: Sequence[ArtifactRecord],
+) -> List[str]:
+    """Validate generic preconditions before executing a side-effect step."""
+
+    if pending_step is None or outcome is None:
+        return []
+
+    tool_call = getattr(pending_step, "tool_call", None)
+    if tool_call is None:
+        return []
+
+    tool_name = getattr(tool_call, "name", "")
+    params = getattr(tool_call, "params", {}) or {}
+
+    issues: List[str] = []
+    if outcome.required_artifact_hints and _is_delivery_like_action(tool_name):
+        if len(artifacts) == 0 and not _has_explicit_artifact_reference(params):
+            issues.append(
+                "This action appears to deliver/share content, but no artifact evidence was found. "
+                "Create or attach an artifact before sending."
+            )
+
+    return issues

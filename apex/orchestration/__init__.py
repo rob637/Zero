@@ -2,7 +2,7 @@ from .contracts import ExecutionPolicy, OutcomeContract, WorkflowPhase, Workflow
 from .state_machine import InvalidTransitionError, OrchestrationStateMachine
 from .artifact_ledger import ArtifactLedger, ArtifactRecord, extract_artifact_candidates
 from .capability_graph import CapabilitySummary, OrchestrationCapabilityGraph
-from .verifier import VerificationResult, verify_outcome
+from .verifier import VerificationResult, check_side_effect_preconditions, verify_outcome
 
 __all__ = [
     "ExecutionPolicy",
@@ -17,5 +17,6 @@ __all__ = [
     "CapabilitySummary",
     "OrchestrationCapabilityGraph",
     "VerificationResult",
+    "check_side_effect_preconditions",
     "verify_outcome",
 ]

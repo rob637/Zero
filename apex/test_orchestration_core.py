@@ -4,7 +4,7 @@ from orchestration.artifact_ledger import ArtifactLedger, extract_artifact_candi
 from orchestration.capability_graph import OrchestrationCapabilityGraph
 from orchestration.contracts import OutcomeContract, WorkflowPhase, WorkflowState
 from orchestration.state_machine import InvalidTransitionError, OrchestrationStateMachine
-from orchestration.verifier import verify_outcome
+from orchestration.verifier import check_side_effect_preconditions, verify_outcome
 
 
 class _DummyStatus:
@@ -23,6 +23,17 @@ class _DummyState:
         self.steps = steps
         self.pending_approval = pending_approval
         self.llm_calls = llm_calls
+
+
+class _DummyToolCall:
+    def __init__(self, name: str, params=None):
+        self.name = name
+        self.params = params or {}
+
+
+class _DummyPendingStep:
+    def __init__(self, tool_name: str, params=None):
+        self.tool_call = _DummyToolCall(tool_name, params or {})
 
 
 def test_state_machine_happy_path():
@@ -117,3 +128,35 @@ def test_outcome_verifier_detects_missing_artifact_and_action():
     assert res.satisfied is False
     assert any("No output artifacts" in issue for issue in res.issues)
     assert any("No side-effect action" in issue for issue in res.issues)
+
+
+def test_side_effect_preconditions_require_artifact_for_delivery():
+    outcome = OutcomeContract(
+        user_request="create report and send it",
+        required_artifact_hints=["artifact_output"],
+        required_side_effect_hints=["communication_send"],
+    )
+    pending = _DummyPendingStep("email_send", {"to": "x@example.com", "subject": "Report", "body": "Here"})
+
+    issues = check_side_effect_preconditions(outcome, pending, artifacts=[])
+    assert len(issues) == 1
+
+
+def test_side_effect_preconditions_pass_with_attachment_reference():
+    outcome = OutcomeContract(
+        user_request="create report and send it",
+        required_artifact_hints=["artifact_output"],
+        required_side_effect_hints=["communication_send"],
+    )
+    pending = _DummyPendingStep(
+        "email_send",
+        {
+            "to": "x@example.com",
+            "subject": "Report",
+            "body": "Here",
+            "attachments": ["/tmp/report.csv"],
+        },
+    )
+
+    issues = check_side_effect_preconditions(outcome, pending, artifacts=[])
+    assert issues == []
