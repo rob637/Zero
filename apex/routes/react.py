@@ -8,7 +8,9 @@ import json
 import os
 import logging
 import time as _time
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException
@@ -19,6 +21,16 @@ from server_state import ReactRequest, ReactApproveRequest, get_intelligence_hub
 from react_agent import Step, StepStatus, AgentState
 from src.control.action_history import ActionStatus
 import sessions as session_store
+from orchestration import (
+    ArtifactLedger,
+    ExecutionPolicy,
+    InvalidTransitionError,
+    OrchestrationStateMachine,
+    OutcomeContract,
+    WorkflowPhase,
+    WorkflowState,
+    extract_artifact_candidates,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +44,43 @@ _BLUEPRINT_TTL = 300  # 5 minutes
 _ENABLE_BLUEPRINT = os.environ.get("TELIC_ENABLE_BLUEPRINT", "0").strip().lower() in {
     "1", "true", "yes", "on"
 }
+
+_artifact_ledger = ArtifactLedger(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
+_session_workflow_ids: Dict[str, str] = {}
+
+
+def _build_outcome_contract(user_message: str) -> OutcomeContract:
+    msg = user_message.lower()
+    artifact_hints: List[str] = []
+    side_effect_hints: List[str] = []
+    if any(k in msg for k in ["file", "document", "schedule", "report", "spreadsheet", "attachment"]):
+        artifact_hints.append("artifact_output")
+    if any(k in msg for k in ["email", "send", "forward", "reply", "message"]):
+        side_effect_hints.append("communication_send")
+    return OutcomeContract(
+        user_request=user_message,
+        required_artifact_hints=artifact_hints,
+        required_side_effect_hints=side_effect_hints,
+        constraints={"must_preserve_user_intent": True},
+    )
+
+
+def _build_workflow_meta(state: WorkflowState) -> Dict[str, Any]:
+    artifacts = _artifact_ledger.list_artifacts(state.workflow_id, limit=20)
+    return {
+        "state": state.to_dict(),
+        "artifact_count": len(artifacts),
+        "artifacts": [
+            {
+                "artifact_id": a.artifact_id,
+                "artifact_type": a.artifact_type,
+                "uri": a.uri,
+                "tool_name": a.tool_name,
+                "created_at": a.created_at,
+            }
+            for a in artifacts
+        ],
+    }
 
 
 def _build_data_health_snapshot() -> Dict[str, Any]:
@@ -204,6 +253,18 @@ async def react_chat_stream(req: ReactRequest):
     tool_start_times: Dict[str, float] = {}
     tool_durations: Dict[str, List[float]] = {}
 
+    workflow_id = str(uuid.uuid4())
+    policy = ExecutionPolicy(mode=os.environ.get("TELIC_ORCH_MODE", "balanced"))
+    workflow_state = WorkflowState(
+        workflow_id=workflow_id,
+        session_id=req.session_id or "default",
+        outcome=_build_outcome_contract(req.message),
+        policy=policy,
+    )
+    workflow_sm = OrchestrationStateMachine(workflow_state)
+    _session_workflow_ids[workflow_state.session_id] = workflow_id
+    workflow_sm.transition(WorkflowPhase.PLANNING)
+
     session = ss.get_user_session(req.session_id)
 
     agent = await ss.get_session_agent(session)
@@ -336,6 +397,13 @@ Remember: References like "the first one", "send it to him", "the information ab
         data = ss.step_to_sse_dict(step)
         data["id"] = step.tool_call.id  # Unique ID for matching start/complete
         if step.status == StepStatus.RUNNING:
+            try:
+                if workflow_state.phase == WorkflowPhase.PLANNING:
+                    workflow_sm.transition(WorkflowPhase.EXECUTING)
+            except InvalidTransitionError:
+                pass
+            workflow_state.tool_calls += 1
+            workflow_state.touch()
             tool_start_times[step.tool_call.id] = _time.perf_counter()
             await queue.put({"event": "tool_start", "step": data})
         elif step.status == StepStatus.COMPLETED:
@@ -344,6 +412,16 @@ Remember: References like "the first one", "send it to him", "the information ab
                 elapsed_ms = (_time.perf_counter() - started) * 1000
                 tool_durations.setdefault(step.tool_call.name, []).append(elapsed_ms)
             await queue.put({"event": "tool_complete", "step": data})
+
+            for candidate in extract_artifact_candidates(step.tool_call.name, step.result):
+                _artifact_ledger.record_artifact(
+                    workflow_id=workflow_state.workflow_id,
+                    step_id=step.tool_call.id,
+                    tool_name=step.tool_call.name,
+                    artifact_type=candidate["artifact_type"],
+                    uri=candidate["uri"],
+                    metadata=candidate.get("metadata", {}),
+                )
 
             # Record in action history so the Action History panel shows data
             try:
@@ -387,6 +465,10 @@ Remember: References like "the first one", "send it to him", "the information ab
                 elapsed_ms = (_time.perf_counter() - started) * 1000
                 tool_durations.setdefault(step.tool_call.name, []).append(elapsed_ms)
             await queue.put({"event": "tool_failed", "step": data})
+            try:
+                workflow_sm.fail(step.error or f"Tool failed: {step.tool_call.name}")
+            except InvalidTransitionError:
+                pass
             # Record failed actions too
             try:
                 ss.action_history.record_action(
@@ -401,6 +483,10 @@ Remember: References like "the first one", "send it to him", "the information ab
             except Exception:
                 pass
         elif step.status == StepStatus.PENDING_APPROVAL:
+            try:
+                workflow_sm.transition(WorkflowPhase.WAITING_APPROVAL)
+            except InvalidTransitionError:
+                pass
             await queue.put({"event": "approval_needed", "step": data})
 
     async def on_thinking():
@@ -556,6 +642,17 @@ User request: {req.message}"""
             state = task.result()
             timing["agent_run_ms"] = (_time.perf_counter() - agent_t0) * 1000
             session.react_state = state
+            workflow_state.llm_calls = state.llm_calls
+
+            try:
+                if state.pending_approval:
+                    if workflow_state.phase != WorkflowPhase.WAITING_APPROVAL:
+                        workflow_sm.transition(WorkflowPhase.WAITING_APPROVAL)
+                else:
+                    workflow_sm.transition(WorkflowPhase.VERIFYING)
+                    workflow_sm.transition(WorkflowPhase.COMPLETED)
+            except InvalidTransitionError:
+                pass
 
             # Update session history
             session.messages.append({"role": "user", "content": req.message})
@@ -623,13 +720,20 @@ User request: {req.message}"""
             )
 
             complete_payload = ss.state_to_response(state)
-            complete_payload["meta"] = {"data_health": data_health_snapshot}
+            complete_payload["meta"] = {
+                "data_health": data_health_snapshot,
+                "orchestration": _build_workflow_meta(workflow_state),
+            }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
             yield f"data: {json.dumps({'event': 'complete', 'data': complete_payload})}\n\n"
 
         except (Exception, asyncio.CancelledError) as e:
             logger.exception("Request error")
+            try:
+                workflow_sm.fail(str(e))
+            except InvalidTransitionError:
+                pass
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
@@ -726,7 +830,20 @@ async def react_approve_stream(req: ReactApproveRequest):
             state = await agent.continue_with_approval(False, updated_params=req.updated_params)
             session.react_state = state
             payload = ss.state_to_response(state)
-            payload["meta"] = {"data_health": _build_data_health_snapshot()}
+            workflow_id = _session_workflow_ids.get(req.session_id or "default")
+            orchestration_meta = None
+            if workflow_id:
+                ws = WorkflowState(
+                    workflow_id=workflow_id,
+                    session_id=req.session_id or "default",
+                    phase=WorkflowPhase.CANCELLED,
+                    outcome=_build_outcome_contract("approval_rejected"),
+                )
+                orchestration_meta = _build_workflow_meta(ws)
+            payload["meta"] = {
+                "data_health": _build_data_health_snapshot(),
+                "orchestration": orchestration_meta,
+            }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
             yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
@@ -734,17 +851,50 @@ async def react_approve_stream(req: ReactApproveRequest):
 
     # Approved — stream the continuation
     queue = asyncio.Queue()
+    workflow_id = _session_workflow_ids.get(req.session_id or "default") or str(uuid.uuid4())
+    _session_workflow_ids[req.session_id or "default"] = workflow_id
+    workflow_state = WorkflowState(
+        workflow_id=workflow_id,
+        session_id=req.session_id or "default",
+        phase=WorkflowPhase.WAITING_APPROVAL,
+        outcome=_build_outcome_contract("approval_continuation"),
+        policy=ExecutionPolicy(mode=os.environ.get("TELIC_ORCH_MODE", "balanced")),
+    )
+    workflow_sm = OrchestrationStateMachine(workflow_state)
 
     async def on_step(step):
         data = ss.step_to_sse_dict(step)
         data["id"] = step.tool_call.id
         if step.status == StepStatus.RUNNING:
+            try:
+                workflow_sm.transition(WorkflowPhase.EXECUTING)
+            except InvalidTransitionError:
+                pass
+            workflow_state.tool_calls += 1
+            workflow_state.touch()
             await queue.put({"event": "tool_start", "step": data})
         elif step.status == StepStatus.COMPLETED:
             await queue.put({"event": "tool_complete", "step": data})
+            for candidate in extract_artifact_candidates(step.tool_call.name, step.result):
+                _artifact_ledger.record_artifact(
+                    workflow_id=workflow_state.workflow_id,
+                    step_id=step.tool_call.id,
+                    tool_name=step.tool_call.name,
+                    artifact_type=candidate["artifact_type"],
+                    uri=candidate["uri"],
+                    metadata=candidate.get("metadata", {}),
+                )
         elif step.status == StepStatus.FAILED:
+            try:
+                workflow_sm.fail(step.error or f"Tool failed: {step.tool_call.name}")
+            except InvalidTransitionError:
+                pass
             await queue.put({"event": "tool_failed", "step": data})
         elif step.status == StepStatus.PENDING_APPROVAL:
+            try:
+                workflow_sm.transition(WorkflowPhase.WAITING_APPROVAL)
+            except InvalidTransitionError:
+                pass
             await queue.put({"event": "approval_needed", "step": data})
 
     async def on_thinking():
@@ -794,16 +944,33 @@ async def react_approve_stream(req: ReactApproveRequest):
                 yield f"data: {json.dumps(event)}\n\n"
             state = task.result()
             session.react_state = state
+            workflow_state.llm_calls = state.llm_calls
+            try:
+                if state.pending_approval:
+                    if workflow_state.phase != WorkflowPhase.WAITING_APPROVAL:
+                        workflow_sm.transition(WorkflowPhase.WAITING_APPROVAL)
+                else:
+                    workflow_sm.transition(WorkflowPhase.VERIFYING)
+                    workflow_sm.transition(WorkflowPhase.COMPLETED)
+            except InvalidTransitionError:
+                pass
             if state.final_response:
                 session.messages.append({"role": "assistant", "content": state.final_response})
             session.auto_save()
             payload = ss.state_to_response(state)
-            payload["meta"] = {"data_health": _build_data_health_snapshot()}
+            payload["meta"] = {
+                "data_health": _build_data_health_snapshot(),
+                "orchestration": _build_workflow_meta(workflow_state),
+            }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
             yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
         except (Exception, asyncio.CancelledError) as e:
             logger.exception("Request error")
+            try:
+                workflow_sm.fail(str(e))
+            except InvalidTransitionError:
+                pass
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
