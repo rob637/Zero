@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional
 
 from .google_auth import GoogleAuth, get_google_auth
 from .base import (
-    AuthError, ConnectorError, NotConnectedError, RateLimitError,
+    AuthError, ConnectorError, ConnectorTimeoutError, NotConnectedError, RateLimitError,
     retry_with_backoff,
 )
 
@@ -94,6 +94,20 @@ class GmailConnector:
         self._auth = auth or get_google_auth()
         self._service = None
         self._user_email: Optional[str] = None
+        # googleapiclient uses httplib2 under the hood, which is not thread-safe.
+        # Serialize request execution to avoid intermittent SSL/protocol errors.
+        self._request_lock = asyncio.Lock()
+
+    async def _execute_request(self, request, timeout_seconds: float = 12.0) -> Dict[str, Any]:
+        """Execute a Google API request safely with serialization + timeout."""
+        try:
+            async with self._request_lock:
+                return await asyncio.wait_for(asyncio.to_thread(request.execute), timeout=timeout_seconds)
+        except asyncio.TimeoutError as e:
+            raise ConnectorTimeoutError(
+                f"Gmail request timed out after {timeout_seconds:.0f}s",
+                connector="gmail",
+            ) from e
     
     async def connect(self) -> bool:
         """
@@ -113,14 +127,13 @@ class GmailConnector:
         
         # Build service in thread to avoid blocking
         self._service = await asyncio.to_thread(
-            build, 'gmail', 'v1', credentials=creds
+            build, 'gmail', 'v1', credentials=creds, cache_discovery=False
         )
         
         # Get user's email address
         try:
-            profile = await asyncio.to_thread(
-                self._service.users().getProfile(userId='me').execute
-            )
+            request = self._service.users().getProfile(userId='me')
+            profile = await self._execute_request(request)
             self._user_email = profile.get('emailAddress')
         except HttpError as e:
             # Token exists but lacks Gmail scopes/API permission.
@@ -146,9 +159,8 @@ class GmailConnector:
         if not self._service:
             return "disconnected"
         try:
-            profile = await asyncio.to_thread(
-                self._service.users().getProfile(userId='me').execute
-            )
+            request = self._service.users().getProfile(userId='me')
+            profile = await self._execute_request(request)
             return "healthy" if profile.get("emailAddress") else "unhealthy"
         except HttpError as e:
             if e.resp.status in (401, 403):
@@ -266,7 +278,7 @@ class GmailConnector:
                 maxResults=max_results,
                 labelIds=label_ids or [],
             )
-            result = await asyncio.to_thread(request.execute)
+            result = await self._execute_request(request)
             
             messages = result.get('messages', [])
             if not messages:
@@ -281,13 +293,13 @@ class GmailConnector:
                     format='full' if include_body else 'metadata',
                     metadataHeaders=['From', 'To', 'Subject', 'Date'],
                 )
-                msg = await asyncio.to_thread(request.execute)
+                msg = await self._execute_request(request)
                 emails.append(self._parse_message(msg, include_body=include_body))
             
             return emails
 
         try:
-            return await retry_with_backoff(_do_list, connector_name="gmail")
+            return await retry_with_backoff(_do_list, max_retries=1, connector_name="gmail")
         except HttpError as e:
             if e.resp.status in (401, 403):
                 raise AuthError(f"Gmail auth error: {e}", connector="gmail")
@@ -311,13 +323,26 @@ class GmailConnector:
         if not self._service:
             raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
-        request = self._service.users().messages().get(
-            userId='me',
-            id=message_id,
-            format='full',
-        )
-        msg = await asyncio.to_thread(request.execute)
-        return self._parse_message(msg, include_body=True)
+        async def _do_get():
+            request = self._service.users().messages().get(
+                userId='me',
+                id=message_id,
+                format='full',
+            )
+            return await self._execute_request(request)
+
+        try:
+            msg = await retry_with_backoff(_do_get, max_retries=1, connector_name="gmail")
+            return self._parse_message(msg, include_body=True)
+        except HttpError as e:
+            if e.resp.status in (401, 403):
+                raise AuthError(f"Gmail auth error: {e}", connector="gmail")
+            if e.resp.status == 404:
+                raise ConnectorError(
+                    f"Gmail message not found: {message_id} (it may have been deleted or moved)",
+                    connector="gmail",
+                )
+            raise ConnectorError(f"Gmail API error: {e}", connector="gmail")
     
     async def search(self, query: str, max_results: int = 20) -> List[Email]:
         """
@@ -398,7 +423,7 @@ class GmailConnector:
                 userId='me',
                 body={'raw': raw}
             )
-            return await asyncio.to_thread(request.execute)
+            return await self._execute_request(request)
 
         try:
             result = await retry_with_backoff(_do_send, connector_name="gmail")
@@ -441,7 +466,7 @@ class GmailConnector:
                 userId='me',
                 body={'message': {'raw': raw}}
             )
-            result = await asyncio.to_thread(request.execute)
+            result = await self._execute_request(request)
             
             return {
                 'id': result['id'],
@@ -457,7 +482,7 @@ class GmailConnector:
             raise NotConnectedError("Not connected. Call connect() first.", connector="gmail")
         
         request = self._service.users().labels().list(userId='me')
-        result = await asyncio.to_thread(request.execute)
+        result = await self._execute_request(request)
         
         return [
             {'id': l['id'], 'name': l['name'], 'type': l.get('type')}
@@ -474,7 +499,7 @@ class GmailConnector:
             id=message_id,
             body={'removeLabelIds': ['UNREAD']}
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def mark_unread(self, message_id: str):
         """Mark a message as unread."""
@@ -486,7 +511,7 @@ class GmailConnector:
             id=message_id,
             body={'addLabelIds': ['UNREAD']}
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def delete_message(self, message_id: str):
         """Permanently delete a message (not recoverable)."""
@@ -496,7 +521,7 @@ class GmailConnector:
         request = self._service.users().messages().delete(
             userId='me', id=message_id
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def trash_message(self, message_id: str):
         """Move a message to trash."""
@@ -506,7 +531,7 @@ class GmailConnector:
         request = self._service.users().messages().trash(
             userId='me', id=message_id
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def untrash_message(self, message_id: str):
         """Remove a message from trash."""
@@ -516,7 +541,7 @@ class GmailConnector:
         request = self._service.users().messages().untrash(
             userId='me', id=message_id
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def archive_message(self, message_id: str):
         """Archive a message (remove from INBOX)."""
@@ -528,7 +553,7 @@ class GmailConnector:
             id=message_id,
             body={'removeLabelIds': ['INBOX']}
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def add_label(self, message_id: str, label_ids: List[str]):
         """Add labels to a message."""
@@ -540,7 +565,7 @@ class GmailConnector:
             id=message_id,
             body={'addLabelIds': label_ids}
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def remove_label(self, message_id: str, label_ids: List[str]):
         """Remove labels from a message."""
@@ -552,7 +577,7 @@ class GmailConnector:
             id=message_id,
             body={'removeLabelIds': label_ids}
         )
-        await asyncio.to_thread(request.execute)
+        await self._execute_request(request)
     
     async def reply(
         self,
@@ -591,7 +616,7 @@ class GmailConnector:
                     'threadId': original.thread_id if hasattr(original, 'thread_id') else None,
                 }
             )
-            result = await asyncio.to_thread(request.execute)
+            result = await self._execute_request(request)
             return {'message_id': result.get('id'), 'thread_id': result.get('threadId')}
         except HttpError as e:
             raise RuntimeError(f"Failed to reply: {e}")
@@ -634,7 +659,7 @@ class GmailConnector:
             request = self._service.users().messages().send(
                 userId='me', body={'raw': raw}
             )
-            result = await asyncio.to_thread(request.execute)
+            result = await self._execute_request(request)
             return {'message_id': result.get('id'), 'thread_id': result.get('threadId')}
         except HttpError as e:
             raise RuntimeError(f"Failed to forward: {e}")
@@ -648,7 +673,7 @@ class GmailConnector:
             userId='me', id=thread_id, format='metadata',
             metadataHeaders=['From', 'To', 'Subject', 'Date']
         )
-        result = await asyncio.to_thread(request.execute)
+        result = await self._execute_request(request)
         
         messages = []
         for msg in result.get('messages', []):
@@ -687,9 +712,8 @@ class GmailConnector:
 
         try:
             # Get current historyId from profile
-            profile = await asyncio.to_thread(
-                self._service.users().getProfile(userId='me').execute
-            )
+            profile_request = self._service.users().getProfile(userId='me')
+            profile = await self._execute_request(profile_request)
             current_history_id = profile.get('historyId', '')
 
             if not history_id:
@@ -721,7 +745,7 @@ class GmailConnector:
 
                 request = self._service.users().history().list(**kwargs)
                 try:
-                    result = await asyncio.to_thread(request.execute)
+                    result = await self._execute_request(request)
                 except HttpError as e:
                     if e.resp.status == 404:
                         # historyId expired — do full resync
@@ -756,7 +780,7 @@ class GmailConnector:
                         format='metadata',
                         metadataHeaders=['From', 'To', 'Subject', 'Date'],
                     )
-                    msg = await asyncio.to_thread(request.execute)
+                    msg = await self._execute_request(request)
                     emails.append(self._parse_message(msg, include_body=False))
                 except HttpError:
                     continue  # Skip individual message errors
@@ -775,9 +799,8 @@ class GmailConnector:
                 # Best-effort recovery for local proxy/TLS interception glitches.
                 try:
                     await self.connect()
-                    profile = await asyncio.to_thread(
-                        self._service.users().getProfile(userId='me').execute
-                    )
+                    profile_request = self._service.users().getProfile(userId='me')
+                    profile = await self._execute_request(profile_request)
                     current_history_id = profile.get('historyId', '')
                     emails = await self.list_messages(
                         query="in:inbox OR in:sent",

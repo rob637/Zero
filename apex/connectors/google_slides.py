@@ -148,7 +148,7 @@ class SlidesConnector:
             return False
         
         self._service = await asyncio.to_thread(
-            build, 'slides', 'v1', credentials=creds
+            build, 'slides', 'v1', credentials=creds, cache_discovery=False
         )
         
         return True

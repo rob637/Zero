@@ -106,7 +106,7 @@ class SheetsConnector:
             return False
         
         self._service = await asyncio.to_thread(
-            build, 'sheets', 'v4', credentials=creds
+            build, 'sheets', 'v4', credentials=creds, cache_discovery=False
         )
         
         return True

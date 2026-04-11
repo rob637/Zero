@@ -132,7 +132,7 @@ class DriveConnector:
             return False
         
         self._service = await asyncio.to_thread(
-            build, 'drive', 'v3', credentials=creds
+            build, 'drive', 'v3', credentials=creds, cache_discovery=False
         )
         
         return True

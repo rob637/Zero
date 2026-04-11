@@ -134,6 +134,14 @@ Return ONLY a valid JSON object with the extracted values. Use null if not found
                 content = params.get("content", "")
                 data = params.get("data")
                 path = params.get("path")
+
+                has_content = isinstance(content, str) and bool(content.strip())
+                has_data = data is not None and (not isinstance(data, (list, dict)) or len(data) > 0)
+                if not has_content and not has_data:
+                    return StepResult(
+                        False,
+                        error="Provide non-empty 'content' or 'data' when creating a document.",
+                    )
                 
                 if format_type == "csv" and data:
                     import csv
@@ -626,12 +634,26 @@ Start directly with: def process(data):"""
                 
                 if not data:
                     # Check named datasets
-                    dataset_name = params.get("dataset")
+                    dataset_name = params.get("dataset") or params.get("name") or params.get("source")
                     if dataset_name and dataset_name in self._datasets:
                         data = self._datasets[dataset_name]
+
+                # Fall back to the only known dataset when unambiguous.
+                if not data and len(self._datasets) == 1:
+                    data = next(iter(self._datasets.values()))
+
+                # Some tool chains pass rows/items/photos under alternate keys.
+                if not data:
+                    for key in ("rows", "items", "results", "records", "photos"):
+                        value = params.get(key)
+                        if isinstance(value, list) and value:
+                            data = value
+                            break
                 
                 if not data:
-                    return StepResult(False, error="No data provided. Pass 'data' (list of dicts) or wire from a previous step.")
+                    known = sorted(self._datasets.keys())
+                    hint = f" Available datasets: {known}." if known else ""
+                    return StepResult(False, error="No data provided. Pass 'data' (list of dicts) or wire from a previous step." + hint)
                 
                 return await self._llm_data_code(f"Query: {query}", data)
             

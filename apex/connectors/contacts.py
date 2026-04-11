@@ -116,7 +116,7 @@ class ContactsConnector:
             return False
         
         self._service = await asyncio.to_thread(
-            build, 'people', 'v1', credentials=creds
+            build, 'people', 'v1', credentials=creds, cache_discovery=False
         )
         
         return True

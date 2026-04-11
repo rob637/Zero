@@ -113,7 +113,7 @@ class CalendarConnector:
             return False
         
         self._service = await asyncio.to_thread(
-            build, 'calendar', 'v3', credentials=creds
+            build, 'calendar', 'v3', credentials=creds, cache_discovery=False
         )
         
         # Get primary calendar
