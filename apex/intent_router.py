@@ -122,7 +122,7 @@ _DATE_PATTERN = re.compile(
 # Domain keyword maps — maps trigger words to primitive domains
 _DOMAIN_KEYWORDS: Dict[str, List[str]] = {
     "CALENDAR": [
-        "calendar", "schedule", "event", "meeting", "appointment",
+        "calendar", "event", "meeting", "appointment",
         "agenda", "free time", "busy", "slot", "block",
     ],
     "EMAIL": [
@@ -233,6 +233,12 @@ def _classify_core(msg_lower: str, today: datetime, detected_domains: List[str])
         return Intent(IntentType.FULL, confidence=0.1)
 
     has_action = bool(_ACTION_VERBS.search(msg_lower)) or bool(_SCHEDULE_VERB.search(msg_lower))
+    action_count = len(_ACTION_VERBS.findall(msg_lower))
+
+    # Multi-action requests are often cross-domain workflows; keep routing broad
+    # so the LLM can compose the right tool sequence instead of being over-filtered.
+    if has_action and action_count >= 2 and len(detected_domains) <= 3:
+        return Intent(IntentType.FULL, domains=detected_domains, confidence=0.6)
 
     # --- Phase 1: Check for direct index queries (read-only lookups only) ---
     # Only shortcut to index when the message targets a SINGLE domain.
