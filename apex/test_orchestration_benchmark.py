@@ -2,6 +2,7 @@ from orchestration import (
     BenchmarkCase,
     QualityGateThresholds,
     default_benchmark_cases,
+    load_cases_from_json,
     run_benchmarks,
 )
 
@@ -36,3 +37,23 @@ def test_default_benchmark_suite_exists():
     cases = default_benchmark_cases()
     assert len(cases) >= 3
     assert all(c.name for c in cases)
+
+
+def test_load_cases_from_json(tmp_path):
+    payload = {
+        "cases": [
+            {
+                "name": "json_case",
+                "llm_calls": 3,
+                "tool_calls": 7,
+                "wall_time_ms": 5000,
+                "verification": {"satisfied": True, "score": 0.9},
+            }
+        ]
+    }
+    p = tmp_path / "cases.json"
+    p.write_text(__import__("json").dumps(payload), encoding="utf-8")
+
+    cases = load_cases_from_json(p)
+    assert len(cases) == 1
+    assert cases[0].name == "json_case"

@@ -292,8 +292,14 @@ When you have completed the task, respond with a summary of what was done."""
     TOOL_TIMEOUT_SECONDS = float(os.environ.get("TELIC_TOOL_TIMEOUT_SECONDS", "12"))
     # Global cap on orchestration iterations.
     MAX_ITERATIONS = int(os.environ.get("TELIC_MAX_ITERATIONS", "20"))
+    MAX_ITERATIONS_STRICT = int(os.environ.get("TELIC_MAX_ITERATIONS_STRICT", "14"))
+    MAX_ITERATIONS_BALANCED = int(os.environ.get("TELIC_MAX_ITERATIONS_BALANCED", "20"))
+    MAX_ITERATIONS_FAST = int(os.environ.get("TELIC_MAX_ITERATIONS_FAST", "12"))
     # Keep tool results compact to prevent context bloat.
     MAX_TOOL_RESULT_CHARS = int(os.environ.get("TELIC_MAX_TOOL_RESULT_CHARS", "800"))
+    MAX_PARALLEL_READ_STRICT = int(os.environ.get("TELIC_MAX_PARALLEL_READ_STRICT", "3"))
+    MAX_PARALLEL_READ_BALANCED = int(os.environ.get("TELIC_MAX_PARALLEL_READ_BALANCED", "4"))
+    MAX_PARALLEL_READ_FAST = int(os.environ.get("TELIC_MAX_PARALLEL_READ_FAST", "6"))
     # Detect and stop low-novelty loops before hitting max iterations.
     LOW_NOVELTY_WINDOW = int(os.environ.get("TELIC_LOW_NOVELTY_WINDOW", "12"))
     LOW_NOVELTY_MAX_UNIQUE_TOOLS = int(os.environ.get("TELIC_LOW_NOVELTY_MAX_UNIQUE_TOOLS", "3"))
@@ -301,7 +307,16 @@ When you have completed the task, respond with a summary of what was done."""
 
     async def _execute_loop(self) -> AgentState:
         """Main execution loop."""
-        max_iterations = self.MAX_ITERATIONS
+        orch_mode = os.environ.get("TELIC_ORCH_MODE", "balanced").strip().lower()
+        if orch_mode == "strict":
+            max_iterations = min(self.MAX_ITERATIONS, self.MAX_ITERATIONS_STRICT)
+            max_parallel_read = self.MAX_PARALLEL_READ_STRICT
+        elif orch_mode == "fast":
+            max_iterations = min(self.MAX_ITERATIONS, self.MAX_ITERATIONS_FAST)
+            max_parallel_read = self.MAX_PARALLEL_READ_FAST
+        else:
+            max_iterations = min(self.MAX_ITERATIONS, self.MAX_ITERATIONS_BALANCED)
+            max_parallel_read = self.MAX_PARALLEL_READ_BALANCED
         
         for _ in range(max_iterations):
             # Budget guard — stop before burning too much
@@ -436,8 +451,14 @@ When you have completed the task, respond with a summary of what was done."""
             
             # Parallel execution of read-only tools
             if readonly_calls:
+                sem = asyncio.Semaphore(max(1, max_parallel_read))
+
+                async def _run_tool_limited(tc, tool):
+                    async with sem:
+                        return await _run_tool(tc, tool)
+
                 parallel_results = await asyncio.gather(
-                    *[_run_tool(tc, tool) for tc, tool in readonly_calls]
+                    *[_run_tool_limited(tc, tool) for tc, tool in readonly_calls]
                 )
                 tool_results.extend(parallel_results)
             

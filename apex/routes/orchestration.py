@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -10,12 +11,14 @@ from pydantic import BaseModel
 
 from orchestration import (
     BenchmarkCase,
+    OrchestrationEvalStore,
     QualityGateThresholds,
     default_benchmark_cases,
     run_benchmarks,
 )
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])
+_eval_store = OrchestrationEvalStore(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
 
 
 class BenchmarkCaseRequest(BaseModel):
@@ -73,5 +76,68 @@ async def orchestration_quality_thresholds():
             "min_efficiency": th.min_efficiency,
             "min_latency": th.min_latency,
             "min_churn": th.min_churn,
+        }
+    )
+
+
+@router.get("/quality/history")
+async def orchestration_quality_history(limit: int = 50):
+    rows = _eval_store.recent_runs(limit=max(1, min(limit, 500)))
+    return JSONResponse(
+        {
+            "total": len(rows),
+            "rows": [
+                {
+                    "run_id": r.run_id,
+                    "workflow_id": r.workflow_id,
+                    "session_id": r.session_id,
+                    "request_text": r.request_text,
+                    "created_at": r.created_at,
+                    "score": r.score,
+                    "success": r.success,
+                    "passed_gate": r.passed_gate,
+                    "llm_calls": r.llm_calls,
+                    "tool_calls": r.tool_calls,
+                    "wall_time_ms": r.wall_time_ms,
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
+@router.get("/quality/release-gate")
+async def orchestration_release_gate(lookback: int = 200):
+    summary = _eval_store.summary(lookback=max(10, min(lookback, 2000)))
+
+    total = int(summary.get("total", 0))
+    pass_rate = float(summary.get("pass_rate", 0.0))
+    avg_score = float(summary.get("avg_score", 0.0))
+    avg_latency_ms = float(summary.get("avg_latency_ms", 0.0))
+
+    # Generic release criteria for orchestration quality.
+    criteria = {
+        "min_total_runs": 30,
+        "min_pass_rate": 0.90,
+        "min_avg_score": 0.80,
+        "max_avg_latency_ms": 30000.0,
+    }
+
+    failures: List[str] = []
+    if total < criteria["min_total_runs"]:
+        failures.append("insufficient_run_history")
+    if pass_rate < criteria["min_pass_rate"]:
+        failures.append("pass_rate_below_target")
+    if avg_score < criteria["min_avg_score"]:
+        failures.append("avg_score_below_target")
+    if avg_latency_ms > criteria["max_avg_latency_ms"]:
+        failures.append("avg_latency_above_target")
+
+    return JSONResponse(
+        {
+            "ready": len(failures) == 0,
+            "failures": failures,
+            "criteria": criteria,
+            "summary": summary,
         }
     )

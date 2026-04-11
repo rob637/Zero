@@ -10,7 +10,7 @@ from .evaluator import (
     evaluate_runtime_snapshot,
 )
 from .benchmark_runner import BenchmarkCase, default_benchmark_cases, load_cases_from_json, run_benchmarks
-from .benchmark_runner import BenchmarkCase, run_benchmarks
+from .eval_store import EvaluationRun, OrchestrationEvalStore
 
 __all__ = [
     "ExecutionPolicy",
@@ -35,4 +35,6 @@ __all__ = [
     "run_benchmarks",
     "default_benchmark_cases",
     "load_cases_from_json",
+    "EvaluationRun",
+    "OrchestrationEvalStore",
 ]

@@ -23,11 +23,14 @@ from src.control.action_history import ActionStatus
 import sessions as session_store
 from orchestration import (
     ArtifactLedger,
+    OrchestrationEvalStore,
     OrchestrationCapabilityGraph,
+    QualityGateThresholds,
     ExecutionPolicy,
     InvalidTransitionError,
     OrchestrationStateMachine,
     OutcomeContract,
+    check_quality_gate,
     check_side_effect_preconditions,
     evaluate_runtime_snapshot,
     verify_outcome,
@@ -50,6 +53,7 @@ _ENABLE_BLUEPRINT = os.environ.get("TELIC_ENABLE_BLUEPRINT", "0").strip().lower(
 }
 
 _artifact_ledger = ArtifactLedger(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
+_eval_store = OrchestrationEvalStore(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
 _session_workflow_ids: Dict[str, str] = {}
 _session_workflows: Dict[str, WorkflowState] = {}
 
@@ -103,6 +107,7 @@ def _build_workflow_meta(
     capability_graph: OrchestrationCapabilityGraph,
     verification: Optional[Dict[str, Any]] = None,
     evaluation: Optional[Dict[str, Any]] = None,
+    gate: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     artifacts = _artifact_ledger.list_artifacts(state.workflow_id, limit=20)
     return {
@@ -121,7 +126,29 @@ def _build_workflow_meta(
         ],
         "verification": verification,
         "evaluation": evaluation,
+        "quality_gate": gate,
     }
+
+
+def _record_eval_run(
+    *,
+    workflow_state: WorkflowState,
+    request_text: str,
+    evaluation: Dict[str, Any],
+    verification: Dict[str, Any],
+    gate: Dict[str, Any],
+) -> None:
+    try:
+        _eval_store.record_run(
+            workflow_id=workflow_state.workflow_id,
+            session_id=workflow_state.session_id,
+            request_text=request_text,
+            evaluation=evaluation,
+            verification=verification,
+            gate=gate,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to persist orchestration evaluation: {e}")
 
 
 def _build_data_health_snapshot() -> Dict[str, Any]:
@@ -774,14 +801,23 @@ User request: {req.message}"""
                 tool_calls=len(state.steps),
                 wall_time_ms=total_ms,
                 verification=verification,
-            ).to_dict()
+            )
+            gate = check_quality_gate(evaluation, thresholds=QualityGateThresholds())
+            _record_eval_run(
+                workflow_state=workflow_state,
+                request_text=req.message,
+                evaluation=evaluation.to_dict(),
+                verification=verification,
+                gate=gate,
+            )
             complete_payload["meta"] = {
                 "data_health": data_health_snapshot,
                 "orchestration": _build_workflow_meta(
                     workflow_state,
                     capability_graph,
                     verification=verification,
-                    evaluation=evaluation,
+                    evaluation=evaluation.to_dict(),
+                    gate=gate,
                 ),
             }
             if state.pending_approval:
@@ -858,6 +894,23 @@ async def react_approve(req: ReactApproveRequest):
             )
             if preflight_issues:
                 verification = verify_outcome(workflow_state.outcome, session.react_state, artifacts).to_dict()
+                evaluation = evaluate_runtime_snapshot(
+                    llm_calls=getattr(session.react_state, "llm_calls", 0),
+                    tool_calls=len(getattr(session.react_state, "steps", []) or []),
+                    wall_time_ms=0.0,
+                    verification=verification,
+                )
+                gate = check_quality_gate(evaluation, thresholds=QualityGateThresholds())
+                _record_eval_run(
+                    workflow_state=workflow_state,
+                    request_text="approval_preflight_blocked",
+                    evaluation=evaluation.to_dict(),
+                    verification={
+                        **verification,
+                        "issues": verification.get("issues", []) + preflight_issues,
+                    },
+                    gate=gate,
+                )
                 payload = ss.state_to_response(session.react_state)
                 payload["error"] = "Preflight check failed"
                 payload["meta"] = {
@@ -869,6 +922,8 @@ async def react_approve(req: ReactApproveRequest):
                             **verification,
                             "issues": verification.get("issues", []) + preflight_issues,
                         },
+                        evaluation=evaluation.to_dict(),
+                        gate=gate,
                     ),
                 }
                 return JSONResponse(payload)
@@ -886,12 +941,28 @@ async def react_approve(req: ReactApproveRequest):
         payload = ss.state_to_response(state)
         artifacts = _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200)
         verification = verify_outcome(workflow_state.outcome, state, artifacts).to_dict()
+        evaluation = evaluate_runtime_snapshot(
+            llm_calls=state.llm_calls,
+            tool_calls=len(state.steps),
+            wall_time_ms=0.0,
+            verification=verification,
+        )
+        gate = check_quality_gate(evaluation, thresholds=QualityGateThresholds())
+        _record_eval_run(
+            workflow_state=workflow_state,
+            request_text="approval_non_stream",
+            evaluation=evaluation.to_dict(),
+            verification=verification,
+            gate=gate,
+        )
         payload["meta"] = {
             "data_health": _build_data_health_snapshot(),
             "orchestration": _build_workflow_meta(
                 workflow_state,
                 capability_graph,
                 verification=verification,
+                evaluation=evaluation.to_dict(),
+                gate=gate,
             ),
         }
         return JSONResponse(payload)
@@ -944,6 +1015,7 @@ async def react_approve_stream(req: ReactApproveRequest):
                     capability_graph,
                     verification=None,
                     evaluation=None,
+                    gate=None,
                 )
             payload["meta"] = {
                 "data_health": _build_data_health_snapshot(),
@@ -1027,6 +1099,20 @@ async def react_approve_stream(req: ReactApproveRequest):
                 _artifact_ledger.list_artifacts(workflow_state.workflow_id, limit=200),
             ).to_dict()
             verification["issues"] = verification.get("issues", []) + preflight_issues
+            evaluation = evaluate_runtime_snapshot(
+                llm_calls=getattr(session.react_state, "llm_calls", 0),
+                tool_calls=len(getattr(session.react_state, "steps", []) or []),
+                wall_time_ms=0.0,
+                verification=verification,
+            )
+            gate = check_quality_gate(evaluation, thresholds=QualityGateThresholds())
+            _record_eval_run(
+                workflow_state=workflow_state,
+                request_text="approval_stream_preflight_blocked",
+                evaluation=evaluation.to_dict(),
+                verification=verification,
+                gate=gate,
+            )
             if session.react_state and session.react_state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(session.react_state.pending_approval)})}\n\n"
             payload = ss.state_to_response(session.react_state)
@@ -1037,12 +1123,8 @@ async def react_approve_stream(req: ReactApproveRequest):
                     workflow_state,
                     capability_graph,
                     verification=verification,
-                    evaluation=evaluate_runtime_snapshot(
-                        llm_calls=getattr(session.react_state, "llm_calls", 0),
-                        tool_calls=len(getattr(session.react_state, "steps", []) or []),
-                        wall_time_ms=0.0,
-                        verification=verification,
-                    ).to_dict(),
+                    evaluation=evaluation.to_dict(),
+                    gate=gate,
                 ),
             }
             yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
@@ -1105,14 +1187,23 @@ async def react_approve_stream(req: ReactApproveRequest):
                 tool_calls=len(state.steps),
                 wall_time_ms=0.0,
                 verification=verification,
-            ).to_dict()
+            )
+            gate = check_quality_gate(evaluation, thresholds=QualityGateThresholds())
+            _record_eval_run(
+                workflow_state=workflow_state,
+                request_text="approval_stream",
+                evaluation=evaluation.to_dict(),
+                verification=verification,
+                gate=gate,
+            )
             payload["meta"] = {
                 "data_health": _build_data_health_snapshot(),
                 "orchestration": _build_workflow_meta(
                     workflow_state,
                     capability_graph,
                     verification=verification,
-                    evaluation=evaluation,
+                    evaluation=evaluation.to_dict(),
+                    gate=gate,
                 ),
             }
             if state.pending_approval:
