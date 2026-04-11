@@ -325,6 +325,18 @@ async def search_stats():
 _file_scanner = None  # Optional[LocalFileScanner]
 
 
+def _local_files_total_indexed() -> int:
+    if not state._data_index:
+        return 0
+    try:
+        row = state._data_index._conn.execute(
+            "SELECT COUNT(*) FROM data_objects WHERE source = 'local_files'"
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
 
 @app.get("/files/settings")
 async def get_file_index_settings():
@@ -333,10 +345,16 @@ async def get_file_index_settings():
     if not state._data_index:
         return JSONResponse({"enabled": False, "error": "Index not available"})
     settings = load_settings(state._data_index)
+    scanner_status = state._file_scanner.status if state._file_scanner else {
+        "enabled": settings.enabled,
+        "running": False,
+        "progress": {"phase": "idle", "files_found": 0, "files_indexed": 0, "directories_scanned": 0},
+        "total_indexed": _local_files_total_indexed(),
+    }
     return JSONResponse({
         "settings": settings.to_dict(),
         "default_directories": FileIndexSettings.default_directories(),
-        "scanner_status": state._file_scanner.status if state._file_scanner else {"enabled": False, "running": False},
+        "scanner_status": scanner_status,
     })
 
 
@@ -384,7 +402,12 @@ async def update_file_index_settings(request: Request):
 async def get_file_index_status():
     """Get file scanner progress and stats."""
     if not state._file_scanner:
-        return JSONResponse({"enabled": False, "running": False})
+        return JSONResponse({
+            "enabled": False,
+            "running": False,
+            "progress": {"phase": "idle", "files_found": 0, "files_indexed": 0, "directories_scanned": 0},
+            "total_indexed": _local_files_total_indexed(),
+        })
     return JSONResponse(state._file_scanner.status)
 
 

@@ -643,10 +643,20 @@ class LocalFileScanner:
 
     @property
     def status(self) -> Dict[str, Any]:
+        total_indexed = 0
+        try:
+            row = self._index._conn.execute(
+                "SELECT COUNT(*) FROM data_objects WHERE source = 'local_files'"
+            ).fetchone()
+            total_indexed = int(row[0]) if row else 0
+        except Exception:
+            total_indexed = 0
+
         return {
             "enabled": self._settings.enabled,
             "running": self._running,
             "progress": self._progress.to_dict(),
+            "total_indexed": total_indexed,
             "settings": self._settings.to_dict(),
         }
 
@@ -720,11 +730,6 @@ class LocalFileScanner:
             # Phase 3: Embeddings (if enabled + semantic search available)
             if self._settings.embed_content and self._semantic_search:
                 self._progress.phase = "embedding"
-                try:
-                    count = await self._semantic_search.embed_all()
-                    logger.info(f"Embedded {count} local file objects")
-                except Exception as e:
-                    logger.warning(f"Embedding local files failed (non-fatal): {e}")
 
             self._progress.phase = "complete"
             self._progress.elapsed_ms = (time.perf_counter() - self._progress.start_time) * 1000
@@ -842,6 +847,7 @@ class LocalFileScanner:
 
             if len(batch) >= self._settings.batch_size:
                 self._index.upsert_batch(batch)
+                await self._embed_batch(batch)
                 self._progress.files_indexed += len(batch)
                 batch.clear()
                 # Yield to event loop
@@ -849,6 +855,7 @@ class LocalFileScanner:
 
         if batch:
             self._index.upsert_batch(batch)
+            await self._embed_batch(batch)
             self._progress.files_indexed += len(batch)
 
     async def _extract_and_index(self, files: List[Tuple[str, os.stat_result]]):
@@ -900,6 +907,7 @@ class LocalFileScanner:
 
             if len(batch) >= self._settings.batch_size:
                 self._index.upsert_batch(batch)
+                await self._embed_batch(batch)
                 self._progress.files_indexed += len(batch)
                 batch.clear()
                 # Yield to event loop — batch delay for non-intrusive scanning
@@ -907,7 +915,17 @@ class LocalFileScanner:
 
         if batch:
             self._index.upsert_batch(batch)
+            await self._embed_batch(batch)
             self._progress.files_indexed += len(batch)
+
+    async def _embed_batch(self, batch: List[DataObject]) -> None:
+        """Embed a just-indexed batch to avoid expensive full re-embedding passes."""
+        if not batch or not self._semantic_search or not self._settings.embed_content:
+            return
+        try:
+            await self._semantic_search.embed_objects(batch)
+        except Exception as e:
+            logger.warning(f"Embedding local files batch failed (non-fatal): {e}")
 
     # -------------------------------------------------------------------
     # Phase 4: File watcher — incremental updates

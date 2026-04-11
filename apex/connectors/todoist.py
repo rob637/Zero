@@ -130,6 +130,22 @@ class TodoistConnector:
 
         return resp
 
+    @staticmethod
+    def _unwrap_list_payload(payload: Any) -> List[Dict[str, Any]]:
+        """Normalize Todoist responses into a list of objects.
+
+        REST v2 typically returns a JSON list, while some legacy endpoints
+        may wrap items under keys like `results` or `items`.
+        """
+        if isinstance(payload, list):
+            return [p for p in payload if isinstance(p, dict)]
+        if isinstance(payload, dict):
+            for key in ("results", "items", "tasks", "projects"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return [p for p in value if isinstance(p, dict)]
+        return []
+
     # --- Tasks ---
 
     async def list_tasks(
@@ -149,7 +165,8 @@ class TodoistConnector:
 
         resp = await self._request("GET", "/tasks", params=params)
         resp.raise_for_status()
-        return [TodoistTask.from_api(t) for t in resp.json()]
+        items = self._unwrap_list_payload(resp.json())
+        return [TodoistTask.from_api(t) for t in items]
 
     async def create_task(
         self,
@@ -208,7 +225,8 @@ class TodoistConnector:
         """List all projects."""
         resp = await self._request("GET", "/projects")
         resp.raise_for_status()
-        return [TodoistProject.from_api(p) for p in resp.json()]
+        items = self._unwrap_list_payload(resp.json())
+        return [TodoistProject.from_api(p) for p in items]
 
     async def create_project(self, name: str, color: Optional[str] = None) -> TodoistProject:
         """Create a new project."""

@@ -3289,14 +3289,15 @@
                 const running = data.scanner_status?.running;
                 const progress = data.scanner_status?.progress;
                 const indexed = progress?.files_indexed || 0;
+                const totalIndexed = data.scanner_status?.total_indexed ?? indexed;
                 const phase = progress?.phase || '';
                 const isScanning = running && phase !== 'complete' && phase !== 'watching';
 
                 if (enabled && isScanning) {
-                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--success);">● Scanning... ${indexed.toLocaleString()} files indexed</div>`;
-                } else if (enabled && indexed > 0) {
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--success);">● Scanning... ${totalIndexed.toLocaleString()} files indexed total</div>`;
+                } else if (enabled && totalIndexed > 0) {
                     const watchLabel = phase === 'watching' ? ' · watching for changes' : '';
-                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">✓ ${indexed.toLocaleString()} files indexed${watchLabel}</div>`;
+                    container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">✓ ${totalIndexed.toLocaleString()} files indexed total${watchLabel}</div>`;
                 } else if (enabled) {
                     container.innerHTML = `<div style="padding: 2px 0; font-size: 0.75rem; color: var(--text-muted);">Enabled — no files scanned yet</div>`;
                 } else {
@@ -3380,7 +3381,11 @@
                                 </div>
                                 <div class="scan-stat">
                                     <div class="scan-stat-value" id="scanFilesIndexed">${progress.files_indexed || 0}</div>
-                                    <div class="scan-stat-label">Indexed</div>
+                                    <div class="scan-stat-label">Indexed (run)</div>
+                                </div>
+                                <div class="scan-stat">
+                                    <div class="scan-stat-value" id="scanFilesIndexedTotal">${scannerStatus.total_indexed || 0}</div>
+                                    <div class="scan-stat-label">Indexed (total)</div>
                                 </div>
                                 <div class="scan-stat">
                                     <div class="scan-stat-value" id="scanDirsScanned">${progress.directories_scanned || 0}</div>
@@ -3497,6 +3502,8 @@
                     if (foundEl) foundEl.textContent = p.files_found || 0;
                     const indexedEl = document.getElementById('scanFilesIndexed');
                     if (indexedEl) indexedEl.textContent = p.files_indexed || 0;
+                    const indexedTotalEl = document.getElementById('scanFilesIndexedTotal');
+                    if (indexedTotalEl) indexedTotalEl.textContent = status.total_indexed || 0;
                     const dirsEl = document.getElementById('scanDirsScanned');
                     if (dirsEl) dirsEl.textContent = p.directories_scanned || 0;
                     loadPCIndexStatus();

@@ -294,12 +294,19 @@ class VectorStore:
         """Batch get text hashes. Returns {object_id: text_hash}."""
         if not object_ids:
             return {}
-        placeholders = ",".join("?" for _ in object_ids)
-        rows = self._conn.execute(
-            f"SELECT object_id, text_hash FROM embeddings WHERE object_id IN ({placeholders})",
-            object_ids
-        ).fetchall()
-        return {r[0]: r[1] for r in rows}
+        # SQLite has a limit on host parameters per statement (often 999).
+        # Chunk to avoid "too many SQL variables" on large indices.
+        chunk_size = 500
+        out: Dict[str, str] = {}
+        for i in range(0, len(object_ids), chunk_size):
+            chunk = object_ids[i:i + chunk_size]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"SELECT object_id, text_hash FROM embeddings WHERE object_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            out.update({r[0]: r[1] for r in rows})
+        return out
 
     def search(
         self,
