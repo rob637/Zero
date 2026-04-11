@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -126,6 +126,12 @@ async def root():
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Avoid noisy browser 404s when no favicon asset is shipped."""
+    return Response(status_code=204)
+
 @app.get("/sync/status")
 async def get_sync_status():
     """Get sync engine status: per-source sync state and index stats."""
@@ -146,7 +152,7 @@ async def trigger_sync(source: Optional[str] = None):
 @app.get("/health")
 async def health_check():
     """System health: index integrity, sync status, embedding coverage."""
-    report = {"status": "healthy", "components": {}}
+    report = {"status": "healthy", "components": {}, "warnings": []}
 
     # Index health
     if state._data_index:
@@ -170,13 +176,21 @@ async def health_check():
     # Semantic search
     if state._semantic_search and state._semantic_search.ready:
         ss_stats = state._semantic_search.stats
+        backend = ss_stats.get("backend", "unknown")
+        mode = "hash_fallback" if backend == "hash" else backend
+        component_status = "degraded" if backend == "hash" else "ready"
         report["components"]["semantic_search"] = {
-            "status": "ready",
-            "vectors": ss_stats.get("total_vectors", 0),
-            "backend": ss_stats.get("backend", "unknown"),
+            "status": component_status,
+            "mode": mode,
+            "vectors": ss_stats.get("embedded_count", 0),
+            "backend": backend,
         }
+        if backend == "hash":
+            report["warnings"].append(
+                "Semantic search running in hash fallback mode; relevance quality is reduced"
+            )
     else:
-        report["components"]["semantic_search"] = {"status": "unavailable"}
+        report["components"]["semantic_search"] = {"status": "unavailable", "mode": "none"}
 
     # Connected services
     try:
@@ -203,6 +217,9 @@ async def health_check():
         "jira": "jira" in devtools_providers,
         "slack": "slack" in monitor_services,
     }
+
+    if not report["warnings"]:
+        report.pop("warnings")
 
     return JSONResponse(report)
 

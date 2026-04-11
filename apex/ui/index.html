@@ -286,6 +286,8 @@
             border-radius: 8px;
             cursor: pointer;
             transition: background 0.15s;
+            text-decoration: none;
+            color: inherit;
         }
         .user-card:hover {
             background: var(--bg-hover);
@@ -2988,14 +2990,14 @@
         </div><!-- end sidebar-scroll -->
         
         <div class="sidebar-footer">
-            <div class="user-card" onclick="openSettings()">
+            <a class="user-card" href="/setup" aria-label="Open user settings">
                 <div class="user-avatar">U</div>
                 <div class="user-info">
                     <div class="user-name">User</div>
                     <div class="user-email">Settings</div>
                 </div>
                 <span style="color: var(--text-muted)">⚙️</span>
-            </div>
+            </a>
         </div>
     </aside>
 

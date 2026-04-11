@@ -895,7 +895,12 @@ async def startup_event(app=None):
                     pass
                 # Embed any existing un-embedded objects in background
                 asyncio.create_task(_semantic_search.embed_all())
-                logger.info(f"Semantic search ready: {_semantic_search.stats}")
+                ss_stats = _semantic_search.stats
+                if ss_stats.get("backend") == "hash":
+                    logger.warning(
+                        "Semantic search running in hash mode (fallback): results are available but lower quality"
+                    )
+                logger.info(f"Semantic search ready: {ss_stats}")
             else:
                 logger.info("Semantic search: no embedding backend available (non-fatal)")
                 _semantic_search = None

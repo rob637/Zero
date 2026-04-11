@@ -68,7 +68,7 @@ class Embedder:
 
     @property
     def backend(self) -> str:
-        """Which backend is active: 'local', 'openai', or 'none'."""
+        """Which backend is active: 'local', 'openai', 'hash', or 'none'."""
         return self._backend
 
     def initialize(self) -> bool:
@@ -99,8 +99,11 @@ class Embedder:
             except Exception as e:
                 logger.warning(f"OpenAI embedding fallback failed: {e}")
 
-        logger.error("No embedding backend available")
-        return False
+        # Last resort: deterministic local hash embeddings (lower quality but always available)
+        self._dimension = 384
+        self._backend = "hash"
+        logger.info("Embedder: using built-in hash embeddings (384d)")
+        return True
 
     def embed(self, texts: List[str]) -> np.ndarray:
         """Embed a list of texts. Returns (N, dimension) float32 array."""
@@ -111,6 +114,8 @@ class Embedder:
             return self._embed_local(texts)
         elif self._backend == "openai":
             return self._embed_openai(texts)
+        elif self._backend == "hash":
+            return self._embed_hash(texts)
         else:
             raise RuntimeError("Embedder not initialized — call initialize() first")
 
@@ -148,6 +153,27 @@ class Embedder:
         norms = np.where(norms == 0, 1, norms)
         vectors = vectors / norms
         return vectors
+
+    def _embed_hash(self, texts: List[str]) -> np.ndarray:
+        """Embed using token hashing for offline, dependency-free semantic matching."""
+        import hashlib
+        import re
+
+        vectors = np.zeros((len(texts), self._dimension), dtype=np.float32)
+        for row, text in enumerate(texts):
+            tokens = re.findall(r"\w+", (text or "").lower())[:512]
+            if not tokens:
+                tokens = [""]
+
+            for token in tokens:
+                digest = hashlib.sha256(token.encode("utf-8", errors="ignore")).digest()
+                idx = int.from_bytes(digest[:4], "little") % self._dimension
+                sign = 1.0 if (digest[4] & 1) == 0 else -1.0
+                vectors[row, idx] += sign
+
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1, norms)
+        return vectors / norms
 
 
 # ---------------------------------------------------------------------------

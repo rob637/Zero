@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 TODOIST_API = "https://api.todoist.com/rest/v2"
+TODOIST_API_LEGACY = "https://api.todoist.com/api/v1"
 
 
 @dataclass
@@ -89,6 +90,7 @@ class TodoistConnector:
     def __init__(self, api_token: Optional[str] = None):
         self._token = api_token or os.environ.get("TODOIST_API_TOKEN", "")
         self._http = None
+        self._using_legacy_api = False
 
     async def connect(self):
         """Initialize HTTP client."""
@@ -98,13 +100,35 @@ class TodoistConnector:
         import httpx
         self._http = httpx.AsyncClient(
             base_url=TODOIST_API,
-            headers={"Authorization": f"Bearer {self._token}"},
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Accept": "application/json",
+                "User-Agent": "Telic/1.0 (+https://github.com/rob637/Zero)",
+            },
             timeout=30,
         )
 
     async def _ensure_client(self):
         if not self._http:
             await self.connect()
+
+    async def _request(self, method: str, path: str, **kwargs):
+        """Make a Todoist API request, falling back to legacy API if v2 returns 410."""
+        await self._ensure_client()
+        resp = await self._http.request(method, path, **kwargs)
+
+        if resp.status_code == 410:
+            legacy_url = f"{TODOIST_API_LEGACY}{path}"
+            resp = await self._http.request(method, legacy_url, **kwargs)
+            if resp.status_code < 400:
+                if not self._using_legacy_api:
+                    self._using_legacy_api = True
+                    logger.warning(
+                        "Todoist REST v2 returned 410 Gone; using legacy API endpoint for compatibility"
+                    )
+                return resp
+
+        return resp
 
     # --- Tasks ---
 
@@ -115,7 +139,6 @@ class TodoistConnector:
         filter_str: Optional[str] = None,
     ) -> List[TodoistTask]:
         """List active tasks, optionally filtered."""
-        await self._ensure_client()
         params = {}
         if project_id:
             params["project_id"] = project_id
@@ -124,10 +147,7 @@ class TodoistConnector:
         if filter_str:
             params["filter"] = filter_str
 
-        resp = await self._http.get("/tasks", params=params)
-        if resp.status_code == 410:
-            logger.warning("Todoist API returned 410 Gone — API may have changed. Returning empty task list.")
-            return []
+        resp = await self._request("GET", "/tasks", params=params)
         resp.raise_for_status()
         return [TodoistTask.from_api(t) for t in resp.json()]
 
@@ -142,7 +162,6 @@ class TodoistConnector:
         labels: Optional[List[str]] = None,
     ) -> TodoistTask:
         """Create a new task."""
-        await self._ensure_client()
         body: Dict[str, Any] = {"content": content}
         if description:
             body["description"] = description
@@ -157,33 +176,29 @@ class TodoistConnector:
         if labels:
             body["labels"] = labels
 
-        resp = await self._http.post("/tasks", json=body)
+        resp = await self._request("POST", "/tasks", json=body)
         resp.raise_for_status()
         return TodoistTask.from_api(resp.json())
 
     async def complete_task(self, task_id: str) -> bool:
         """Mark a task as completed."""
-        await self._ensure_client()
-        resp = await self._http.post(f"/tasks/{task_id}/close")
+        resp = await self._request("POST", f"/tasks/{task_id}/close")
         return resp.status_code == 204
 
     async def update_task(self, task_id: str, **kwargs) -> TodoistTask:
         """Update a task. Accepts content, description, priority, due_string, labels."""
-        await self._ensure_client()
-        resp = await self._http.post(f"/tasks/{task_id}", json=kwargs)
+        resp = await self._request("POST", f"/tasks/{task_id}", json=kwargs)
         resp.raise_for_status()
         return TodoistTask.from_api(resp.json())
 
     async def delete_task(self, task_id: str) -> bool:
         """Delete a task."""
-        await self._ensure_client()
-        resp = await self._http.delete(f"/tasks/{task_id}")
+        resp = await self._request("DELETE", f"/tasks/{task_id}")
         return resp.status_code == 204
 
     async def get_task(self, task_id: str) -> TodoistTask:
         """Get a specific task."""
-        await self._ensure_client()
-        resp = await self._http.get(f"/tasks/{task_id}")
+        resp = await self._request("GET", f"/tasks/{task_id}")
         resp.raise_for_status()
         return TodoistTask.from_api(resp.json())
 
@@ -191,18 +206,16 @@ class TodoistConnector:
 
     async def list_projects(self) -> List[TodoistProject]:
         """List all projects."""
-        await self._ensure_client()
-        resp = await self._http.get("/projects")
+        resp = await self._request("GET", "/projects")
         resp.raise_for_status()
         return [TodoistProject.from_api(p) for p in resp.json()]
 
     async def create_project(self, name: str, color: Optional[str] = None) -> TodoistProject:
         """Create a new project."""
-        await self._ensure_client()
         body: Dict[str, Any] = {"name": name}
         if color:
             body["color"] = color
-        resp = await self._http.post("/projects", json=body)
+        resp = await self._request("POST", "/projects", json=body)
         resp.raise_for_status()
         return TodoistProject.from_api(resp.json())
 
