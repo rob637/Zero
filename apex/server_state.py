@@ -682,8 +682,11 @@ async def startup_event(app=None):
                 # Connect Calendar
                 if has_calendar:
                     _google_calendar = CalendarConnector(auth)
-                    await _google_calendar.connect()
-                    logger.info("Google Calendar reconnected!")
+                    if await _google_calendar.connect():
+                        logger.info("Google Calendar reconnected!")
+                    else:
+                        logger.warning("Google Calendar reconnect failed (insufficient scope or auth)")
+                        _google_calendar = None
                 
                 # Connect Gmail
                 if has_gmail:
@@ -876,7 +879,7 @@ async def startup_event(app=None):
                 connector=_google_calendar,
                 default_interval=300,
             ))
-        if _gmail_connector and "gmail" not in _sync_engine._adapters:
+        if _gmail_connector and _gmail_connector.connected and "gmail" not in _sync_engine._adapters:
             _sync_engine.register(GmailSyncAdapter(
                 connector=_gmail_connector,
                 default_interval=300,

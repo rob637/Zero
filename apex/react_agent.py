@@ -301,7 +301,7 @@ When you have completed the task, respond with a summary of what was done."""
     MAX_PARALLEL_READ_BALANCED = int(os.environ.get("TELIC_MAX_PARALLEL_READ_BALANCED", "4"))
     MAX_PARALLEL_READ_FAST = int(os.environ.get("TELIC_MAX_PARALLEL_READ_FAST", "6"))
     # Detect and stop low-novelty loops before hitting max iterations.
-    LOW_NOVELTY_WINDOW = int(os.environ.get("TELIC_LOW_NOVELTY_WINDOW", "12"))
+    LOW_NOVELTY_WINDOW = int(os.environ.get("TELIC_LOW_NOVELTY_WINDOW", "8"))
     LOW_NOVELTY_MAX_UNIQUE_TOOLS = int(os.environ.get("TELIC_LOW_NOVELTY_MAX_UNIQUE_TOOLS", "3"))
     LOW_NOVELTY_DOMINANT_RATIO = float(os.environ.get("TELIC_LOW_NOVELTY_DOMINANT_RATIO", "0.58"))
 
@@ -840,7 +840,16 @@ When you have completed the task, respond with a summary of what was done."""
             raise ValueError(f"Unknown tool: {tool_call.name}")
         
         try:
-            return await asyncio.wait_for(tool.handler(tool_call.params), timeout=self.TOOL_TIMEOUT_SECONDS)
+            result = await asyncio.wait_for(tool.handler(tool_call.params), timeout=self.TOOL_TIMEOUT_SECONDS)
+            # Primitive handlers frequently return StepResult(success=..., data=..., error=...).
+            # Surface failed StepResults as actual tool errors instead of silently marking them completed.
+            if hasattr(result, "success") and hasattr(result, "data"):
+                success = bool(getattr(result, "success", True))
+                if not success:
+                    error_text = getattr(result, "error", None) or f"Tool '{tool_call.name}' returned unsuccessful result"
+                    raise RuntimeError(str(error_text))
+                return getattr(result, "data", None)
+            return result
         except asyncio.TimeoutError:
             raise TimeoutError(f"Tool '{tool_call.name}' timed out after {self.TOOL_TIMEOUT_SECONDS:.0f}s")
 

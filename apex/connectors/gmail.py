@@ -122,7 +122,13 @@ class GmailConnector:
                 self._service.users().getProfile(userId='me').execute
             )
             self._user_email = profile.get('emailAddress')
+        except HttpError as e:
+            # Token exists but lacks Gmail scopes/API permission.
+            if e.resp.status in (401, 403):
+                self._service = None
+                return False
         except Exception:
+            # Keep service if profile probe fails transiently.
             pass
         
         return True

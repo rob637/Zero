@@ -77,6 +77,47 @@ class NotConnectedError(ConnectorError):
     pass
 
 
+def _http_status_from_exception(exc: Exception) -> Optional[int]:
+    """Best-effort extraction of HTTP status from connector exceptions."""
+    resp = getattr(exc, "resp", None)
+    status = getattr(resp, "status", None)
+    if isinstance(status, int):
+        return status
+    for attr in ("status_code", "status"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _is_permanent_auth_error(exc: Exception) -> bool:
+    """Return True for non-retryable auth/scope failures."""
+    status = _http_status_from_exception(exc)
+    if status in (401, 403):
+        return True
+
+    text = str(exc).lower()
+    markers = (
+        "insufficientpermissions",
+        "insufficient permission",
+        "insufficient authentication scopes",
+        "insufficientpermissions",
+        "forbidden",
+        "unauthorized",
+        "invalid_grant",
+        "access_denied",
+    )
+    return any(m in text for m in markers)
+
+
+def _is_permanent_client_error(exc: Exception) -> bool:
+    """Return True for non-retryable 4xx client errors (except 408/409/425/429)."""
+    status = _http_status_from_exception(exc)
+    if status is None:
+        return False
+    return 400 <= status < 500 and status not in (408, 409, 425, 429)
+
+
 # =============================================================================
 # Enums and Status Types
 # =============================================================================
@@ -552,6 +593,14 @@ class Connector(ABC):
                 raise  # Don't retry unknown connector errors
             except Exception as e:
                 last_exc = e
+                if _is_permanent_auth_error(e):
+                    self._cb_failures += 1
+                    self.record_error(str(e))
+                    raise AuthError(str(e), connector=self.name) from e
+                if _is_permanent_client_error(e):
+                    self._cb_failures += 1
+                    self.record_error(str(e))
+                    raise ConnectorError(str(e), connector=self.name) from e
                 # SSL errors won't self-heal — fail fast
                 err_str = str(e)
                 if "SSL" in err_str or "WRONG_VERSION_NUMBER" in err_str or "CERTIFICATE" in err_str.upper():
@@ -757,6 +806,10 @@ async def retry_with_backoff(
             raise
         except Exception as e:
             last_exc = e
+            if _is_permanent_auth_error(e):
+                raise AuthError(str(e), connector=connector_name) from e
+            if _is_permanent_client_error(e):
+                raise ConnectorError(str(e), connector=connector_name) from e
             # SSL errors won't self-heal — fail fast
             err_str = str(e)
             if "SSL" in err_str or "WRONG_VERSION_NUMBER" in err_str or "CERTIFICATE" in err_str.upper():

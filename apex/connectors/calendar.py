@@ -123,11 +123,22 @@ class CalendarConnector:
             )
             self._primary_calendar = cal.get('id')
             self._calendar_timezone = cal.get('timeZone')
+        except HttpError as e:
+            if e.resp.status in (401, 403):
+                self._service = None
+                return False
+            self._primary_calendar = 'primary'
         except Exception:
             self._primary_calendar = 'primary'
         
         # Cache all calendars
-        self._calendars = await self._fetch_calendars()
+        try:
+            self._calendars = await self._fetch_calendars()
+        except HttpError as e:
+            if e.resp.status in (401, 403):
+                self._service = None
+                return False
+            self._calendars = []
         
         return True
     
