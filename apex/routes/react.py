@@ -423,11 +423,29 @@ User request: {req.message}"""
         task = asyncio.create_task(agent.run(full_message))
 
         try:
-            while not task.done():
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+            while True:
+                # Exit immediately once work is complete and no events remain.
+                if task.done() and queue.empty():
+                    break
+
+                queue_get = asyncio.create_task(queue.get())
+                done, pending = await asyncio.wait(
+                    {task, queue_get},
+                    timeout=2.0,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if queue_get in done:
+                    event = queue_get.result()
                     yield f"data: {json.dumps(event)}\n\n"
-                except asyncio.TimeoutError:
+                else:
+                    queue_get.cancel()
+                    try:
+                        await queue_get
+                    except Exception:
+                        pass
+
+                if not done:
                     yield ": heartbeat\n\n"
 
             # Drain remaining queued events
@@ -622,11 +640,28 @@ async def react_approve_stream(req: ReactApproveRequest):
         yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
         task = asyncio.create_task(agent.continue_with_approval(True))
         try:
-            while not task.done():
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+            while True:
+                if task.done() and queue.empty():
+                    break
+
+                queue_get = asyncio.create_task(queue.get())
+                done, pending = await asyncio.wait(
+                    {task, queue_get},
+                    timeout=2.0,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if queue_get in done:
+                    event = queue_get.result()
                     yield f"data: {json.dumps(event)}\n\n"
-                except asyncio.TimeoutError:
+                else:
+                    queue_get.cancel()
+                    try:
+                        await queue_get
+                    except Exception:
+                        pass
+
+                if not done:
                     yield ": heartbeat\n\n"
             while not queue.empty():
                 event = await queue.get()
