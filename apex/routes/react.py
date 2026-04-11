@@ -8,7 +8,7 @@ import json
 import os
 import logging
 import time as _time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -28,6 +28,9 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 _blueprint_cache: Dict[str, tuple] = {}  # key → (plan_steps, timestamp)
 _BLUEPRINT_TTL = 300  # 5 minutes
+_ENABLE_BLUEPRINT = os.environ.get("TELIC_ENABLE_BLUEPRINT", "0").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 
 
 @router.post("/react/chat")
@@ -120,6 +123,15 @@ async def react_chat_stream(req: ReactRequest):
     so the UI can show real-time activity instead of waiting.
     """
     import json
+    request_t0 = _time.perf_counter()
+    timing: Dict[str, float] = {
+        "classify_ms": 0.0,
+        "blueprint_ms": 0.0,
+        "agent_run_ms": 0.0,
+    }
+    tool_start_times: Dict[str, float] = {}
+    tool_durations: Dict[str, List[float]] = {}
+
     session = ss.get_user_session(req.session_id)
 
     agent = await ss.get_session_agent(session)
@@ -189,8 +201,10 @@ Remember: References like "the first one", "send it to him", "the information ab
     _original_tools = agent.tools
     _original_schemas = agent.tool_schemas
     try:
+        classify_t0 = _time.perf_counter()
         from intent_router import classify, handle_index_direct, filter_tools as router_filter_tools, IntentType
         intent = await classify(req.message)
+        timing["classify_ms"] = (_time.perf_counter() - classify_t0) * 1000
         logger.info(f"{intent}")
 
         # Fast path: INDEX_DIRECT — answer from local index, no LLM call
@@ -231,8 +245,13 @@ Remember: References like "the first one", "send it to him", "the information ab
         data = ss.step_to_sse_dict(step)
         data["id"] = step.tool_call.id  # Unique ID for matching start/complete
         if step.status == StepStatus.RUNNING:
+            tool_start_times[step.tool_call.id] = _time.perf_counter()
             await queue.put({"event": "tool_start", "step": data})
         elif step.status == StepStatus.COMPLETED:
+            started = tool_start_times.pop(step.tool_call.id, None)
+            if started is not None:
+                elapsed_ms = (_time.perf_counter() - started) * 1000
+                tool_durations.setdefault(step.tool_call.name, []).append(elapsed_ms)
             await queue.put({"event": "tool_complete", "step": data})
 
             # Record in action history so the Action History panel shows data
@@ -272,6 +291,10 @@ Remember: References like "the first one", "send it to him", "the information ab
             except Exception:
                 pass  # Non-fatal
         elif step.status == StepStatus.FAILED:
+            started = tool_start_times.pop(step.tool_call.id, None)
+            if started is not None:
+                elapsed_ms = (_time.perf_counter() - started) * 1000
+                tool_durations.setdefault(step.tool_call.name, []).append(elapsed_ms)
             await queue.put({"event": "tool_failed", "step": data})
             # Record failed actions too
             try:
@@ -313,29 +336,32 @@ Remember: References like "the first one", "send it to him", "the information ab
         # Initial thinking event
         yield f"data: {json.dumps({'event': 'thinking'})}\n\n"
 
-        # Generate execution blueprint (plan) before running
-        # Check cache first to avoid redundant LLM calls
-        bp_key = req.message.lower().strip()[:200]
-        cached_bp = _blueprint_cache.get(bp_key)
-        if cached_bp and (_time.monotonic() - cached_bp[1]) < _BLUEPRINT_TTL:
-            plan_steps = cached_bp[0]
-            yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
-            logger.info(f"Blueprint cache hit: {len(plan_steps)} steps")
-        else:
-          try:
-            engine = ss.get_telic_engine()
-            # Build a compact list of available capabilities
-            available_tools = []
-            for prim_name, primitive in engine._primitives.items():
-                ops = primitive.get_available_operations()
-                connected = primitive.get_connected_providers()
-                if connected:
-                    for op_name, desc in ops.items():
-                        available_tools.append(f"{prim_name}_{op_name}: {desc}")
-            
-            tools_summary = "\n".join(available_tools[:80])  # Cap for token efficiency
-            
-            plan_prompt = f"""Given this user request, output a JSON array of the steps you would take.
+        # Optional execution blueprint (adds an extra LLM call, so disabled by default)
+        if _ENABLE_BLUEPRINT:
+            blueprint_t0 = _time.perf_counter()
+            # Check cache first to avoid redundant LLM calls
+            bp_key = req.message.lower().strip()[:200]
+            cached_bp = _blueprint_cache.get(bp_key)
+            if cached_bp and (_time.monotonic() - cached_bp[1]) < _BLUEPRINT_TTL:
+                plan_steps = cached_bp[0]
+                yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
+                logger.info(f"Blueprint cache hit: {len(plan_steps)} steps")
+                timing["blueprint_ms"] = (_time.perf_counter() - blueprint_t0) * 1000
+            else:
+              try:
+                engine = ss.get_telic_engine()
+                # Build a compact list of available capabilities
+                available_tools = []
+                for prim_name, primitive in engine._primitives.items():
+                    ops = primitive.get_available_operations()
+                    connected = primitive.get_connected_providers()
+                    if connected:
+                        for op_name, desc in ops.items():
+                            available_tools.append(f"{prim_name}_{op_name}: {desc}")
+
+                tools_summary = "\n".join(available_tools[:80])  # Cap for token efficiency
+
+                plan_prompt = f"""Given this user request, output a JSON array of the steps you would take.
 Each step: {{"tool": "tool_name", "label": "short human description", "service": "primary service icon name"}}
 Service icon names: calendar, gmail, outlook, drive, onedrive, contacts, sheets, slides, photos, spotify, slack, github, discord, todoist, teams, onenote, excel, powerpoint, web, file, task, search, weather, news
 Only include steps that require tool calls. Keep it to 2-6 steps. Output ONLY the JSON array, no other text.
@@ -345,50 +371,55 @@ Available tools:
 
 User request: {req.message}"""
 
-            if os.environ.get("ANTHROPIC_API_KEY"):
-                import anthropic
-                plan_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-                try:
-                    plan_response = plan_client.messages.create(
-                        model="claude-haiku-4-20250414",
+                if os.environ.get("ANTHROPIC_API_KEY"):
+                    import anthropic
+                    plan_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+                    try:
+                        plan_response = plan_client.messages.create(
+                            model="claude-haiku-4-20250414",
+                            max_tokens=300,
+                            messages=[{"role": "user", "content": plan_prompt}]
+                        )
+                    except Exception:
+                        # Fallback to sonnet if haiku unavailable
+                        plan_response = plan_client.messages.create(
+                            model="claude-sonnet-4-20250514",
+                            max_tokens=300,
+                            messages=[{"role": "user", "content": plan_prompt}]
+                        )
+                    plan_text = plan_response.content[0].text.strip()
+                else:
+                    import openai
+                    plan_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+                    plan_response = plan_client.chat.completions.create(
+                        model="gpt-4o-mini",
                         max_tokens=300,
                         messages=[{"role": "user", "content": plan_prompt}]
                     )
-                except Exception:
-                    # Fallback to sonnet if haiku unavailable
-                    plan_response = plan_client.messages.create(
-                        model="claude-sonnet-4-20250514",
-                        max_tokens=300,
-                        messages=[{"role": "user", "content": plan_prompt}]
-                    )
-                plan_text = plan_response.content[0].text.strip()
-            else:
-                import openai
-                plan_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-                plan_response = plan_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    max_tokens=300,
-                    messages=[{"role": "user", "content": plan_prompt}]
-                )
-                plan_text = plan_response.choices[0].message.content.strip()
+                    plan_text = plan_response.choices[0].message.content.strip()
 
-            # Parse JSON from response (handle markdown code blocks)
-            if plan_text.startswith("```"):
-                plan_text = plan_text.split("```")[1]
-                if plan_text.startswith("json"):
-                    plan_text = plan_text[4:]
-                plan_text = plan_text.strip()
-            
-            plan_steps = json.loads(plan_text)
-            if isinstance(plan_steps, list) and len(plan_steps) > 0:
-                _blueprint_cache[bp_key] = (plan_steps, _time.monotonic())
-                yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
-                logger.info(f"Blueprint: {len(plan_steps)} planned steps")
-          except Exception as e:
-            logger.warning(f"Blueprint generation skipped: {e}")
-            logger.exception("Request error")
+                # Parse JSON from response (handle markdown code blocks)
+                if plan_text.startswith("```"):
+                    plan_text = plan_text.split("```")[1]
+                    if plan_text.startswith("json"):
+                        plan_text = plan_text[4:]
+                    plan_text = plan_text.strip()
+
+                plan_steps = json.loads(plan_text)
+                if isinstance(plan_steps, list) and len(plan_steps) > 0:
+                    _blueprint_cache[bp_key] = (plan_steps, _time.monotonic())
+                    yield f"data: {json.dumps({'event': 'plan', 'steps': plan_steps})}\n\n"
+                    logger.info(f"Blueprint: {len(plan_steps)} planned steps")
+                timing["blueprint_ms"] = (_time.perf_counter() - blueprint_t0) * 1000
+              except Exception as e:
+                logger.warning(f"Blueprint generation skipped: {e}")
+                logger.exception("Request error")
+                timing["blueprint_ms"] = (_time.perf_counter() - blueprint_t0) * 1000
+        else:
+            timing["blueprint_ms"] = 0.0
 
         # Run agent as background task
+        agent_t0 = _time.perf_counter()
         task = asyncio.create_task(agent.run(full_message))
 
         try:
@@ -406,6 +437,7 @@ User request: {req.message}"""
 
             # Final state
             state = task.result()
+            timing["agent_run_ms"] = (_time.perf_counter() - agent_t0) * 1000
             session.react_state = state
 
             # Update session history
@@ -434,6 +466,34 @@ User request: {req.message}"""
                 logger.info(f"{icon} {s.tool_call.name}")
             if state.is_complete:
                 logger.info(f"Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
+
+            total_ms = (_time.perf_counter() - request_t0) * 1000
+            top_tools = sorted(
+                (
+                    (name, (sum(vals) / max(len(vals), 1)), len(vals))
+                    for name, vals in tool_durations.items() if vals
+                ),
+                key=lambda x: x[1],
+                reverse=True,
+            )[:8]
+            top_tools_str = ", ".join(
+                f"{name}:{avg_ms:.0f}ms(x{count})" for name, avg_ms, count in top_tools
+            ) or "none"
+            logger.info(
+                "Timing profile | total=%.0fms classify=%.0fms blueprint=%.0fms agent=%.0fms "
+                "llm_calls=%d tokens(in=%d out=%d cache_read=%d cache_create=%d) cost=$%.4f tools=%s",
+                total_ms,
+                timing.get("classify_ms", 0.0),
+                timing.get("blueprint_ms", 0.0),
+                timing.get("agent_run_ms", 0.0),
+                state.llm_calls,
+                state.input_tokens,
+                state.output_tokens,
+                state.cache_read_tokens,
+                state.cache_creation_tokens,
+                state.estimated_cost_usd,
+                top_tools_str,
+            )
 
             yield f"data: {json.dumps({'event': 'complete', 'data': ss.state_to_response(state)})}\n\n"
 

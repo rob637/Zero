@@ -212,7 +212,10 @@ When you have completed the task, respond with a summary of what was done."""
         
         if approved:
             # Execute the approved tool
-            result = await self._execute_tool(step.tool_call)
+            result = await asyncio.wait_for(
+                self._execute_tool(step.tool_call),
+                timeout=self.TOOL_TIMEOUT_SECONDS,
+            )
             step.result = serialize(result)
             step.status = StepStatus.COMPLETED
             
@@ -258,10 +261,14 @@ When you have completed the task, respond with a summary of what was done."""
 
     # Max cost per request (USD). Agent stops gracefully if exceeded.
     MAX_REQUEST_COST_USD = float(os.environ.get("TELIC_MAX_REQUEST_COST", "2.00"))
+    # Hard timeout for any single tool call (seconds).
+    TOOL_TIMEOUT_SECONDS = float(os.environ.get("TELIC_TOOL_TIMEOUT_SECONDS", "12"))
+    # Global cap on orchestration iterations.
+    MAX_ITERATIONS = int(os.environ.get("TELIC_MAX_ITERATIONS", "20"))
 
     async def _execute_loop(self) -> AgentState:
         """Main execution loop."""
-        max_iterations = 40  # Safety limit
+        max_iterations = self.MAX_ITERATIONS
         
         for _ in range(max_iterations):
             # Budget guard — stop before burning too much
@@ -346,7 +353,10 @@ When you have completed the task, respond with a summary of what was done."""
                 if self.on_step:
                     await self.on_step(step)
                 try:
-                    result = await self._execute_tool(tc)
+                    result = await asyncio.wait_for(
+                        self._execute_tool(tc),
+                        timeout=self.TOOL_TIMEOUT_SECONDS,
+                    )
                     step.result = serialize(result)
                     step.status = StepStatus.COMPLETED
                     result_str = json.dumps(step.result) if not isinstance(step.result, str) else step.result
