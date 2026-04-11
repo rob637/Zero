@@ -289,7 +289,7 @@ When you have completed the task, respond with a summary of what was done."""
     # Max cost per request (USD). Agent stops gracefully if exceeded.
     MAX_REQUEST_COST_USD = float(os.environ.get("TELIC_MAX_REQUEST_COST", "2.00"))
     # Hard timeout for any single tool call (seconds).
-    TOOL_TIMEOUT_SECONDS = float(os.environ.get("TELIC_TOOL_TIMEOUT_SECONDS", "12"))
+    TOOL_TIMEOUT_SECONDS = float(os.environ.get("TELIC_TOOL_TIMEOUT_SECONDS", "30"))
     # Global cap on orchestration iterations.
     MAX_ITERATIONS = int(os.environ.get("TELIC_MAX_ITERATIONS", "20"))
     MAX_ITERATIONS_STRICT = int(os.environ.get("TELIC_MAX_ITERATIONS_STRICT", "14"))
