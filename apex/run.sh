@@ -26,5 +26,12 @@ if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 echo "Starting Telic..."
-(sleep 2 && python3 -m webbrowser "http://localhost:8000") &
+(for i in $(seq 1 120); do
+    if curl -fsS "http://localhost:8000/health" >/dev/null 2>&1; then
+        python3 -m webbrowser "http://localhost:8000"
+        exit 0
+    fi
+    sleep 0.5
+done
+python3 -m webbrowser "http://localhost:8000") &
 python3 server.py

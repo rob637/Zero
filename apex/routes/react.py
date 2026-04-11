@@ -137,6 +137,7 @@ def _record_eval_run(
     evaluation: Dict[str, Any],
     verification: Dict[str, Any],
     gate: Dict[str, Any],
+    orchestration_mode: str,
 ) -> None:
     try:
         _eval_store.record_run(
@@ -146,9 +147,38 @@ def _record_eval_run(
             evaluation=evaluation,
             verification=verification,
             gate=gate,
+            orchestration_mode=orchestration_mode,
         )
     except Exception as e:
         logger.warning(f"Failed to persist orchestration evaluation: {e}")
+
+
+def _resolve_orchestration_mode(requested_mode: str) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    mode = (requested_mode or "").strip().lower()
+    if mode in {"strict", "balanced", "fast"}:
+        return mode, None
+    if mode == "auto":
+        try:
+            rec = _eval_store.recommend_mode(lookback=200, window=20)
+            return rec.mode, {
+                "requested": "auto",
+                "recommended": rec.mode,
+                "reasons": rec.reasons,
+                "summary": rec.summary,
+                "trend": rec.trend,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to compute orchestration auto mode: {e}")
+            return "balanced", {
+                "requested": "auto",
+                "recommended": "balanced",
+                "reasons": ["recommendation_failed_fallback_balanced"],
+            }
+    return None, None
+
+
+def _effective_orchestration_mode(applied_mode: Optional[str]) -> str:
+    return (applied_mode or os.environ.get("TELIC_ORCH_MODE") or "balanced").strip().lower()
 
 
 def _build_data_health_snapshot() -> Dict[str, Any]:
@@ -229,6 +259,10 @@ async def react_chat(req: ReactRequest):
     Use /react/new to start a fresh conversation.
     """
     session = ss.get_user_session(req.session_id)
+    prev_orch_mode = os.environ.get("TELIC_ORCH_MODE")
+    applied_orch_mode, orch_policy_recommendation = _resolve_orchestration_mode(req.orchestration_mode or "")
+    if applied_orch_mode:
+        os.environ["TELIC_ORCH_MODE"] = applied_orch_mode
     
     agent = await ss.get_session_agent(session)
     if not agent:
@@ -289,7 +323,11 @@ Remember: References like "the first one", "send it to him", "the information ab
             logger.info(f"Complete: {state.final_response[:80] if state.final_response else 'No response'}...")
 
         payload = ss.state_to_response(state)
-        payload["meta"] = {"data_health": _build_data_health_snapshot()}
+        payload["meta"] = {
+            "data_health": _build_data_health_snapshot(),
+            "policy_recommendation": orch_policy_recommendation,
+            "applied_orchestration_mode": applied_orch_mode,
+        }
         return JSONResponse(payload)
         
     except Exception as e:
@@ -301,6 +339,12 @@ Remember: References like "the first one", "send it to him", "the information ab
             "is_complete": True,
             "response": f"Error: {str(e)}",
         })
+    finally:
+        if applied_orch_mode:
+            if prev_orch_mode is None:
+                os.environ.pop("TELIC_ORCH_MODE", None)
+            else:
+                os.environ["TELIC_ORCH_MODE"] = prev_orch_mode
 
 
 @router.post("/react/chat/stream")
@@ -314,9 +358,9 @@ async def react_chat_stream(req: ReactRequest):
     import json
     request_t0 = _time.perf_counter()
     prev_orch_mode = os.environ.get("TELIC_ORCH_MODE")
-    req_orch_mode = (req.orchestration_mode or "").strip().lower()
-    if req_orch_mode in {"strict", "balanced", "fast"}:
-        os.environ["TELIC_ORCH_MODE"] = req_orch_mode
+    applied_orch_mode, orch_policy_recommendation = _resolve_orchestration_mode(req.orchestration_mode or "")
+    if applied_orch_mode:
+        os.environ["TELIC_ORCH_MODE"] = applied_orch_mode
     timing: Dict[str, float] = {
         "classify_ms": 0.0,
         "blueprint_ms": 0.0,
@@ -813,6 +857,7 @@ User request: {req.message}"""
                 evaluation=evaluation.to_dict(),
                 verification=verification,
                 gate=gate,
+                orchestration_mode=_effective_orchestration_mode(applied_orch_mode),
             )
             complete_payload["meta"] = {
                 "data_health": data_health_snapshot,
@@ -823,6 +868,8 @@ User request: {req.message}"""
                     evaluation=evaluation.to_dict(),
                     gate=gate,
                 ),
+                "policy_recommendation": orch_policy_recommendation,
+                "applied_orchestration_mode": applied_orch_mode,
             }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
@@ -837,7 +884,7 @@ User request: {req.message}"""
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
-            if req_orch_mode in {"strict", "balanced", "fast"}:
+            if applied_orch_mode:
                 if prev_orch_mode is None:
                     os.environ.pop("TELIC_ORCH_MODE", None)
                 else:
@@ -871,6 +918,10 @@ async def react_approve(req: ReactApproveRequest):
     After approval, the agent continues executing.
     """
     session = ss.get_user_session(req.session_id)
+    prev_orch_mode = os.environ.get("TELIC_ORCH_MODE")
+    applied_orch_mode, orch_policy_recommendation = _resolve_orchestration_mode(req.orchestration_mode or "")
+    if applied_orch_mode:
+        os.environ["TELIC_ORCH_MODE"] = applied_orch_mode
     
     agent = await ss.get_session_agent(session)
     if not agent or not session.react_state:
@@ -919,6 +970,7 @@ async def react_approve(req: ReactApproveRequest):
                         "issues": verification.get("issues", []) + preflight_issues,
                     },
                     gate=gate,
+                    orchestration_mode=_effective_orchestration_mode(applied_orch_mode),
                 )
                 payload = ss.state_to_response(session.react_state)
                 payload["error"] = "Preflight check failed"
@@ -934,6 +986,8 @@ async def react_approve(req: ReactApproveRequest):
                         evaluation=evaluation.to_dict(),
                         gate=gate,
                     ),
+                    "policy_recommendation": orch_policy_recommendation,
+                    "applied_orchestration_mode": applied_orch_mode,
                 }
                 return JSONResponse(payload)
         
@@ -963,6 +1017,7 @@ async def react_approve(req: ReactApproveRequest):
             evaluation=evaluation.to_dict(),
             verification=verification,
             gate=gate,
+            orchestration_mode=_effective_orchestration_mode(applied_orch_mode),
         )
         payload["meta"] = {
             "data_health": _build_data_health_snapshot(),
@@ -973,6 +1028,8 @@ async def react_approve(req: ReactApproveRequest):
                 evaluation=evaluation.to_dict(),
                 gate=gate,
             ),
+            "policy_recommendation": orch_policy_recommendation,
+            "applied_orchestration_mode": applied_orch_mode,
         }
         return JSONResponse(payload)
         
@@ -985,6 +1042,12 @@ async def react_approve(req: ReactApproveRequest):
             "is_complete": True,
             "response": f"Error: {str(e)}",
         })
+    finally:
+        if applied_orch_mode:
+            if prev_orch_mode is None:
+                os.environ.pop("TELIC_ORCH_MODE", None)
+            else:
+                os.environ["TELIC_ORCH_MODE"] = prev_orch_mode
 
 
 @router.post("/react/approve/stream")
@@ -995,9 +1058,9 @@ async def react_approve_stream(req: ReactApproveRequest):
     """
     import json
     prev_orch_mode = os.environ.get("TELIC_ORCH_MODE")
-    req_orch_mode = (req.orchestration_mode or "").strip().lower()
-    if req_orch_mode in {"strict", "balanced", "fast"}:
-        os.environ["TELIC_ORCH_MODE"] = req_orch_mode
+    applied_orch_mode, orch_policy_recommendation = _resolve_orchestration_mode(req.orchestration_mode or "")
+    if applied_orch_mode:
+        os.environ["TELIC_ORCH_MODE"] = applied_orch_mode
     session = ss.get_user_session(req.session_id)
 
     agent = await ss.get_session_agent(session)
@@ -1125,6 +1188,7 @@ async def react_approve_stream(req: ReactApproveRequest):
                 evaluation=evaluation.to_dict(),
                 verification=verification,
                 gate=gate,
+                orchestration_mode=_effective_orchestration_mode(applied_orch_mode),
             )
             if session.react_state and session.react_state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(session.react_state.pending_approval)})}\n\n"
@@ -1139,6 +1203,8 @@ async def react_approve_stream(req: ReactApproveRequest):
                     evaluation=evaluation.to_dict(),
                     gate=gate,
                 ),
+                "policy_recommendation": orch_policy_recommendation,
+                "applied_orchestration_mode": applied_orch_mode,
             }
             yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
             return
@@ -1208,6 +1274,7 @@ async def react_approve_stream(req: ReactApproveRequest):
                 evaluation=evaluation.to_dict(),
                 verification=verification,
                 gate=gate,
+                orchestration_mode=_effective_orchestration_mode(applied_orch_mode),
             )
             payload["meta"] = {
                 "data_health": _build_data_health_snapshot(),
@@ -1218,6 +1285,8 @@ async def react_approve_stream(req: ReactApproveRequest):
                     evaluation=evaluation.to_dict(),
                     gate=gate,
                 ),
+                "policy_recommendation": orch_policy_recommendation,
+                "applied_orchestration_mode": applied_orch_mode,
             }
             if state.pending_approval:
                 yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
@@ -1231,7 +1300,7 @@ async def react_approve_stream(req: ReactApproveRequest):
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
-            if req_orch_mode in {"strict", "balanced", "fast"}:
+            if applied_orch_mode:
                 if prev_orch_mode is None:
                     os.environ.pop("TELIC_ORCH_MODE", None)
                 else:

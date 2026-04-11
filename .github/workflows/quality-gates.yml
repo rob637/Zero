@@ -1,0 +1,110 @@
+name: Quality Gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  orchestration-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apex
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Compile critical modules
+        run: |
+          python -m py_compile routes/orchestration.py
+          python -m py_compile routes/react.py
+          python -m py_compile orchestration/eval_store.py
+          python -m py_compile orchestration/primitive_audit.py
+
+      - name: Run quality-focused tests
+        env:
+          PYTHONPATH: /home/runner/work/Zero/Zero:/home/runner/work/Zero/Zero/apex
+        run: |
+          pytest -q test_orchestration_core.py \
+            test_orchestration_benchmark.py \
+            test_orchestration_eval_store.py \
+            test_orchestration_routes.py
+
+      - name: Start API for gate checks
+        env:
+          PYTHONPATH: /home/runner/work/Zero/Zero:/home/runner/work/Zero/Zero/apex
+          OPENAI_API_KEY: test-key
+        run: |
+          nohup python server.py > /tmp/telic-server.log 2>&1 &
+          echo $! > /tmp/telic-server.pid
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          for _ in range(60):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2):
+                      print('server_ready')
+                      raise SystemExit(0)
+              except Exception:
+                  time.sleep(1)
+          raise SystemExit('server_failed_to_start')
+          PY
+
+      - name: Enforce week2 quality gate
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --lookback 200 --window 20
+
+      - name: Enforce week3 connectors gate
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --gate week3-connectors
+
+      - name: Burn-in week4 replay gate (non-blocking)
+        continue-on-error: true
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --gate week4-replay --lookback 200 --window 20
+
+      - name: Burn-in week5 ai engine gate (non-blocking)
+        continue-on-error: true
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --gate week5-ai-engine --lookback 200 --window 20
+
+      - name: Burn-in week5 benchmark gate (non-blocking)
+        continue-on-error: true
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --gate week5-benchmark
+
+      - name: Burn-in week6 ui trust gate (non-blocking)
+        continue-on-error: true
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --gate week6-ui-trust --lookback 200 --window 20
+
+      - name: Burn-in week7 performance gate (non-blocking)
+        continue-on-error: true
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --gate week7-performance --lookback 200
+
+      - name: Burn-in week8 launch gate (non-blocking)
+        continue-on-error: true
+        run: |
+          python quality_gate_cli.py --base-url http://127.0.0.1:8000 --gate week8-launch
+
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -f /tmp/telic-server.pid ]; then
+            kill $(cat /tmp/telic-server.pid) || true
+          fi

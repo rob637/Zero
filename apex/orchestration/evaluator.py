@@ -30,6 +30,14 @@ class EvaluationResult:
         }
 
 
+@dataclass
+class QualityGateThresholds:
+    min_score: float = 0.75
+    min_efficiency: float = 0.25
+    min_latency: float = 0.15
+    min_churn: float = 0.15
+
+
 def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
 
@@ -71,3 +79,32 @@ def evaluate_runtime_snapshot(
             "verification_satisfied": verified_satisfied,
         },
     )
+
+
+def check_quality_gate(
+    evaluation: EvaluationResult,
+    thresholds: QualityGateThresholds | None = None,
+) -> Dict[str, Any]:
+    """Evaluate whether a run passes orchestration quality gate thresholds."""
+
+    th = thresholds or QualityGateThresholds()
+    failures = []
+    if evaluation.score < th.min_score:
+        failures.append(f"score<{th.min_score}")
+    if evaluation.efficiency < th.min_efficiency:
+        failures.append(f"efficiency<{th.min_efficiency}")
+    if evaluation.latency < th.min_latency:
+        failures.append(f"latency<{th.min_latency}")
+    if evaluation.churn < th.min_churn:
+        failures.append(f"churn<{th.min_churn}")
+
+    return {
+        "passed": len(failures) == 0,
+        "failures": failures,
+        "thresholds": {
+            "min_score": th.min_score,
+            "min_efficiency": th.min_efficiency,
+            "min_latency": th.min_latency,
+            "min_churn": th.min_churn,
+        },
+    }

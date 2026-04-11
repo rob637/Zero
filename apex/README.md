@@ -68,7 +68,7 @@ python server.py
 
 ## What's Built
 
-### 36 Universal Primitives (194 Operations)
+### Universal Primitives
 
 | Primitive | Operations | Examples |
 |-----------|------------|----------|
@@ -87,7 +87,7 @@ python server.py
 | **AUTOMATION** | create, list, enable, run | Scheduled tasks |
 | *...and 23 more* | | |
 
-### 23 Cloud Connectors
+### Cloud Connectors
 
 **Google:** Gmail, Calendar, Drive, Contacts, Sheets, Slides, Photos  
 **Microsoft:** Outlook, Calendar, OneDrive, To-Do, OneNote, Teams  
@@ -138,16 +138,16 @@ python server.py
 
 ```
 apex/
-├── apex_engine.py          # 🧠 Core engine (6,900+ lines)
-│   ├── 36 Primitives       # Universal building blocks
-│   ├── TaskPlanner         # LLM-powered plan generation
-│   ├── Orchestrator        # Step execution with self-healing
-│   └── Safety Rails        # Trust, approval, undo, audit
+├── apex_engine.py          # Core primitive engine and compatibility layer
+├── react_agent.py          # ReAct runtime loop and tool orchestration policy
+├── intent_router.py        # Fast pre-routing (index_direct / filtered / full)
+├── orchestration/          # Workflow contracts, verification, eval history, gates
 │
-├── server.py               # 🌐 FastAPI server
-│   ├── /chat               # Main chat endpoint
-│   ├── /execute            # Run approved plans
-│   └── /google/*           # OAuth flows
+├── server.py               # FastAPI server
+│   ├── /react/*            # Chat + streaming + approvals
+│   ├── /orchestration/*    # Quality, trend, replay, scorecard APIs
+│   ├── /sync/*             # Data sync controls
+│   └── /health             # System health
 │
 ├── ui/index.html           # 💻 Desktop UI
 │   ├── Chat interface
@@ -168,21 +168,22 @@ apex/
 │       ├── photo_organizer.py
 │       └── ...5 more
 │
-├── connectors/             # 23 service integrations
+├── connectors/             # Service integrations
 └── src-tauri/              # Rust desktop app
 ```
 
 ## Test Suite
 
-```
-334 tests passing ✓
+This repository includes focused suites for primitives, connectors, orchestration, OAuth, performance, and end-to-end flows.
 
-Primitives:     194/194 ✓
-OAuth Flow:      38/38  ✓
-Connectors:      33/33  ✓
-Resolver:        28/28  ✓
-New Connectors:  41/41  ✓
-```
+For current quality status, use runtime APIs instead of static README numbers:
+
+- `GET /orchestration/quality/scorecard`
+- `GET /orchestration/quality/release-gate`
+- `GET /orchestration/quality/trend`
+
+Execution program and quality gates are tracked in [docs/EXECUTION-8W-WORLD-CLASS.md](docs/EXECUTION-8W-WORLD-CLASS.md).
+
 
 ## Example Requests
 
@@ -209,14 +210,14 @@ New Connectors:  41/41  ✓
 
 ## Roadmap
 
-- [x] 36 Primitives / 194 Operations
+- [x] Universal primitive layer
 - [x] Full cognitive architecture  
-- [x] 23 cloud connectors with OAuth
+- [x] Cloud connectors with OAuth
 - [x] Approval gateway & trust levels
 - [x] FastAPI server with streaming
 - [x] Desktop UI with plan cards
 - [x] Tauri desktop app scaffolding
-- [x] 334 tests passing
+- [x] Multi-suite test coverage
 - [ ] End-to-end user testing
 - [ ] Polish streaming UI
 - [ ] Production builds
