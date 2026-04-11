@@ -141,3 +141,15 @@ async def orchestration_release_gate(lookback: int = 200):
             "summary": summary,
         }
     )
+
+
+@router.get("/quality/trend")
+async def orchestration_quality_trend(window: int = 20, lookback: int = 200):
+    data = _eval_store.trend(window=max(5, min(window, 200)), lookback=max(20, min(lookback, 2000)))
+    return JSONResponse(data)
+
+
+@router.get("/quality/replay-cases")
+async def orchestration_replay_cases(limit: int = 100):
+    cases = _eval_store.replay_cases(limit=max(1, min(limit, 500)))
+    return JSONResponse({"total": len(cases), "cases": cases})

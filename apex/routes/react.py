@@ -313,6 +313,10 @@ async def react_chat_stream(req: ReactRequest):
     """
     import json
     request_t0 = _time.perf_counter()
+    prev_orch_mode = os.environ.get("TELIC_ORCH_MODE")
+    req_orch_mode = (req.orchestration_mode or "").strip().lower()
+    if req_orch_mode in {"strict", "balanced", "fast"}:
+        os.environ["TELIC_ORCH_MODE"] = req_orch_mode
     timing: Dict[str, float] = {
         "classify_ms": 0.0,
         "blueprint_ms": 0.0,
@@ -833,6 +837,11 @@ User request: {req.message}"""
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
+            if req_orch_mode in {"strict", "balanced", "fast"}:
+                if prev_orch_mode is None:
+                    os.environ.pop("TELIC_ORCH_MODE", None)
+                else:
+                    os.environ["TELIC_ORCH_MODE"] = prev_orch_mode
             agent.on_step = prev_on_step
             agent.on_thinking = prev_on_thinking
             agent.on_token = prev_on_token
@@ -985,6 +994,10 @@ async def react_approve_stream(req: ReactApproveRequest):
     executing after approval, so the UI can show real-time tool progress.
     """
     import json
+    prev_orch_mode = os.environ.get("TELIC_ORCH_MODE")
+    req_orch_mode = (req.orchestration_mode or "").strip().lower()
+    if req_orch_mode in {"strict", "balanced", "fast"}:
+        os.environ["TELIC_ORCH_MODE"] = req_orch_mode
     session = ss.get_user_session(req.session_id)
 
     agent = await ss.get_session_agent(session)
@@ -1218,6 +1231,11 @@ async def react_approve_stream(req: ReactApproveRequest):
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
         finally:
+            if req_orch_mode in {"strict", "balanced", "fast"}:
+                if prev_orch_mode is None:
+                    os.environ.pop("TELIC_ORCH_MODE", None)
+                else:
+                    os.environ["TELIC_ORCH_MODE"] = prev_orch_mode
             agent.on_step = prev_on_step
             agent.on_thinking = prev_on_thinking
 

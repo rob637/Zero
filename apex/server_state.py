@@ -1060,12 +1060,14 @@ def resolve_wire_value(val, read_results: dict, primitive_to_step: dict):
 class ReactRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    orchestration_mode: Optional[str] = None
 
 
 class ReactApproveRequest(BaseModel):
     approved: bool
     session_id: Optional[str] = None
     updated_params: Optional[Dict[str, Any]] = None
+    orchestration_mode: Optional[str] = None
 
 
 

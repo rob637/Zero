@@ -161,6 +161,86 @@ class OrchestrationEvalStore:
             "avg_tool_calls": avg_tool,
         }
 
+    def trend(self, window: int = 20, lookback: int = 200) -> Dict[str, Any]:
+        """Return recent-vs-baseline trend to detect regressions quickly."""
+        rows = self.recent_runs(limit=max(lookback, window * 2))
+        if len(rows) < 2:
+            return {
+                "window": window,
+                "recent": {},
+                "baseline": {},
+                "delta": {},
+                "signals": [],
+            }
+
+        recent = rows[:window]
+        baseline = rows[window: window * 2] if len(rows) >= window * 2 else rows[window:]
+        if not baseline:
+            baseline = rows[window:]
+
+        def _avg(vals):
+            return sum(vals) / max(len(vals), 1)
+
+        recent_stats = {
+            "score": _avg([r.score for r in recent]),
+            "pass_rate": _avg([1.0 if r.passed_gate else 0.0 for r in recent]),
+            "latency_ms": _avg([r.wall_time_ms for r in recent]),
+            "llm_calls": _avg([r.llm_calls for r in recent]),
+            "tool_calls": _avg([r.tool_calls for r in recent]),
+        }
+        baseline_stats = {
+            "score": _avg([r.score for r in baseline]),
+            "pass_rate": _avg([1.0 if r.passed_gate else 0.0 for r in baseline]),
+            "latency_ms": _avg([r.wall_time_ms for r in baseline]),
+            "llm_calls": _avg([r.llm_calls for r in baseline]),
+            "tool_calls": _avg([r.tool_calls for r in baseline]),
+        }
+
+        delta = {
+            "score": recent_stats["score"] - baseline_stats["score"],
+            "pass_rate": recent_stats["pass_rate"] - baseline_stats["pass_rate"],
+            "latency_ms": recent_stats["latency_ms"] - baseline_stats["latency_ms"],
+            "llm_calls": recent_stats["llm_calls"] - baseline_stats["llm_calls"],
+            "tool_calls": recent_stats["tool_calls"] - baseline_stats["tool_calls"],
+        }
+
+        signals = []
+        if delta["score"] < -0.05:
+            signals.append("score_regression")
+        if delta["pass_rate"] < -0.05:
+            signals.append("pass_rate_regression")
+        if delta["latency_ms"] > 3000:
+            signals.append("latency_regression")
+        if delta["llm_calls"] > 1.5:
+            signals.append("llm_churn_regression")
+
+        return {
+            "window": window,
+            "recent": recent_stats,
+            "baseline": baseline_stats,
+            "delta": delta,
+            "signals": signals,
+        }
+
+    def replay_cases(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Export recent run snapshots as benchmark/replay case payloads."""
+        rows = self.recent_runs(limit=max(1, min(limit, 2000)))
+        return [
+            {
+                "name": r.request_text[:80] or r.run_id,
+                "llm_calls": r.llm_calls,
+                "tool_calls": r.tool_calls,
+                "wall_time_ms": r.wall_time_ms,
+                "verification": r.verification,
+                "meta": {
+                    "run_id": r.run_id,
+                    "workflow_id": r.workflow_id,
+                    "created_at": r.created_at,
+                },
+            }
+            for r in rows
+        ]
+
     @staticmethod
     def _row_to_run(row: sqlite3.Row) -> EvaluationRun:
         return EvaluationRun(
