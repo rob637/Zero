@@ -32,3 +32,6 @@ Thumbs.db
 # Apex data
 .apex/
 *.db
+*.db-wal
+*.db-shm
+*.db-journal

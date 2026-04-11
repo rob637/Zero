@@ -43,6 +43,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
 # ---------------------------------------------------------------------------
 # Blueprint cache — same request pattern → same plan, skip LLM call
 # ---------------------------------------------------------------------------
@@ -51,6 +62,9 @@ _BLUEPRINT_TTL = 300  # 5 minutes
 _ENABLE_BLUEPRINT = os.environ.get("TELIC_ENABLE_BLUEPRINT", "0").strip().lower() in {
     "1", "true", "yes", "on"
 }
+_INTEL_SECTION_TIMEOUT_S = _env_float("TELIC_INTEL_SECTION_TIMEOUT_S", 2.5)
+_INTENT_CLASSIFY_TIMEOUT_S = _env_float("TELIC_INTENT_CLASSIFY_TIMEOUT_S", 3.0)
+_STREAM_AGENT_TIMEOUT_S = _env_float("TELIC_STREAM_AGENT_TIMEOUT_S", 180.0)
 
 _artifact_ledger = ArtifactLedger(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
 _eval_store = OrchestrationEvalStore(Path(__file__).resolve().parent.parent / "sqlite" / "orchestration.db")
@@ -436,19 +450,28 @@ Remember: References like "the first one", "send it to him", "the information ab
         intel_parts = []
 
         # Recall relevant facts from semantic memory
-        recalled = await hub.recall(req.message, limit=5, min_relevance=0.3)
+        recalled = await asyncio.wait_for(
+            hub.recall(req.message, limit=5, min_relevance=0.3),
+            timeout=_INTEL_SECTION_TIMEOUT_S,
+        )
         if recalled:
             facts_text = "\n".join(f"- {f.content}" for f, _score in recalled[:5])
             intel_parts.append(f"[MEMORY - Things I remember]\n{facts_text}")
 
         # Check what patterns are expected now
-        expected = await hub.whats_expected_now()
+        expected = await asyncio.wait_for(
+            hub.whats_expected_now(),
+            timeout=_INTEL_SECTION_TIMEOUT_S,
+        )
         if expected:
             patterns_text = "\n".join(f"- {p['pattern']}: {p['description']}" for p in expected[:3])
             intel_parts.append(f"[PATTERNS - What usually happens now]\n{patterns_text}")
 
         # Get proactive suggestions
-        suggestions = await hub.get_suggestions(max_suggestions=3)
+        suggestions = await asyncio.wait_for(
+            hub.get_suggestions(max_suggestions=3),
+            timeout=_INTEL_SECTION_TIMEOUT_S,
+        )
         if suggestions:
             sugg_text = "\n".join(f"- {s.title}: {s.description}" for s in suggestions[:3])
             intel_parts.append(f"[SUGGESTIONS]\n{sugg_text}")
@@ -469,7 +492,10 @@ Remember: References like "the first one", "send it to him", "the information ab
     try:
         classify_t0 = _time.perf_counter()
         from intent_router import classify, handle_index_direct, filter_tools as router_filter_tools, IntentType
-        intent = await classify(req.message)
+        intent = await asyncio.wait_for(
+            classify(req.message),
+            timeout=_INTENT_CLASSIFY_TIMEOUT_S,
+        )
         timing["classify_ms"] = (_time.perf_counter() - classify_t0) * 1000
         logger.info(f"{intent}")
 
@@ -720,6 +746,7 @@ User request: {req.message}"""
         # Run agent as background task
         agent_t0 = _time.perf_counter()
         task = asyncio.create_task(agent.run(full_message))
+        stream_deadline = _time.perf_counter() + _STREAM_AGENT_TIMEOUT_S
 
         try:
             while True:
@@ -732,6 +759,12 @@ User request: {req.message}"""
                 # Exit once work is complete and no events remain.
                 if task.done():
                     break
+
+                if _time.perf_counter() >= stream_deadline:
+                    task.cancel()
+                    raise TimeoutError(
+                        f"Agent run exceeded {_STREAM_AGENT_TIMEOUT_S:.0f}s timeout"
+                    )
 
                 queue_get = asyncio.create_task(queue.get())
                 done, _ = await asyncio.wait(
@@ -883,6 +916,7 @@ User request: {req.message}"""
                 pass
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
+            yield f"data: {json.dumps({'event': 'complete', 'data': {'response': f'Error: {error_msg}', 'steps': [], 'pending_approval': None, 'is_complete': True, 'meta': {'data_health': data_health_snapshot}}})}\n\n"
         finally:
             if applied_orch_mode:
                 if prev_orch_mode is None:
@@ -1299,6 +1333,7 @@ async def react_approve_stream(req: ReactApproveRequest):
                 pass
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
+            yield f"data: {json.dumps({'event': 'complete', 'data': {'response': f'Error: {error_msg}', 'steps': [], 'pending_approval': None, 'is_complete': True}})}\n\n"
         finally:
             if applied_orch_mode:
                 if prev_orch_mode is None:
