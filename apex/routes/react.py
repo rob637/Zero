@@ -799,6 +799,8 @@ async def react_approve_stream(req: ReactApproveRequest):
             session.auto_save()
             payload = ss.state_to_response(state)
             payload["meta"] = {"data_health": _build_data_health_snapshot()}
+            if state.pending_approval:
+                yield f"data: {json.dumps({'event': 'approval_needed', 'step': ss.step_to_sse_dict(state.pending_approval)})}\n\n"
             yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
         except (Exception, asyncio.CancelledError) as e:
             logger.exception("Request error")

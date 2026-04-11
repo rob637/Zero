@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import random
+import hashlib
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Callable, Dict, List, Optional, Awaitable
 from enum import Enum
@@ -227,7 +228,7 @@ When you have completed the task, respond with a summary of what was done."""
                 self._execute_tool(step.tool_call),
                 timeout=self.TOOL_TIMEOUT_SECONDS,
             )
-            sig = self._tool_cache_key(step.tool_call)
+            sig = self._side_effect_signature(step.tool_call)
             if sig:
                 self._executed_side_effect_signatures.add(sig)
             step.result = serialize(result)
@@ -435,7 +436,7 @@ When you have completed the task, respond with a summary of what was done."""
 
                 # Skip duplicate side-effect calls in the same request to avoid
                 # repeat approval loops and duplicate external actions.
-                side_sig = self._tool_cache_key(tc)
+                side_sig = self._side_effect_signature(tc)
                 if side_sig and side_sig in self._executed_side_effect_signatures:
                     step.status = StepStatus.COMPLETED
                     step.result = "Skipped duplicate side-effect action (already executed in this request)."
@@ -473,6 +474,53 @@ When you have completed the task, respond with a summary of what was done."""
         self.state.final_response = "I've reached the maximum number of steps. Please try a simpler request."
         self._log_cache_stats()
         return self.state
+
+    @staticmethod
+    def _side_effect_signature(tool_call: ToolCall) -> Optional[str]:
+        """Stable signature for side-effect de-duplication.
+
+        Normalizes common volatile metadata keys and large payloads so
+        semantically identical actions map to the same signature.
+        """
+
+        volatile_keys = {
+            "timestamp",
+            "time",
+            "generated_at",
+            "created_at",
+            "updated_at",
+            "request_id",
+            "correlation_id",
+            "nonce",
+            "trace_id",
+        }
+
+        def _normalize(value: Any) -> Any:
+            if isinstance(value, dict):
+                out = {}
+                for k in sorted(value.keys()):
+                    lk = str(k).lower()
+                    if lk in volatile_keys:
+                        continue
+                    out[k] = _normalize(value[k])
+                return out
+            if isinstance(value, list):
+                return [_normalize(v) for v in value]
+            if isinstance(value, str):
+                return value.strip()
+            return value
+
+        try:
+            norm_params = _normalize(tool_call.params or {})
+            # Avoid massive signatures while preserving duplicate semantics.
+            if isinstance(norm_params, dict) and "data" in norm_params:
+                data_json = json.dumps(norm_params["data"], sort_keys=True, default=str)
+                norm_params["data_hash"] = hashlib.sha256(data_json.encode("utf-8")).hexdigest()
+                del norm_params["data"]
+            params_json = json.dumps(norm_params, sort_keys=True, default=str)
+            return f"{tool_call.name}|{params_json}"
+        except Exception:
+            return None
 
     @staticmethod
     def _tool_cache_key(tool_call: ToolCall) -> Optional[str]:
