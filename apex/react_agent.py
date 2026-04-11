@@ -156,6 +156,10 @@ class ReActAgent:
         # Request-scoped set of executed side-effect signatures to prevent
         # duplicate action loops from repeatedly prompting/executing.
         self._executed_side_effect_signatures: set[str] = set()
+        # Tracks the most recently approved side-effect action so we can
+        # suppress immediate same-action approval loops without hardcoding.
+        self._last_approved_tool_name: Optional[str] = None
+        self._steps_len_at_last_approval: int = 0
     
     def _default_system_prompt(self) -> str:
         return """You are a helpful AI assistant that can perform actions on the user's behalf.
@@ -199,6 +203,8 @@ When you have completed the task, respond with a summary of what was done."""
         self._readonly_tool_cache = {}
         self._readonly_tool_cache_hits = 0
         self._executed_side_effect_signatures = set()
+        self._last_approved_tool_name = None
+        self._steps_len_at_last_approval = 0
         self.state.messages = [
             {"role": "user", "content": user_message}
         ]
@@ -231,6 +237,8 @@ When you have completed the task, respond with a summary of what was done."""
             sig = self._side_effect_signature(step.tool_call)
             if sig:
                 self._executed_side_effect_signatures.add(sig)
+            self._last_approved_tool_name = step.tool_call.name
+            self._steps_len_at_last_approval = len(self.state.steps)
             step.result = serialize(result)
             step.status = StepStatus.COMPLETED
             
@@ -266,6 +274,8 @@ When you have completed the task, respond with a summary of what was done."""
         # Clear previous response - we're continuing, not repeating
         self.state.is_complete = False
         self.state.final_response = None
+        self._last_approved_tool_name = None
+        self._steps_len_at_last_approval = 0
         
         self.state.messages.append({"role": "user", "content": user_input})
         return await self._execute_loop()
@@ -449,6 +459,29 @@ When you have completed the task, respond with a summary of what was done."""
                     })
                     continue
 
+                # Generic loop guard: after approving a side-effect, block the
+                # same side-effect from being requested again unless there is
+                # new read-only evidence since that approval.
+                if self._is_repeat_after_approval_without_new_signal(tc.name):
+                    step.status = StepStatus.COMPLETED
+                    step.result = (
+                        f"Blocked repeated side-effect loop for '{tc.name}'. "
+                        "This action was already approved/executed in this request. "
+                        "Continue using the existing result, or ask user before creating/sending another."
+                    )
+                    logger.warning(
+                        "Blocked repeated side-effect approval loop for %s",
+                        tc.name,
+                    )
+                    if self.on_step:
+                        await self.on_step(step)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": step.result,
+                    })
+                    continue
+
                 # Side-effect tool — pause for user approval
                 if self.on_step:
                     await self.on_step(step)
@@ -521,6 +554,23 @@ When you have completed the task, respond with a summary of what was done."""
             return f"{tool_call.name}|{params_json}"
         except Exception:
             return None
+
+    def _is_repeat_after_approval_without_new_signal(self, tool_name: str) -> bool:
+        """True when the same side-effect repeats immediately after approval.
+
+        This keeps orchestration generic: it does not hardcode scenarios, only
+        prevents approval loops when no new read-only evidence has appeared.
+        """
+        if not self._last_approved_tool_name:
+            return False
+        if tool_name != self._last_approved_tool_name:
+            return False
+
+        for step in self.state.steps[self._steps_len_at_last_approval:]:
+            tool = self.tools.get(step.tool_call.name)
+            if tool and not tool.side_effect and step.status == StepStatus.COMPLETED:
+                return False
+        return True
 
     @staticmethod
     def _tool_cache_key(tool_call: ToolCall) -> Optional[str]:
