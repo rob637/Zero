@@ -729,7 +729,11 @@ def primitives_to_tools(primitives: Dict[str, Any], connected_only: bool = True)
         
         for op_name, description in available_ops.items():
             # Determine if this operation has side effects
-            side_effect_keywords = ["send", "create", "write", "delete", "move", "update", "post", "remove"]
+            side_effect_keywords = [
+                "send", "forward", "reply", "create", "write",
+                "delete", "move", "update", "post", "remove",
+                "archive", "trash", "share", "invite", "publish",
+            ]
             has_side_effect = any(kw in op_name.lower() for kw in side_effect_keywords)
             
             # Get parameter schema for this operation
