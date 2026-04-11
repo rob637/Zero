@@ -47,6 +47,7 @@ from connectors.credentials import (
     StoredCredential,
     reset_credential_store,
 )
+from intent_router import IntentType, classify_sync
 
 
 # ============================================================================
@@ -194,6 +195,12 @@ class TestMethodMapping(unittest.TestCase):
         
         self.assertEqual(method1, method2)
         self.assertEqual(method2, method3)
+
+
+    class TestIntentRouting:
+        def test_composite_action_routes_full(self):
+            intent = classify_sync("Find the loan file, create an amortization schedule, and email it to Rob")
+            assert intent.type == IntentType.FULL
 
 
 # ============================================================================

@@ -20,6 +20,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from connectors.registry import get_registry
+from connectors.resolver import ExecutionMode
 
 # Shared state and helpers
 import server_state as state
@@ -44,6 +46,7 @@ logging.basicConfig(
 # Route modules
 from routes.oauth import router as oauth_router
 from routes.react import router as react_router
+from routes.orchestration import router as orchestration_router
 from routes.intelligence import router as intelligence_router
 from routes.routines import router as routines_router
 from routes.nudges import router as nudges_router
@@ -112,6 +115,7 @@ app.add_middleware(_RateLimitMiddleware)
 # Include route modules
 app.include_router(oauth_router)
 app.include_router(react_router)
+app.include_router(orchestration_router)
 app.include_router(intelligence_router)
 app.include_router(routines_router)
 app.include_router(nudges_router)

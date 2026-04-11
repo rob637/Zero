@@ -217,11 +217,13 @@ _build_index_patterns()
 # Compile action-verb patterns at module level (not per-call)
 _ACTION_VERBS = re.compile(
     r"\b(?:send|create|make|write|draft|compose|set up|book|"
+    r"find|locate|fetch|gather|generate|build|"
     r"delete|remove|cancel|update|edit|change|move|rename|forward|reply|"
     r"summarize|analyze|prepare|remind|share|post|publish|invite)\b",
     re.IGNORECASE,
 )
 _SCHEDULE_VERB = re.compile(r"\bschedule\s+(?:a|an|the|my|our|this)\b", re.IGNORECASE)
+_COMPOSITE_CUES = re.compile(r"\b(and|then|after|also|followed by)\b", re.IGNORECASE)
 
 
 def _classify_core(msg_lower: str, today: datetime, detected_domains: List[str]) -> Intent:
@@ -234,9 +236,18 @@ def _classify_core(msg_lower: str, today: datetime, detected_domains: List[str])
 
     has_action = bool(_ACTION_VERBS.search(msg_lower)) or bool(_SCHEDULE_VERB.search(msg_lower))
     action_count = len(_ACTION_VERBS.findall(msg_lower))
+    has_composite_cue = bool(_COMPOSITE_CUES.search(msg_lower))
 
-    # Multi-action requests are often cross-domain workflows; keep routing broad
+    # Composite action requests are often cross-domain workflows; keep routing broad
     # so the LLM can compose the right tool sequence instead of being over-filtered.
+    if has_action and len(detected_domains) >= 2:
+        return Intent(IntentType.FULL, domains=detected_domains, confidence=0.65)
+
+    # Composite action phrasing usually implies cross-step orchestration,
+    # even if keyword matching only finds one domain.
+    if has_action and has_composite_cue and action_count >= 2:
+        return Intent(IntentType.FULL, domains=detected_domains, confidence=0.62)
+
     if has_action and action_count >= 2 and len(detected_domains) <= 3:
         return Intent(IntentType.FULL, domains=detected_domains, confidence=0.6)
 

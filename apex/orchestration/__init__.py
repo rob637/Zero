@@ -3,7 +3,14 @@ from .state_machine import InvalidTransitionError, OrchestrationStateMachine
 from .artifact_ledger import ArtifactLedger, ArtifactRecord, extract_artifact_candidates
 from .capability_graph import CapabilitySummary, OrchestrationCapabilityGraph
 from .verifier import VerificationResult, check_side_effect_preconditions, verify_outcome
-from .evaluator import EvaluationResult, evaluate_runtime_snapshot
+from .evaluator import (
+    EvaluationResult,
+    QualityGateThresholds,
+    check_quality_gate,
+    evaluate_runtime_snapshot,
+)
+from .benchmark_runner import BenchmarkCase, default_benchmark_cases, load_cases_from_json, run_benchmarks
+from .benchmark_runner import BenchmarkCase, run_benchmarks
 
 __all__ = [
     "ExecutionPolicy",
@@ -21,5 +28,11 @@ __all__ = [
     "check_side_effect_preconditions",
     "verify_outcome",
     "EvaluationResult",
+    "QualityGateThresholds",
+    "check_quality_gate",
     "evaluate_runtime_snapshot",
+    "BenchmarkCase",
+    "run_benchmarks",
+    "default_benchmark_cases",
+    "load_cases_from_json",
 ]
