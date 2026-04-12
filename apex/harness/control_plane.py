@@ -69,6 +69,74 @@ class HarnessControlPlane:
         self._repair_timeout_seconds = max(60, int(os.environ.get("HARNESS_REPAIR_TIMEOUT_SECONDS", "1800")))
         self._quality_queue_depth_limit = max(4, int(os.environ.get("HARNESS_QUALITY_QUEUE_DEPTH_LIMIT", "30")))
         self._quality_watchdog_horizon_seconds = max(300, int(os.environ.get("HARNESS_QUALITY_WATCHDOG_HORIZON_SECONDS", "86400")))
+        self._recover_orphaned_work_after_restart()
+
+    def _recover_orphaned_work_after_restart(self) -> None:
+        now = _utc_now()
+        recovered_runs = 0
+        recovered_repairs = 0
+
+        with self._file_lock:
+            state = self._load_state()
+            changed = False
+
+            for run in state.get("runs", []):
+                status = str(run.get("status", ""))
+                if status not in {"queued", "running"}:
+                    continue
+
+                run["status"] = "error"
+                run["finished_at"] = now
+                run["error"] = run.get("error") or f"Recovered after server restart while {status}"
+                run["recovery"] = {
+                    "recovered": True,
+                    "scope": status,
+                    "at": now,
+                }
+                recovered_runs += 1
+                changed = True
+
+            for repair in state.get("repairs", []):
+                status = str(repair.get("status", ""))
+                if status not in {"queued", "in_progress"}:
+                    continue
+
+                repair["status"] = "blocked"
+                repair["finished_at"] = now
+                reason = f"Recovered after server restart while {status}"
+                repair["blocked_reason"] = reason
+                repair.setdefault("validation", {})
+                repair["validation"].update(
+                    {
+                        "status": "blocked",
+                        "improved": False,
+                        "reason": reason,
+                    }
+                )
+                repair.setdefault("transitions", []).append(
+                    {
+                        "status": "blocked",
+                        "at": now,
+                        "reason": "recovered_after_restart",
+                    }
+                )
+                repair["recovery"] = {
+                    "recovered": True,
+                    "scope": status,
+                    "at": now,
+                }
+                recovered_repairs += 1
+                changed = True
+
+            if changed:
+                self._save_state(state)
+
+        if recovered_runs or recovered_repairs:
+            logger.warning(
+                "Recovered orphaned work after restart: runs=%s repairs=%s",
+                recovered_runs,
+                recovered_repairs,
+            )
 
     def _parse_timestamp(self, value: Any) -> Optional[datetime]:
         if not value:

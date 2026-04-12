@@ -300,3 +300,47 @@ def test_quality_gate_not_ready_on_queue_pressure_or_timeout(tmp_path: Path, mon
     assert gate["ready_for_scenario_testing"] is False
     failed = [check for check in gate["checks"] if not check["ok"]]
     assert failed
+
+
+def test_startup_recovery_finalizes_orphaned_runs_and_repairs(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+
+    cp._atomic_write_json(
+        cp.CONTROL_STATE_FILE,
+        {
+            "scenario_state": {},
+            "safety": {"allow_write_runs": False, "updated_at": None},
+            "runs": [
+                {
+                    "id": "run-orphan",
+                    "status": "running",
+                    "created_at": _iso_age(180),
+                    "started_at": _iso_age(120),
+                }
+            ],
+            "repairs": [
+                {
+                    "id": "repair-orphan",
+                    "status": "in_progress",
+                    "created_at": _iso_age(180),
+                    "started_at": _iso_age(120),
+                    "transitions": [{"status": "queued", "at": _iso_age(240)}],
+                }
+            ],
+        },
+    )
+
+    plane = cp.HarnessControlPlane()
+    state = plane._load_state()
+
+    run = state["runs"][0]
+    repair = state["repairs"][0]
+
+    assert run["status"] == "error"
+    assert "Recovered after server restart" in str(run.get("error", ""))
+    assert run.get("recovery", {}).get("recovered") is True
+
+    assert repair["status"] == "blocked"
+    assert "Recovered after server restart" in str(repair.get("blocked_reason", ""))
+    assert repair.get("recovery", {}).get("recovered") is True
+    assert any(t.get("reason") == "recovered_after_restart" for t in repair.get("transitions", []))
