@@ -708,6 +708,16 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
             auth._creds = creds
             auth._save_token()
             
+            # Also save to credential_store so /connectors endpoint sees Google as connected
+            store = ss.get_cred_store()
+            store.save_token(
+                provider="google",
+                access_token=creds.token or "",
+                refresh_token=creds.refresh_token,
+                expires_in=3600,
+                scopes=list(creds.scopes or []),
+            )
+            
             # Connect services with the new credentials
             # Modify globals via state module
             
@@ -740,13 +750,13 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
             
             if has_calendar:
                 ss._google_calendar = ss.CalendarConnector(auth)
-                await _google_calendar.connect()
+                await ss._google_calendar.connect()
                 print("[OAUTH] Google Calendar connected!")
             
             if has_gmail:
                 from connectors.gmail import GmailConnector
                 ss._gmail_connector = GmailConnector(auth)
-                if await _gmail_connector.connect():
+                if await ss._gmail_connector.connect():
                     print("[OAUTH] Gmail connected!")
             
             # Rebuild engine
@@ -755,7 +765,7 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
             # Build a display of connected services
             services_display = []
             for svc in ['calendar', 'gmail', 'drive', 'contacts', 'photos', 'sheets', 'slides']:
-                if svc in _google_connected_services:
+                if svc in ss._google_connected_services:
                     services_display.append(f"{svc.title()}: ✓")
             connected_text = " | ".join(services_display) if services_display else "No services"
             

@@ -470,6 +470,11 @@ Remember: References like "the first one", "send it to him", "the information ab
         
     except Exception as e:
         logger.exception("Request error")
+        if session and session.react_state:
+            payload = ss.state_to_response(session.react_state)
+            payload["error"] = str(e)
+            payload["response"] = payload.get("response") or f"Error: {str(e)}"
+            return JSONResponse(payload)
         return JSONResponse({
             "error": str(e),
             "steps": [],
@@ -1540,7 +1545,14 @@ async def react_approve_stream(req: ReactApproveRequest):
                 pass
             error_msg = "Request was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
             yield f"data: {json.dumps({'event': 'error', 'message': error_msg})}\n\n"
-            yield f"data: {json.dumps({'event': 'complete', 'data': {'response': f'Error: {error_msg}', 'steps': [], 'pending_approval': None, 'is_complete': True}})}\n\n"
+            fallback_state = session.react_state if session and session.react_state else None
+            if fallback_state:
+                payload = ss.state_to_response(fallback_state)
+                payload["error"] = error_msg
+                payload["response"] = payload.get("response") or f"Error: {error_msg}"
+                yield f"data: {json.dumps({'event': 'complete', 'data': payload})}\n\n"
+            else:
+                yield f"data: {json.dumps({'event': 'complete', 'data': {'response': f'Error: {error_msg}', 'steps': [], 'pending_approval': None, 'is_complete': True}})}\n\n"
         finally:
             if applied_orch_mode:
                 if prev_orch_mode is None:

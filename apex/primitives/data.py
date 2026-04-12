@@ -138,10 +138,7 @@ Return ONLY a valid JSON object with the extracted values. Use null if not found
                 has_content = isinstance(content, str) and bool(content.strip())
                 has_data = data is not None and (not isinstance(data, (list, dict)) or len(data) > 0)
                 if not has_content and not has_data:
-                    return StepResult(
-                        False,
-                        error="Provide non-empty 'content' or 'data' when creating a document.",
-                    )
+                    content = str(params.get("title") or "Untitled document")
                 
                 if format_type == "csv" and data:
                     import csv

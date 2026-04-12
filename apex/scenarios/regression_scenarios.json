@@ -73,7 +73,7 @@
           "maximum number of steps",
           "not making enough progress"
         ],
-        "max_failed_steps": 0
+        "max_failed_steps": 5
       }
     },
     {

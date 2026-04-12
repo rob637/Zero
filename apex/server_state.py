@@ -226,6 +226,32 @@ _file_scanner = None
 # Credential store
 _credential_store = None
 
+# Optional startup orchestration
+_optional_startup_task: Optional[asyncio.Task] = None
+
+
+def _hydrate_llm_credentials_from_store() -> None:
+    """Populate missing LLM env vars from the encrypted credential store."""
+    try:
+        store = get_cred_store()
+    except Exception as e:
+        logger.debug(f"Credential store unavailable for LLM hydration: {e}")
+        return
+
+    for provider, env_var in {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+    }.items():
+        if os.environ.get(env_var):
+            continue
+        try:
+            api_key = store.get_api_key(provider)
+            if api_key:
+                os.environ[env_var] = api_key
+                logger.info(f"Loaded {provider} API key from encrypted credential store")
+        except Exception as e:
+            logger.warning(f"Failed loading {provider} API key from credential store: {e}")
+
 def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
     """Get or create the Telic engine singleton.
     
@@ -242,12 +268,24 @@ def get_telic_engine(force_rebuild: bool = False) -> Optional[TelicEngine]:
         _react_agent = None
         global _connectors_initialized
         _connectors_initialized = False
+
+    _hydrate_llm_credentials_from_store()
     
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    from llm_factory import get_llm_mode
+
+    llm_mode = get_llm_mode()
+    if llm_mode == "none":
         return None
-        
-    model = "anthropic/claude-sonnet-4-20250514" if os.environ.get("ANTHROPIC_API_KEY") else "gpt-4o-mini"
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key and llm_mode == "proxy":
+        # Engine primitives that need an API key can still run through proxy-backed paths.
+        api_key = "telic-proxy"
+
+    if os.environ.get("OPENAI_API_KEY"):
+        model = "gpt-4o-mini"
+    else:
+        model = "anthropic/claude-sonnet-4-20250514"
     
     # Auto-discover connectors from registry + credentials
     connectors = _build_connectors_from_registry()
@@ -530,6 +568,8 @@ def get_react_agent() -> Optional[ReActAgent]:
     
     if _react_agent is not None:
         return _react_agent
+
+    _hydrate_llm_credentials_from_store()
     
     # Need API key
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -628,6 +668,8 @@ def get_devtools() -> UnifiedDevTools:
 async def startup_event(app=None):
     """Try to reconnect Google services if tokens exist from previous session."""
     global _google_calendar, _gmail_connector, _google_connected_services
+
+    _hydrate_llm_credentials_from_store()
     
     if not HAS_GOOGLE_CALENDAR:
         logger.info("Google API libraries not available")
@@ -657,6 +699,19 @@ async def startup_event(app=None):
             
             if creds and creds.valid:
                 auth._creds = creds
+                
+                # Mirror to credential_store so /connectors shows is_connected=true
+                try:
+                    _cred_store = get_cred_store()
+                    _cred_store.save_token(
+                        provider="google",
+                        access_token=creds.token or "",
+                        refresh_token=creds.refresh_token,
+                        expires_in=3600,
+                        scopes=list(creds.scopes or []),
+                    )
+                except Exception:
+                    pass
                 
                 # Check what scopes we have - populate _google_connected_services
                 token_scopes = set(creds.scopes or [])
@@ -905,25 +960,48 @@ async def startup_event(app=None):
     except Exception as e:
         logger.warning(f"Data index/sync failed (non-fatal): {e}")
 
+    _start_optional_services(app)
+
+
+def _start_optional_services(app=None) -> None:
+    """Launch non-critical startup work in the background.
+
+    The API should become reachable even if semantic search, webhooks, or other
+    auxiliary services are slow or degraded.
+    """
+    global _optional_startup_task
+
+    if _optional_startup_task and not _optional_startup_task.done():
+        return
+
+    _optional_startup_task = asyncio.create_task(_run_optional_startup(app))
+
+
+async def _run_optional_startup(app=None) -> None:
+    """Initialize optional subsystems without blocking API readiness."""
+    global _semantic_search, _file_scanner
+
+    logger.info("Optional startup tasks scheduled in background")
+
     # Initialize semantic search (vector embeddings)
-    global _semantic_search
     if _data_index is None:
         logger.info("Skipping semantic search (data index not available)")
     else:
         try:
             from semantic_search import SemanticSearch
-            _semantic_search = SemanticSearch(_data_index)
-            if await _semantic_search.initialize():
-                # Wire into sync engine so new data gets embedded automatically
+
+            semantic_search = SemanticSearch(_data_index)
+            init_timeout_s = float(os.environ.get("TELIC_SEMANTIC_STARTUP_TIMEOUT_SECONDS", "20"))
+            initialized = await asyncio.wait_for(semantic_search.initialize(), timeout=init_timeout_s)
+            if initialized:
+                _semantic_search = semantic_search
                 if _sync_engine:
                     _sync_engine.set_semantic_search(_semantic_search)
-                # Wire into search primitive for agent tool access
                 try:
                     from apex_engine import set_semantic_search as set_ss
                     set_ss(_semantic_search)
                 except Exception:
                     pass
-                # Embed any existing un-embedded objects in background
                 asyncio.create_task(_semantic_search.embed_all())
                 ss_stats = _semantic_search.stats
                 if ss_stats.get("backend") in {"hash", "charhash"}:
@@ -934,7 +1012,9 @@ async def startup_event(app=None):
                 logger.info(f"Semantic search ready: {ss_stats}")
             else:
                 logger.info("Semantic search: no embedding backend available (non-fatal)")
-                _semantic_search = None
+        except asyncio.TimeoutError:
+            logger.warning("Semantic search init timed out; continuing without blocking server readiness")
+            _semantic_search = None
         except Exception as e:
             logger.warning(f"Semantic search init failed (non-fatal): {e}")
             _semantic_search = None
@@ -946,12 +1026,10 @@ async def startup_event(app=None):
         if _webhook_manager:
             if app:
                 _webhook_manager.register_routes(app)
-            # Setup webhook subscriptions (only works with WEBHOOK_BASE_URL)
             webhook_result = await _webhook_manager.setup_all(
                 calendar_connector=_google_calendar,
                 gmail_connector=_gmail_connector,
             )
-            # Always start smart prefetch (works without public URL)
             await _webhook_manager.start_prefetch()
             logger.info(f"Webhooks: {webhook_result}")
             logger.info("Smart prefetch started")
@@ -959,7 +1037,6 @@ async def startup_event(app=None):
         logger.warning(f"Webhooks/prefetch init failed (non-fatal): {e}")
 
     # Auto-start local file scanner if user previously opted in
-    global _file_scanner
     try:
         if _data_index:
             from local_files import load_settings, LocalFileScanner
@@ -1277,6 +1354,8 @@ async def get_session_agent(session: Optional[UserSession] = None, force_new: bo
     
     if session.agent is not None:
         return session.agent
+
+    _hydrate_llm_credentials_from_store()
     
     # Need API key or proxy
     from llm_factory import get_llm_mode

@@ -26,6 +26,7 @@ import asyncio
 import logging
 import os
 import subprocess
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -33,6 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import json
 
 import httpx
+from connectors.base import ConnectorHealth
 
 logger = logging.getLogger(__name__)
 
@@ -462,6 +464,43 @@ class GitHubConnector:
     @property
     def current_user(self) -> Optional[GitHubUser]:
         return self._user
+
+    async def check_health(self):
+        """Return connector health and latency for orchestration quality gates."""
+        @dataclass
+        class _HealthSnapshot:
+            status: Any
+            latency_ms: Optional[float] = None
+            detail: Optional[str] = None
+
+            def to_dict(self) -> Dict[str, Any]:
+                status_val = getattr(self.status, "value", str(self.status))
+                return {
+                    "status": status_val,
+                    "latency_ms": self.latency_ms,
+                    "detail": self.detail,
+                }
+
+        if not self._connected or not self._client:
+            return _HealthSnapshot(status=ConnectorHealth.DISCONNECTED, detail="not_connected")
+
+        t0 = time.perf_counter()
+        try:
+            # Lightweight authenticated call that exercises token validity.
+            resp = await self._client.get("/rate_limit")
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+
+            if resp.status_code == 401:
+                return _HealthSnapshot(status=ConnectorHealth.AUTH_REQUIRED, latency_ms=elapsed_ms, detail="unauthorized")
+            if resp.status_code >= 400:
+                return _HealthSnapshot(status=ConnectorHealth.DEGRADED, latency_ms=elapsed_ms, detail=f"http_{resp.status_code}")
+            return _HealthSnapshot(status=ConnectorHealth.HEALTHY, latency_ms=elapsed_ms)
+        except httpx.TimeoutException:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return _HealthSnapshot(status=ConnectorHealth.DEGRADED, latency_ms=elapsed_ms, detail="timeout")
+        except Exception as e:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return _HealthSnapshot(status=ConnectorHealth.UNHEALTHY, latency_ms=elapsed_ms, detail=str(e))
     
     # === API Methods ===
     
@@ -708,9 +747,16 @@ class GitHubConnector:
             params["all"] = "true"
         if participating:
             params["participating"] = "true"
-        
-        data = await self._get("/notifications", params)
-        return [GitHubNotification.from_api(n) for n in data]
+
+        try:
+            data = await self._get("/notifications", params)
+            return [GitHubNotification.from_api(n) for n in data]
+        except httpx.HTTPStatusError as e:
+            # Some tokens do not include notifications scope; treat as no notifications.
+            if e.response is not None and e.response.status_code == 403:
+                logger.warning("GitHub notifications unavailable (403); returning empty list")
+                return []
+            raise
     
     async def get_unread_count(self) -> int:
         """Get count of unread notifications."""

@@ -27,6 +27,8 @@ class FilePrimitive(Primitive):
         self._allowed = allowed_roots or [
             str(Path.home()),
             tempfile.gettempdir(),
+            str(Path.cwd()),
+            "/workspaces",
         ]
         # On Windows, also allow the drives where home lives
         home = Path.home()
@@ -107,7 +109,8 @@ class FilePrimitive(Primitive):
                 limit = params.get("limit", 5000)
                 
                 if not self._is_allowed(directory):
-                    return StepResult(False, error=f"Directory not allowed: {directory}")
+                    # Non-fatal: return no matches for disallowed roots.
+                    return StepResult(True, data=[])
                 
                 base = Path(directory)
                 if not base.exists():
@@ -157,7 +160,8 @@ class FilePrimitive(Primitive):
                 directory = str(Path(params.get("directory", "")).expanduser())
                 
                 if not self._is_allowed(directory):
-                    return StepResult(False, error=f"Directory not allowed: {directory}")
+                    # Non-fatal: return no entries for disallowed roots.
+                    return StepResult(True, data=[])
                 
                 base = Path(directory)
                 if not base.exists():

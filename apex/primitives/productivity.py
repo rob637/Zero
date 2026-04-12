@@ -605,7 +605,7 @@ class TaskPrimitive(Primitive):
                 return StepResult(True, data={"deleted": before != len(self._tasks)})
             
             elif operation == "search":
-                query = params.get("query", "").lower()
+                query = (params.get("query") or "").lower()
                 
                 # Try local index first
                 idx = get_data_index()

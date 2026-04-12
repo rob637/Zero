@@ -1,0 +1,106 @@
+name: Scenario Campaign
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Scenario suite to run"
+        required: true
+        default: nightly
+        type: choice
+        options:
+          - core
+          - nightly
+          - all
+      iterations:
+        description: "Max campaign iterations"
+        required: true
+        default: "3"
+      shard_total:
+        description: "Total shards"
+        required: true
+        default: "4"
+  schedule:
+    - cron: "0 7 * * *"
+
+jobs:
+  campaign:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3]
+    defaults:
+      run:
+        working-directory: apex
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start API
+        env:
+          PYTHONPATH: /home/runner/work/Zero/Zero:/home/runner/work/Zero/Zero/apex
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          nohup python server.py > /tmp/telic-server.log 2>&1 &
+          echo $! > /tmp/telic-server.pid
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          for _ in range(90):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2):
+                      print('server_ready')
+                      raise SystemExit(0)
+              except Exception:
+                  time.sleep(1)
+          raise SystemExit('server_failed_to_start')
+          PY
+
+      - name: Run scenario campaign shard
+        env:
+          PYTHONPATH: /home/runner/work/Zero/Zero:/home/runner/work/Zero/Zero/apex
+        run: |
+          SUITE="${{ github.event.inputs.suite || 'nightly' }}"
+          ITERS="${{ github.event.inputs.iterations || '3' }}"
+          SHARDS="${{ github.event.inputs.shard_total || '4' }}"
+
+          python tools/run_scenarios.py \
+            --base-url http://127.0.0.1:8000 \
+            --suite "$SUITE" \
+            --iterations "$ITERS" \
+            --rerun-failed-only \
+            --max-no-improvement 1 \
+            --allow-failures \
+            --auto-approve \
+            --shard-total "$SHARDS" \
+            --shard-index "${{ matrix.shard_index }}" \
+            --out-dir "scenarios/reports/campaign-${{ matrix.shard_index }}"
+
+      - name: Upload shard reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-campaign-shard-${{ matrix.shard_index }}
+          path: |
+            apex/scenarios/reports/campaign-${{ matrix.shard_index }}/
+            /tmp/telic-server.log
+
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -f /tmp/telic-server.pid ]; then
+            kill $(cat /tmp/telic-server.pid) || true
+          fi

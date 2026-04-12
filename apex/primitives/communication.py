@@ -188,7 +188,19 @@ class EmailPrimitive(Primitive):
                 })
             
             elif operation in ["search", "list"]:
-                # Try local index first
+                connector = self._resolve_connector()
+                list_func = self._list or (connector.list_messages if connector and hasattr(connector, "list_messages") else None)
+                if list_func:
+                    try:
+                        result = await list_func(
+                            query=params.get("query", ""),
+                            max_results=params.get("limit", 10),
+                        )
+                        return StepResult(True, data=result)
+                    except Exception as e:
+                        print(f"[EMAIL] Live API list failed, falling back to index: {e}")
+
+                # Fallback: local index for offline/degraded mode
                 idx = get_data_index()
                 query_text = params.get("query", "")
                 if idx and not idx.is_stale("gmail"):
@@ -209,18 +221,9 @@ class EmailPrimitive(Primitive):
                                 for r in results
                             ])
                     except Exception as e:
-                        print(f"[EMAIL] Index query failed, falling through to API: {e}")
+                        print(f"[EMAIL] Index query failed: {e}")
 
-                connector = self._resolve_connector()
-                list_func = self._list or (connector.list_messages if connector and hasattr(connector, "list_messages") else None)
-                if not list_func:
-                    return StepResult(False, error="Email listing not configured")
-                
-                result = await list_func(
-                    query=params.get("query", ""),
-                    max_results=params.get("limit", 10),
-                )
-                return StepResult(True, data=result)
+                return StepResult(False, error="Email listing not configured")
             
             elif operation == "read":
                 connector = self._resolve_connector()
@@ -232,10 +235,20 @@ class EmailPrimitive(Primitive):
                 if not message_id:
                     return StepResult(False, error="message_id is required")
                 
-                email = await read_func(message_id)
-                if hasattr(email, 'to_dict'):
-                    return StepResult(True, data=email.to_dict())
-                return StepResult(True, data=email)
+                try:
+                    email = await read_func(message_id)
+                    if hasattr(email, 'to_dict'):
+                        return StepResult(True, data=email.to_dict())
+                    return StepResult(True, data=email)
+                except Exception as e:
+                    err = str(e).lower()
+                    if "not found" in err or "404" in err:
+                        return StepResult(True, data={
+                            "id": message_id,
+                            "status": "missing",
+                            "warning": "Message no longer exists in provider mailbox",
+                        })
+                    raise
             
             elif operation == "reply":
                 connector = self._resolve_connector()
@@ -319,13 +332,26 @@ class EmailPrimitive(Primitive):
                 connector = self._resolve_connector()
                 if not connector or not hasattr(connector, "get_thread"):
                     return StepResult(False, error="Threads not supported by this email provider")
-                result = await connector.get_thread(params["thread_id"])
-                return StepResult(True, data=result)
+                try:
+                    result = await connector.get_thread(params["thread_id"])
+                    return StepResult(True, data=result)
+                except Exception as e:
+                    err = str(e).lower()
+                    if "not found" in err or "404" in err:
+                        return StepResult(True, data={
+                            "thread_id": params["thread_id"],
+                            "messages": [],
+                            "status": "missing",
+                            "warning": "Thread no longer exists in provider mailbox",
+                        })
+                    raise
             
             else:
                 return StepResult(False, error=f"Unknown operation: {operation}")
                 
         except Exception as e:
+            if operation in {"search", "list"}:
+                return StepResult(True, data=[])
             return StepResult(False, error=str(e))
 
 
@@ -392,7 +418,7 @@ class ContactsPrimitive(Primitive):
             provider = self._get_provider(provider_name)
             
             if operation == "search":
-                query = params.get("query", "").lower()
+                query = (params.get("query") or "").lower()
                 
                 # Try local index first
                 idx = get_data_index()
@@ -473,6 +499,8 @@ class ContactsPrimitive(Primitive):
                 return StepResult(False, error=f"Unknown operation: {operation}")
                 
         except Exception as e:
+            if operation in {"search", "list"}:
+                return StepResult(True, data=[])
             return StepResult(False, error=str(e))
 
 
@@ -547,6 +575,7 @@ class MessagePrimitive(Primitive):
             "channels": {
                 "provider": {"type": "str", "required": False, "description": "Provider name"},
                 "limit": {"type": "int", "required": False, "description": "Max channels to return"},
+                "guild_id": {"type": "str", "required": False, "description": "Server/workspace ID for providers that require it"},
             },
         }
     
@@ -667,8 +696,52 @@ class MessagePrimitive(Primitive):
             elif operation == "channels":
                 provider = self._get_provider(provider_name)
                 if provider and hasattr(provider, "list_channels"):
-                    result = await provider.list_channels(limit=params.get("limit", 50))
-                    return StepResult(True, data=result)
+                    import inspect
+
+                    limit = params.get("limit", 50)
+                    guild_id = params.get("guild_id")
+                    list_fn = provider.list_channels
+
+                    try:
+                        if guild_id:
+                            result = await list_fn(guild_id=guild_id, limit=limit)
+                            return StepResult(True, data=result)
+
+                        sig = inspect.signature(list_fn)
+                        guild_param = sig.parameters.get("guild_id")
+                        needs_guild = bool(guild_param and guild_param.default is inspect._empty)
+
+                        if not needs_guild:
+                            result = await list_fn(limit=limit)
+                            return StepResult(True, data=result)
+
+                        if hasattr(provider, "list_guilds"):
+                            guilds = await provider.list_guilds()
+                            channels = []
+                            for g in guilds[:3]:
+                                gid = g.get("id") if isinstance(g, dict) else getattr(g, "id", None)
+                                if not gid:
+                                    continue
+                                try:
+                                    chunk = await list_fn(guild_id=gid, limit=limit)
+                                except TypeError:
+                                    chunk = await list_fn(gid, limit=limit)
+                                if isinstance(chunk, list):
+                                    channels.extend(chunk)
+                                if len(channels) >= limit:
+                                    break
+                            return StepResult(True, data=channels[:limit])
+
+                        return StepResult(
+                            False,
+                            error="Provider requires 'guild_id' to list channels and does not expose guild discovery",
+                        )
+                    except TypeError:
+                        # Compatibility with positional-only implementations.
+                        if guild_id:
+                            result = await list_fn(guild_id, limit=limit)
+                            return StepResult(True, data=result)
+                        return StepResult(False, error="Missing 'guild_id' parameter for channel listing")
                 
                 return StepResult(True, data=[])
             

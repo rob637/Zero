@@ -47,6 +47,7 @@ jobs:
         env:
           PYTHONPATH: /home/runner/work/Zero/Zero:/home/runner/work/Zero/Zero/apex
           OPENAI_API_KEY: test-key
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           nohup python server.py > /tmp/telic-server.log 2>&1 &
           echo $! > /tmp/telic-server.pid

@@ -666,6 +666,13 @@ When you have completed the task, respond with a summary of what was done."""
         if len(unique_names) > self.LOW_NOVELTY_MAX_UNIQUE_TOOLS:
             return False
 
+        # If parameters keep changing, treat this as meaningful exploration
+        # even when the same tool name repeats.
+        signatures = [self._side_effect_signature(s.tool_call) or s.tool_call.name for s in recent]
+        unique_signatures = set(signatures)
+        if len(unique_signatures) >= max(4, window // 2):
+            return False
+
         dominant = Counter(names).most_common(1)[0][1] / max(len(names), 1)
         if dominant < self.LOW_NOVELTY_DOMINANT_RATIO:
             return False
@@ -979,6 +986,10 @@ def primitives_to_tools(primitives: Dict[str, Any], connected_only: bool = True)
         "translate", "knowledge", "intelligence", "patterns", "notify",
         "browser", "weather", "news", "finance", "home", "shopping",
         "devtools",
+        # Keep core productivity primitives callable even when providers are not
+        # connected so orchestration can degrade gracefully instead of avoiding
+        # the correct primitive class entirely.
+        "email", "calendar", "task", "photo", "contacts", "message",
     }
 
     tools = []

@@ -9,16 +9,22 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
+import random
 import re
 import sys
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+
+from harness.harness_dashboard import HarnessDashboard
+from harness.scenario_campaign_engine import CampaignIteration, ScenarioCampaignEngine
 
 
 @dataclass
@@ -35,9 +41,63 @@ class ScenarioResult:
     run_data: Dict[str, Any]
 
 
+@dataclass
+class IterationSummary:
+    iteration: int
+    total: int
+    passed: int
+    failed: int
+    pass_rate: float
+    failed_ids: List[str]
+    top_failure_signatures: List[Tuple[str, int]]
+
+
+def _scenario_result_to_dict(result: ScenarioResult) -> Dict[str, Any]:
+    return {
+        "id": result.scenario_id,
+        "name": result.name,
+        "passed": result.passed,
+        "duration_seconds": round(result.duration_seconds, 3),
+        "approvals_used": result.approvals_used,
+        "failed_steps": result.failed_steps,
+        "tool_names": result.tool_names,
+        "issues": result.issues,
+        "response_preview": result.response_preview,
+        "run_data": result.run_data,
+    }
+
+
 def _load_scenarios(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _load_scenarios_from_dir(path: Path, glob: str) -> Dict[str, Any]:
+    files = sorted(path.glob(glob))
+    if not files:
+        return {"defaults": {}, "scenarios": []}
+
+    merged_defaults: Dict[str, Any] = {}
+    merged_scenarios: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    for file_path in files:
+        payload = _load_scenarios(file_path)
+        defaults = payload.get("defaults", {}) if isinstance(payload, dict) else {}
+        scenarios = payload.get("scenarios", []) if isinstance(payload, dict) else []
+        if defaults and not merged_defaults:
+            merged_defaults = defaults
+
+        for scenario in scenarios:
+            sid = scenario.get("id")
+            if not sid:
+                continue
+            if sid in seen_ids:
+                raise ValueError(f"Duplicate scenario id across files: {sid}")
+            seen_ids.add(sid)
+            merged_scenarios.append(scenario)
+
+    return {"defaults": merged_defaults, "scenarios": merged_scenarios}
 
 
 def _match_any(patterns: List[str], text: str) -> bool:
@@ -180,11 +240,16 @@ def _preflight(client: httpx.Client, base_url: str, timeout_s: float = 20.0) -> 
         "incorrect api key",
         "invalid_api_key",
         "no api key configured",
-        "authentication",
+        "authentication_error",
+        "failed to authenticate",
+        "invalid x-api-key",
+        "deployment could not be found on vercel",
+        "telic-proxy",
     ]
     for marker in blockers:
         if marker in text:
-            return f"llm_configuration_blocker: {marker}"
+            prefix = "proxy_configuration_blocker" if "proxy" in marker or "vercel" in marker else "llm_configuration_blocker"
+            return f"{prefix}: {marker}"
     return None
 
 
@@ -242,21 +307,7 @@ def _write_report(out_dir: Path, results: List[ScenarioResult]) -> None:
         "total": len(results),
         "passed": sum(1 for r in results if r.passed),
         "failed": sum(1 for r in results if not r.passed),
-        "results": [
-            {
-                "id": r.scenario_id,
-                "name": r.name,
-                "passed": r.passed,
-                "duration_seconds": round(r.duration_seconds, 3),
-                "approvals_used": r.approvals_used,
-                "failed_steps": r.failed_steps,
-                "tool_names": r.tool_names,
-                "issues": r.issues,
-                "response_preview": r.response_preview,
-                "run_data": r.run_data,
-            }
-            for r in results
-        ],
+        "results": [_scenario_result_to_dict(r) for r in results],
     }
 
     (out_dir / "scenario_report.json").write_text(json.dumps(json_payload, indent=2), encoding="utf-8")
@@ -295,10 +346,194 @@ def _write_report(out_dir: Path, results: List[ScenarioResult]) -> None:
     (out_dir / "scenario_report.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def _failure_signatures(results: List[ScenarioResult]) -> Counter:
+    signatures: Counter = Counter()
+    for r in results:
+        if r.passed:
+            continue
+        if r.issues:
+            for issue in r.issues:
+                signatures[issue] += 1
+        else:
+            signatures["unknown_failure"] += 1
+    return signatures
+
+
+def _summarize_iteration(iteration: int, results: List[ScenarioResult]) -> IterationSummary:
+    total = len(results)
+    passed = sum(1 for r in results if r.passed)
+    failed = total - passed
+    pass_rate = (passed / total) if total else 0.0
+    failed_ids = [r.scenario_id for r in results if not r.passed]
+    top_failure_signatures = _failure_signatures(results).most_common(12)
+    return IterationSummary(
+        iteration=iteration,
+        total=total,
+        passed=passed,
+        failed=failed,
+        pass_rate=pass_rate,
+        failed_ids=failed_ids,
+        top_failure_signatures=top_failure_signatures,
+    )
+
+
+def _write_campaign_report(out_dir: Path, campaign: Dict[str, Any]) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "campaign_report.json").write_text(json.dumps(campaign, indent=2), encoding="utf-8")
+
+    lines = [
+        "# Scenario Campaign Report",
+        "",
+        f"Generated: {campaign.get('generated_at', '')}",
+        f"Iterations Executed: {campaign.get('iterations_executed', 0)}",
+        f"Target Pass Rate: {campaign.get('target_pass_rate', 1.0):.2%}",
+        f"Final Pass Rate: {campaign.get('final_pass_rate', 0.0):.2%}",
+        f"Converged: {'yes' if campaign.get('converged') else 'no'}",
+        "",
+        "## Iteration Trend",
+        "",
+        "| Iteration | Total | Passed | Failed | Pass Rate | Top Failure Signatures |",
+        "|---:|---:|---:|---:|---:|---|",
+    ]
+
+    for it in campaign.get("iterations", []):
+        top = ", ".join(f"{name} ({count})" for name, count in it.get("top_failure_signatures", [])[:3])
+        lines.append(
+            f"| {it.get('iteration')} | {it.get('total')} | {it.get('passed')} | {it.get('failed')} | {it.get('pass_rate', 0.0):.2%} | {top or '-'} |"
+        )
+
+    lines.append("")
+    lines.append("## Final Failed Scenarios")
+    lines.append("")
+    failed_ids = campaign.get("final_failed_ids", [])
+    if not failed_ids:
+        lines.append("None")
+    else:
+        for sid in failed_ids:
+            lines.append(f"- {sid}")
+
+    (out_dir / "campaign_report.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_harness_report(
+    out_dir: Path,
+    dashboard: HarnessDashboard,
+    campaign_iteration: CampaignIteration,
+    *,
+    generated_at: str,
+) -> Dict[str, Any]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    health = dashboard.render_health_check()
+    export = dashboard.export_json()
+    harness_payload = {
+        "generated_at": generated_at,
+        "summary": export.get("global_stats", {}),
+        "health": health,
+        "campaign_iteration": campaign_iteration.to_dict(),
+        "scenarios": export.get("scenarios", []),
+        "iterations": export.get("iterations", []),
+    }
+    (out_dir / "harness_report.json").write_text(json.dumps(harness_payload, indent=2), encoding="utf-8")
+
+    lines = [
+        "# Harness Report",
+        "",
+        f"Generated: {generated_at}",
+        "",
+        "## Dashboard",
+        "",
+        "```text",
+        dashboard.render_summary().strip("\n"),
+        dashboard.render_table().strip("\n"),
+        "```",
+        "",
+        "## Health",
+        "",
+        f"Critical: {len(health.get('critical', []))}",
+        f"Warning: {len(health.get('warning', []))}",
+        f"Healthy: {len(health.get('healthy', []))}",
+        "",
+        "## Rerun Queue",
+        "",
+    ]
+
+    if campaign_iteration.rerun_queue:
+        for scenario_id in campaign_iteration.rerun_queue:
+            lines.append(f"- {scenario_id}")
+    else:
+        lines.append("No reruns queued.")
+
+    lines.extend([
+        "",
+        "## Diagnosed Failures",
+        "",
+    ])
+
+    if campaign_iteration.diagnosed_failures:
+        for failure in campaign_iteration.diagnosed_failures:
+            lines.append(f"### {failure.scenario_id} - {failure.scenario_name}")
+            lines.append("")
+            lines.append(f"- Category: {failure.category}")
+            lines.append(f"- Priority: {failure.remediation_priority}")
+            lines.append(f"- Remediable: {'yes' if failure.is_remediable else 'no'}")
+            lines.append(f"- Confidence: {failure.confidence:.0%}")
+            if failure.issues:
+                lines.append(f"- Issues: {', '.join(failure.issues[:3])}")
+            if failure.next_steps:
+                lines.append(f"- Next steps: {' | '.join(failure.next_steps[:3])}")
+            lines.append("")
+    else:
+        lines.append("No diagnosed failures.")
+
+    (out_dir / "harness_report.md").write_text("\n".join(lines), encoding="utf-8")
+    return harness_payload
+
+
+def _run_iteration(
+    client: httpx.Client,
+    base_url: str,
+    scenarios: List[Dict[str, Any]],
+    defaults: Dict[str, Any],
+    auto_approve: bool,
+) -> List[ScenarioResult]:
+    results: List[ScenarioResult] = []
+    for scenario in scenarios:
+        sid = scenario.get("id", "?")
+        name = scenario.get("name", sid)
+        print(f"[RUN] {sid}: {name}")
+        try:
+            result = _run_scenario(
+                client=client,
+                base_url=base_url,
+                scenario=scenario,
+                defaults=defaults,
+                auto_approve=auto_approve,
+            )
+        except Exception as e:
+            result = ScenarioResult(
+                scenario_id=sid,
+                name=name,
+                passed=False,
+                duration_seconds=0.0,
+                approvals_used=0,
+                failed_steps=0,
+                tool_names=[],
+                issues=[f"runner_exception: {e}"],
+                response_preview="",
+                run_data={"classification": "runner", "raw": {}},
+            )
+        results.append(result)
+        print(f"[{'PASS' if result.passed else 'FAIL'}] {sid} ({result.duration_seconds:.1f}s)")
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Telic prompt scenarios and evaluate results.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Telic API base URL")
     parser.add_argument("--scenario-file", default="apex/scenarios/regression_scenarios.json", help="Scenario spec JSON file")
+    parser.add_argument("--scenario-dir", default="", help="Directory with scenario JSON files to merge")
+    parser.add_argument("--scenario-glob", default="*.json", help="Glob used with --scenario-dir")
     parser.add_argument("--scenario", action="append", default=[], help="Scenario ID to run (repeatable)")
     parser.add_argument(
         "--suite",
@@ -309,6 +544,29 @@ def main() -> int:
     parser.add_argument("--auto-approve", action="store_true", help="Automatically approve pending actions")
     parser.add_argument("--out-dir", default="apex/scenarios/reports/latest", help="Output report directory")
     parser.add_argument("--allow-failures", action="store_true", help="Always exit 0 even on scenario failures")
+    parser.add_argument("--iterations", type=int, default=1, help="Run iterative campaign for N iterations")
+    parser.add_argument(
+        "--target-pass-rate",
+        type=float,
+        default=1.0,
+        help="Stop when pass rate reaches this threshold (0.0-1.0)",
+    )
+    parser.add_argument(
+        "--max-no-improvement",
+        type=int,
+        default=2,
+        help="Stop after this many non-improving iterations",
+    )
+    parser.add_argument(
+        "--rerun-failed-only",
+        action="store_true",
+        help="After the first iteration, run only failed scenarios to accelerate triage",
+    )
+    parser.add_argument("--scenario-limit", type=int, default=0, help="Cap number of loaded scenarios (0 = all)")
+    parser.add_argument("--shard-index", type=int, default=0, help="0-based shard index for distributed runs")
+    parser.add_argument("--shard-total", type=int, default=1, help="Total shard count for distributed runs")
+    parser.add_argument("--shuffle", action="store_true", help="Shuffle scenario execution order")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed used when --shuffle is enabled")
     parser.add_argument(
         "--skip-preflight",
         action="store_true",
@@ -316,7 +574,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    spec = _load_scenarios(Path(args.scenario_file))
+    if args.scenario_dir:
+        spec = _load_scenarios_from_dir(Path(args.scenario_dir), args.scenario_glob)
+    else:
+        spec = _load_scenarios(Path(args.scenario_file))
     defaults = spec.get("defaults", {}) if isinstance(spec, dict) else {}
     scenarios = spec.get("scenarios", []) if isinstance(spec, dict) else []
     if not scenarios:
@@ -340,7 +601,39 @@ def main() -> int:
             print(f"No matching scenarios for ids={sorted(selected_ids)}", file=sys.stderr)
             return 2
 
-    results: List[ScenarioResult] = []
+    shard_total = max(1, int(args.shard_total))
+    shard_index = int(args.shard_index)
+    if shard_index < 0 or shard_index >= shard_total:
+        print(f"Invalid shard settings: shard_index={shard_index}, shard_total={shard_total}", file=sys.stderr)
+        return 2
+    if shard_total > 1:
+        scenarios = [s for i, s in enumerate(scenarios) if i % shard_total == shard_index]
+
+    if args.shuffle:
+        rng = random.Random(args.seed)
+        rng.shuffle(scenarios)
+
+    if args.scenario_limit and args.scenario_limit > 0:
+        scenarios = scenarios[: args.scenario_limit]
+
+    if not scenarios:
+        print("No scenarios selected after filters.", file=sys.stderr)
+        return 2
+
+    target_pass_rate = max(0.0, min(1.0, float(args.target_pass_rate)))
+    max_iterations = max(1, int(args.iterations))
+    max_no_improvement = max(0, int(args.max_no_improvement))
+
+    iterations_payload: List[Dict[str, Any]] = []
+    best_pass_rate = -1.0
+    stagnant_iters = 0
+    final_results: List[ScenarioResult] = []
+    current_scenarios = list(scenarios)
+    scenario_by_id = {s.get("id"): s for s in scenarios}
+    harness_engine = ScenarioCampaignEngine()
+    harness_dashboard = HarnessDashboard(harness_engine.tracking)
+    latest_campaign_iteration: Optional[CampaignIteration] = None
+    latest_generated_at: Optional[str] = None
 
     with httpx.Client(follow_redirects=True) as client:
         if not args.skip_preflight:
@@ -349,39 +642,115 @@ def main() -> int:
                 print(f"[BLOCKED] {blocker}", file=sys.stderr)
                 return 0 if args.allow_failures else 3
 
-        for scenario in scenarios:
-            sid = scenario.get("id", "?")
-            name = scenario.get("name", sid)
-            print(f"[RUN] {sid}: {name}")
-            try:
-                result = _run_scenario(
-                    client=client,
-                    base_url=args.base_url.rstrip("/"),
-                    scenario=scenario,
-                    defaults=defaults,
-                    auto_approve=args.auto_approve,
-                )
-            except Exception as e:
-                result = ScenarioResult(
-                    scenario_id=sid,
-                    name=name,
-                    passed=False,
-                    duration_seconds=0.0,
-                    approvals_used=0,
-                    failed_steps=0,
-                    tool_names=[],
-                    issues=[f"runner_exception: {e}"],
-                    response_preview="",
-                    run_data={"classification": "runner", "raw": {}},
-                )
-            results.append(result)
-            print(f"[{'PASS' if result.passed else 'FAIL'}] {sid} ({result.duration_seconds:.1f}s)")
+        for iteration in range(1, max_iterations + 1):
+            print(f"[ITERATION] {iteration}/{max_iterations} scenarios={len(current_scenarios)}")
+            run_results = _run_iteration(
+                client=client,
+                base_url=args.base_url.rstrip("/"),
+                scenarios=current_scenarios,
+                defaults=defaults,
+                auto_approve=args.auto_approve,
+            )
+            final_results = run_results
 
-    _write_report(Path(args.out_dir), results)
-    failed = [r for r in results if not r.passed]
+            iter_dir = Path(args.out_dir) / "iterations" / f"iter-{iteration:03d}"
+            _write_report(iter_dir, run_results)
+
+            campaign_iteration = harness_engine.ingest_results(run_results, iteration=iteration)
+            generated_at = datetime.now(timezone.utc).isoformat()
+            _write_harness_report(
+                iter_dir,
+                harness_dashboard,
+                campaign_iteration,
+                generated_at=generated_at,
+            )
+            latest_campaign_iteration = campaign_iteration
+            latest_generated_at = generated_at
+
+            summary = _summarize_iteration(iteration, run_results)
+            iterations_payload.append(
+                {
+                    "iteration": summary.iteration,
+                    "total": summary.total,
+                    "passed": summary.passed,
+                    "failed": summary.failed,
+                    "pass_rate": round(summary.pass_rate, 4),
+                    "failed_ids": summary.failed_ids,
+                    "top_failure_signatures": summary.top_failure_signatures,
+                    "rerun_queue": campaign_iteration.rerun_queue,
+                    "diagnosed_failures": [failure.to_dict() for failure in campaign_iteration.diagnosed_failures],
+                }
+            )
+
+            print(
+                f"[ITERATION_RESULT] pass_rate={summary.pass_rate:.2%} "
+                f"passed={summary.passed}/{summary.total} failed={summary.failed}"
+            )
+            if campaign_iteration.rerun_queue:
+                print(f"[HARNESS] prioritized reruns={','.join(campaign_iteration.rerun_queue[:5])}")
+
+            if summary.pass_rate >= target_pass_rate:
+                break
+
+            if summary.pass_rate > best_pass_rate:
+                best_pass_rate = summary.pass_rate
+                stagnant_iters = 0
+            else:
+                stagnant_iters += 1
+                if stagnant_iters > max_no_improvement:
+                    print(
+                        f"[STOP] no improvement for {stagnant_iters} iterations "
+                        f"(max_no_improvement={max_no_improvement})"
+                    )
+                    break
+
+            if args.rerun_failed_only:
+                prioritized_ids = campaign_iteration.rerun_queue
+                if not prioritized_ids:
+                    break
+                current_scenarios = [scenario_by_id[sid] for sid in prioritized_ids if sid in scenario_by_id]
+                if not current_scenarios:
+                    break
+
+    _write_report(Path(args.out_dir), final_results)
+
+    final_generated_at = latest_generated_at or datetime.now(timezone.utc).isoformat()
+    final_campaign_iteration = latest_campaign_iteration or CampaignIteration(
+        iteration=0,
+        total=0,
+        passed=0,
+        failed=0,
+        pass_rate=0.0,
+    )
+    final_harness_payload = _write_harness_report(
+        Path(args.out_dir),
+        harness_dashboard,
+        final_campaign_iteration,
+        generated_at=final_generated_at,
+    )
+
+    final_failed = [r for r in final_results if not r.passed]
+    final_pass_rate = (
+        (sum(1 for r in final_results if r.passed) / len(final_results)) if final_results else 0.0
+    )
+    campaign_payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "iterations_executed": len(iterations_payload),
+        "target_pass_rate": target_pass_rate,
+        "final_pass_rate": round(final_pass_rate, 4),
+        "converged": final_pass_rate >= target_pass_rate and len(final_failed) == 0,
+        "iterations": iterations_payload,
+        "final_failed_ids": [r.scenario_id for r in final_failed],
+        "final_rerun_queue": final_harness_payload.get("campaign_iteration", {}).get("rerun_queue", []),
+        "summary": final_harness_payload.get("summary", {}),
+    }
+    _write_campaign_report(Path(args.out_dir), campaign_payload)
+
     print(f"Wrote report to {args.out_dir}")
 
-    if failed and not args.allow_failures:
+    if final_failed and not args.allow_failures:
+        return 1
+    if final_pass_rate < target_pass_rate and not args.allow_failures:
         return 1
     return 0
 
