@@ -48,6 +48,10 @@ class IterationSummary:
     passed: int
     failed: int
     pass_rate: float
+    effective_total: int
+    effective_passed: int
+    effective_pass_rate: float
+    configuration_blocked: int
     failed_ids: List[str]
     top_failure_signatures: List[Tuple[str, int]]
 
@@ -124,6 +128,7 @@ def _collect_text_from_steps(steps: List[Dict[str, Any]]) -> str:
 def _classify_issue(issues: List[str], run_payload: Dict[str, Any]) -> str:
     text = "\n".join(issues + [json.dumps(run_payload, default=str)])
     patterns = [
+        (r"configuration_blocked", "configuration_blocked"),
         (r"not configured|api key|connect .* key", "configuration"),
         (r"403|404|429|getaddrinfo|dns|forbidden|not found", "external_dependency"),
         (r"timed out|timeout|maximum number of steps|not making enough progress", "orchestration"),
@@ -133,6 +138,79 @@ def _classify_issue(issues: List[str], run_payload: Dict[str, Any]) -> str:
         if re.search(pattern, text, flags=re.IGNORECASE):
             return label
     return "unknown"
+
+
+def _is_configuration_blocked(
+    *,
+    required_tools: List[str],
+    missing_tools: List[str],
+    steps: List[Dict[str, Any]],
+) -> bool:
+    if missing_tools:
+        return True
+
+    required = {tool for tool in required_tools}
+    if not required:
+        return False
+
+    failed_required_steps = [
+        step for step in steps
+        if step.get("status") == "failed" and str(step.get("tool", "")) in required
+    ]
+    if not failed_required_steps:
+        return False
+
+    availability_markers = (
+        "not available",
+        "not connected",
+        "unknown tool",
+        "tool unavailable",
+        "insufficientpermissions",
+        "insufficient permission",
+        "forbidden",
+        "requires authentication",
+        "connector returned not connected",
+        "missing credential",
+        "not configured",
+    )
+
+    for step in failed_required_steps:
+        step_text = "\n".join(
+            [
+                str(step.get("error") or ""),
+                json.dumps(step.get("result"), default=str),
+            ]
+        ).lower()
+        if any(marker in step_text for marker in availability_markers):
+            return True
+    return False
+
+
+def _summarize_outcomes(results: List[ScenarioResult]) -> Dict[str, Any]:
+    total = len(results)
+    passed = sum(1 for result in results if result.passed)
+    failed = total - passed
+    strict_pass_rate = (passed / total) if total else 0.0
+
+    configuration_blocked = sum(
+        1
+        for result in results
+        if str(result.run_data.get("classification", "")) == "configuration_blocked"
+    )
+    effective_total = max(0, total - configuration_blocked)
+    effective_passed = passed
+    effective_pass_rate = (effective_passed / effective_total) if effective_total else 1.0
+
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "strict_pass_rate": strict_pass_rate,
+        "effective_total": effective_total,
+        "effective_passed": effective_passed,
+        "effective_pass_rate": effective_pass_rate,
+        "configuration_blocked": configuration_blocked,
+    }
 
 
 def _evaluate(
@@ -155,6 +233,14 @@ def _evaluate(
     if missing_tools:
         issues.append(f"missing_tools: {missing_tools}")
 
+    configuration_blocked = _is_configuration_blocked(
+        required_tools=required_tools,
+        missing_tools=missing_tools,
+        steps=steps,
+    )
+    if configuration_blocked:
+        issues.append("configuration_blocked: required tools unavailable or unhealthy in current environment")
+
     forbidden_tools = checks.get("forbidden_tools", []) or []
     used_forbidden = [t for t in tool_names if t in forbidden_tools]
     if used_forbidden:
@@ -171,7 +257,7 @@ def _evaluate(
             issues.append(f"forbidden_output_pattern: {pattern}")
 
     max_failed_steps = checks.get("max_failed_steps")
-    if isinstance(max_failed_steps, int) and failed_steps > max_failed_steps:
+    if isinstance(max_failed_steps, int) and failed_steps > max_failed_steps and not configuration_blocked:
         issues.append(f"failed_steps_exceeded: {failed_steps} > {max_failed_steps}")
 
     step_text = _collect_text_from_steps(steps)
@@ -322,11 +408,18 @@ def _run_scenario(
 def _write_report(out_dir: Path, results: List[ScenarioResult]) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    summary = _summarize_outcomes(results)
+
     json_payload = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "total": len(results),
-        "passed": sum(1 for r in results if r.passed),
-        "failed": sum(1 for r in results if not r.passed),
+        "total": summary["total"],
+        "passed": summary["passed"],
+        "failed": summary["failed"],
+        "strict_pass_rate": round(float(summary["strict_pass_rate"]), 4),
+        "effective_total": summary["effective_total"],
+        "effective_passed": summary["effective_passed"],
+        "effective_pass_rate": round(float(summary["effective_pass_rate"]), 4),
+        "configuration_blocked": summary["configuration_blocked"],
         "results": [_scenario_result_to_dict(r) for r in results],
     }
 
@@ -338,6 +431,13 @@ def _write_report(out_dir: Path, results: List[ScenarioResult]) -> None:
         f"Total: {json_payload['total']}  ",
         f"Passed: {json_payload['passed']}  ",
         f"Failed: {json_payload['failed']}",
+        f"Strict Pass Rate: {json_payload['strict_pass_rate']:.2%}  ",
+        (
+            "Effective Pass Rate (excluding configuration-blocked scenarios): "
+            f"{json_payload['effective_pass_rate']:.2%} "
+            f"[{json_payload['effective_passed']}/{json_payload['effective_total']}]"
+        ),
+        f"Configuration-Blocked: {json_payload['configuration_blocked']}",
         "",
         "| ID | Name | Status | Duration(s) | Failed Steps | Classification |",
         "|---|---|---|---:|---:|---|",
@@ -380,18 +480,19 @@ def _failure_signatures(results: List[ScenarioResult]) -> Counter:
 
 
 def _summarize_iteration(iteration: int, results: List[ScenarioResult]) -> IterationSummary:
-    total = len(results)
-    passed = sum(1 for r in results if r.passed)
-    failed = total - passed
-    pass_rate = (passed / total) if total else 0.0
+    summary = _summarize_outcomes(results)
     failed_ids = [r.scenario_id for r in results if not r.passed]
     top_failure_signatures = _failure_signatures(results).most_common(12)
     return IterationSummary(
         iteration=iteration,
-        total=total,
-        passed=passed,
-        failed=failed,
-        pass_rate=pass_rate,
+        total=summary["total"],
+        passed=summary["passed"],
+        failed=summary["failed"],
+        pass_rate=float(summary["strict_pass_rate"]),
+        effective_total=summary["effective_total"],
+        effective_passed=summary["effective_passed"],
+        effective_pass_rate=float(summary["effective_pass_rate"]),
+        configuration_blocked=summary["configuration_blocked"],
         failed_ids=failed_ids,
         top_failure_signatures=top_failure_signatures,
     )
@@ -408,18 +509,21 @@ def _write_campaign_report(out_dir: Path, campaign: Dict[str, Any]) -> None:
         f"Iterations Executed: {campaign.get('iterations_executed', 0)}",
         f"Target Pass Rate: {campaign.get('target_pass_rate', 1.0):.2%}",
         f"Final Pass Rate: {campaign.get('final_pass_rate', 0.0):.2%}",
+        f"Final Effective Pass Rate: {campaign.get('final_effective_pass_rate', 0.0):.2%}",
+        f"Configuration-Blocked Scenarios: {campaign.get('configuration_blocked', 0)}",
         f"Converged: {'yes' if campaign.get('converged') else 'no'}",
         "",
         "## Iteration Trend",
         "",
-        "| Iteration | Total | Passed | Failed | Pass Rate | Top Failure Signatures |",
-        "|---:|---:|---:|---:|---:|---|",
+        "| Iteration | Total | Passed | Failed | Pass Rate | Effective Pass | Config Blocked | Top Failure Signatures |",
+        "|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
 
     for it in campaign.get("iterations", []):
         top = ", ".join(f"{name} ({count})" for name, count in it.get("top_failure_signatures", [])[:3])
         lines.append(
-            f"| {it.get('iteration')} | {it.get('total')} | {it.get('passed')} | {it.get('failed')} | {it.get('pass_rate', 0.0):.2%} | {top or '-'} |"
+            f"| {it.get('iteration')} | {it.get('total')} | {it.get('passed')} | {it.get('failed')} "
+            f"| {it.get('pass_rate', 0.0):.2%} | {it.get('effective_pass_rate', 0.0):.2%} | {it.get('configuration_blocked', 0)} | {top or '-'} |"
         )
 
     lines.append("")
@@ -695,6 +799,10 @@ def main() -> int:
                     "passed": summary.passed,
                     "failed": summary.failed,
                     "pass_rate": round(summary.pass_rate, 4),
+                    "effective_total": summary.effective_total,
+                    "effective_passed": summary.effective_passed,
+                    "effective_pass_rate": round(summary.effective_pass_rate, 4),
+                    "configuration_blocked": summary.configuration_blocked,
                     "failed_ids": summary.failed_ids,
                     "top_failure_signatures": summary.top_failure_signatures,
                     "rerun_queue": campaign_iteration.rerun_queue,
@@ -750,14 +858,16 @@ def main() -> int:
     )
 
     final_failed = [r for r in final_results if not r.passed]
-    final_pass_rate = (
-        (sum(1 for r in final_results if r.passed) / len(final_results)) if final_results else 0.0
-    )
+    final_summary = _summarize_outcomes(final_results)
+    final_pass_rate = float(final_summary["strict_pass_rate"])
+    final_effective_pass_rate = float(final_summary["effective_pass_rate"])
     campaign_payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "iterations_executed": len(iterations_payload),
         "target_pass_rate": target_pass_rate,
         "final_pass_rate": round(final_pass_rate, 4),
+        "final_effective_pass_rate": round(final_effective_pass_rate, 4),
+        "configuration_blocked": int(final_summary["configuration_blocked"]),
         "converged": final_pass_rate >= target_pass_rate and len(final_failed) == 0,
         "iterations": iterations_payload,
         "final_failed_ids": [r.scenario_id for r in final_failed],
