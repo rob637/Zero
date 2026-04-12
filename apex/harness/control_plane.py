@@ -58,6 +58,9 @@ class HarnessControlPlane:
         self._worker_task: Optional[asyncio.Task] = None
         self._repair_queue: asyncio.Queue[str] = asyncio.Queue()
         self._repair_worker_task: Optional[asyncio.Task] = None
+        self._repair_concurrency = 3
+        self._repair_semaphore = asyncio.Semaphore(self._repair_concurrency)
+        self._active_repair_tasks: Dict[str, asyncio.Task] = {}
 
     def _default_state(self) -> Dict[str, Any]:
         return {
@@ -398,11 +401,24 @@ class HarnessControlPlane:
         if self._repair_worker_task is None or self._repair_worker_task.done():
             self._repair_worker_task = asyncio.create_task(self._repair_worker_loop())
 
+    def _track_repair_task(self, repair_id: str, task: asyncio.Task) -> None:
+        self._active_repair_tasks[repair_id] = task
+
+        def _done(_: asyncio.Task) -> None:
+            self._active_repair_tasks.pop(repair_id, None)
+
+        task.add_done_callback(_done)
+
+    async def _execute_repair_with_limit(self, repair_id: str) -> None:
+        async with self._repair_semaphore:
+            await self._execute_repair(repair_id)
+
     async def _repair_worker_loop(self) -> None:
         while True:
             repair_id = await self._repair_queue.get()
             try:
-                await self._execute_repair(repair_id)
+                task = asyncio.create_task(self._execute_repair_with_limit(repair_id))
+                self._track_repair_task(repair_id, task)
             except Exception as exc:
                 logger.exception("Repair execution failed unexpectedly: %s", exc)
                 self._repair_transition(repair_id, "blocked", {"error": str(exc), "finished_at": _utc_now()})
@@ -730,6 +746,7 @@ class HarnessControlPlane:
 
         state = self._load_state()
         repairs = sorted(state.get("repairs", []), key=lambda item: item.get("created_at", ""), reverse=True)
+        repair_metrics = self._compute_repair_metrics(repairs)
 
         return {
             "generated_at": _utc_now(),
@@ -738,6 +755,58 @@ class HarnessControlPlane:
             "clusters": clusters,
             "diagnosed_failures": diagnosed,
             "repairs": repairs[:20],
+            "repair_metrics": repair_metrics,
+        }
+
+    def _compute_repair_metrics(self, repairs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        counts = {
+            "queued": 0,
+            "in_progress": 0,
+            "validated": 0,
+            "blocked": 0,
+            "other": 0,
+        }
+        completed = 0
+        improved = 0
+        durations: List[float] = []
+
+        for repair in repairs:
+            status = str(repair.get("status", "other"))
+            if status in counts:
+                counts[status] += 1
+            else:
+                counts["other"] += 1
+
+            validation = repair.get("validation", {}) or {}
+            if status in {"validated", "blocked"}:
+                completed += 1
+                if bool(validation.get("improved", False)):
+                    improved += 1
+
+            started_at = repair.get("started_at")
+            finished_at = repair.get("finished_at")
+            if started_at and finished_at:
+                try:
+                    started = datetime.fromisoformat(str(started_at))
+                    finished = datetime.fromisoformat(str(finished_at))
+                    durations.append(max(0.0, (finished - started).total_seconds()))
+                except Exception:
+                    pass
+
+        active_count = len(self._active_repair_tasks)
+        avg_duration = round(sum(durations) / len(durations), 2) if durations else 0.0
+        validated_rate = round((counts["validated"] / completed), 4) if completed else 0.0
+        improvement_rate = round((improved / completed), 4) if completed else 0.0
+
+        return {
+            "queue_depth": self._repair_queue.qsize(),
+            "active_workers": active_count,
+            "configured_workers": self._repair_concurrency,
+            "status_counts": counts,
+            "completed": completed,
+            "validated_rate": validated_rate,
+            "improvement_rate": improvement_rate,
+            "avg_completion_seconds": avg_duration,
         }
 
     def queue_repair(self, request: Dict[str, Any]) -> Dict[str, Any]:

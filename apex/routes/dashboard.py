@@ -380,6 +380,12 @@ h2{{font-size:18px;margin:30px 0 15px;color:#bbb;text-transform:uppercase}}
 </div>
 <div class="grid">
 <div class="span-12">
+<h2>Repair SLOs</h2>
+<div class="card" id="repair-metrics">Loading...</div>
+</div>
+</div>
+<div class="grid">
+<div class="span-12">
 <h2>Scenario Catalog</h2>
 <div class="card" id="scenario-catalog">Loading...</div>
 </div>
@@ -504,6 +510,8 @@ function renderRuns(payload) {{
 function renderFailureInsights(payload) {{
         const clusters = payload.clusters || [];
         const diagnosed = payload.diagnosed_failures || [];
+        const metrics = payload.repair_metrics || {{}};
+        const statusCounts = metrics.status_counts || {{}};
         const clusterHtml = clusters.length ? clusters.slice(0, 10).map(item => `
             <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                 <span><span class="pill">${{item.type}}</span>${{item.name}}</span>
@@ -528,6 +536,15 @@ function renderFailureInsights(payload) {{
                 <thead><tr><th>Scenario</th><th>Category</th><th>Issues</th><th>Suggested Next Steps</th></tr></thead>
                 <tbody>${{diagnosedRows || '<tr><td colspan="4" class="empty">No diagnosed failures</td></tr>'}}</tbody>
             </table>
+        `;
+
+        document.getElementById('repair-metrics').innerHTML = `
+            <div class="metric"><div class="metric-label">Queue Depth</div><div class="metric-value">${{metrics.queue_depth ?? 0}}</div></div>
+            <div class="metric"><div class="metric-label">Active Workers</div><div class="metric-value">${{metrics.active_workers ?? 0}}/${{metrics.configured_workers ?? 0}}</div></div>
+            <div class="metric"><div class="metric-label">Validated Rate</div><div class="metric-value">${{((metrics.validated_rate ?? 0) * 100).toFixed(1)}}%</div></div>
+            <div class="metric"><div class="metric-label">Improvement Rate</div><div class="metric-value">${{((metrics.improvement_rate ?? 0) * 100).toFixed(1)}}%</div></div>
+            <div class="metric"><div class="metric-label">Avg Completion</div><div class="metric-value">${{Number(metrics.avg_completion_seconds ?? 0).toFixed(1)}}s</div></div>
+            <div class="muted" style="margin-top:10px">status: queued=${{statusCounts.queued ?? 0}} · in_progress=${{statusCounts.in_progress ?? 0}} · validated=${{statusCounts.validated ?? 0}} · blocked=${{statusCounts.blocked ?? 0}}</div>
         `;
 }}
 
