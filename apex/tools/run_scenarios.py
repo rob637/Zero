@@ -267,11 +267,31 @@ def _run_scenario(
     session_id = f"scn-{scenario['id']}-{uuid.uuid4().hex[:8]}"
     t0 = time.perf_counter()
 
+    checks = scenario.get("checks", {}) if isinstance(scenario, dict) else {}
+    required_tools = checks.get("required_tools", []) or []
+    required_output_patterns = checks.get("required_output_patterns", []) or []
+    forbidden_error_patterns = checks.get("forbidden_error_patterns", []) or []
+    contract_lines = [
+        scenario["prompt"],
+        "",
+        "Scenario execution contract:",
+        "- Prefer calling required tools at least once when they are available in this environment.",
+        "- If a required tool is unavailable, state that explicitly in the final response.",
+        "- Produce a complete answer that satisfies the output requirements.",
+    ]
+    if required_tools:
+        contract_lines.append(f"- Required tools: {', '.join(map(str, required_tools))}")
+    if required_output_patterns:
+        contract_lines.append(f"- Required output signals: {', '.join(map(str, required_output_patterns))}")
+    if forbidden_error_patterns:
+        contract_lines.append(f"- Avoid these failure/error signatures: {', '.join(map(str, forbidden_error_patterns))}")
+    scenario_message = "\n".join(contract_lines)
+
     payload = _post_json(
         client,
         f"{base_url}/react/chat",
         {
-            "message": scenario["prompt"],
+            "message": scenario_message,
             "session_id": session_id,
             "orchestration_mode": orchestration_mode,
         },
