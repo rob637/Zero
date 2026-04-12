@@ -207,3 +207,53 @@ def test_repair_metrics_include_peak_worker_observation(tmp_path: Path, monkeypa
 
     metrics = plane._compute_repair_metrics([])
     assert metrics["max_active_observed"] == 2
+
+
+def test_run_history_retention_keeps_active_and_newest_terminal(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+    plane = cp.HarnessControlPlane()
+    plane._max_runs_history = 3
+
+    state = plane._default_state()
+    state["runs"] = [
+        {"id": "run-old-queued", "status": "queued", "created_at": _iso_age(300)},
+        {"id": "run-new-running", "status": "running", "created_at": _iso_age(20)},
+        {"id": "run-failed-old", "status": "failed", "created_at": _iso_age(250)},
+        {"id": "run-failed-mid", "status": "failed", "created_at": _iso_age(150)},
+        {"id": "run-passed-new", "status": "passed", "created_at": _iso_age(30)},
+    ]
+    plane._save_state(state)
+
+    saved = plane._load_state()
+    runs = saved["runs"]
+    kept_ids = {item["id"] for item in runs}
+
+    assert len(runs) == 3
+    assert "run-old-queued" in kept_ids
+    assert "run-new-running" in kept_ids
+    assert "run-passed-new" in kept_ids
+
+
+def test_repair_history_retention_keeps_in_progress_and_newest_terminal(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+    plane = cp.HarnessControlPlane()
+    plane._max_repairs_history = 3
+
+    state = plane._default_state()
+    state["repairs"] = [
+        {"id": "repair-old-queued", "status": "queued", "created_at": _iso_age(400)},
+        {"id": "repair-new-progress", "status": "in_progress", "created_at": _iso_age(20)},
+        {"id": "repair-blocked-old", "status": "blocked", "created_at": _iso_age(250)},
+        {"id": "repair-validated-mid", "status": "validated", "created_at": _iso_age(120)},
+        {"id": "repair-validated-new", "status": "validated", "created_at": _iso_age(30)},
+    ]
+    plane._save_state(state)
+
+    saved = plane._load_state()
+    repairs = saved["repairs"]
+    kept_ids = {item["id"] for item in repairs}
+
+    assert len(repairs) == 3
+    assert "repair-old-queued" in kept_ids
+    assert "repair-new-progress" in kept_ids
+    assert "repair-validated-new" in kept_ids

@@ -63,6 +63,8 @@ class HarnessControlPlane:
         self._active_repair_tasks: Dict[str, asyncio.Task] = {}
         self._repair_workers_in_flight = 0
         self._repair_max_active_observed = 0
+        self._max_runs_history = max(20, int(os.environ.get("HARNESS_MAX_RUN_HISTORY", "80")))
+        self._max_repairs_history = max(20, int(os.environ.get("HARNESS_MAX_REPAIR_HISTORY", "80")))
         self._run_timeout_seconds = max(60, int(os.environ.get("HARNESS_RUN_TIMEOUT_SECONDS", "2400")))
         self._repair_timeout_seconds = max(60, int(os.environ.get("HARNESS_REPAIR_TIMEOUT_SECONDS", "1800")))
 
@@ -183,9 +185,37 @@ class HarnessControlPlane:
         return state
 
     def _save_state(self, state: Dict[str, Any]) -> None:
-        state["runs"] = state.get("runs", [])[:50]
-        state["repairs"] = state.get("repairs", [])[:50]
+        state["runs"] = self._trim_history(
+            state.get("runs", []),
+            limit=self._max_runs_history,
+            active_statuses={"queued", "running"},
+        )
+        state["repairs"] = self._trim_history(
+            state.get("repairs", []),
+            limit=self._max_repairs_history,
+            active_statuses={"queued", "in_progress"},
+        )
         _atomic_write_json(CONTROL_STATE_FILE, state)
+
+    def _history_timestamp(self, item: Dict[str, Any]) -> str:
+        return str(item.get("created_at") or item.get("started_at") or item.get("finished_at") or "")
+
+    def _trim_history(self, items: List[Dict[str, Any]], *, limit: int, active_statuses: set[str]) -> List[Dict[str, Any]]:
+        if limit <= 0:
+            return []
+        if len(items) <= limit:
+            return items
+
+        active = [item for item in items if str(item.get("status", "")) in active_statuses]
+        terminal = [item for item in items if str(item.get("status", "")) not in active_statuses]
+
+        active_sorted = sorted(active, key=self._history_timestamp, reverse=True)
+        terminal_sorted = sorted(terminal, key=self._history_timestamp, reverse=True)
+
+        kept: List[Dict[str, Any]] = active_sorted[:limit]
+        if len(kept) < limit:
+            kept.extend(terminal_sorted[: limit - len(kept)])
+        return kept
 
     def _load_scenario_spec(self) -> Dict[str, Any]:
         payload = _safe_read_json(DEFAULT_SCENARIO_FILE, {"defaults": {}, "scenarios": []})
@@ -974,6 +1004,10 @@ class HarnessControlPlane:
             "timeouts": {
                 "run_seconds": self._run_timeout_seconds,
                 "repair_seconds": self._repair_timeout_seconds,
+            },
+            "retention": {
+                "max_run_history": self._max_runs_history,
+                "max_repair_history": self._max_repairs_history,
             },
             "runs": {
                 "queued": len(queued_run_ids),
