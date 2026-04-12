@@ -61,6 +61,103 @@ class HarnessControlPlane:
         self._repair_concurrency = 3
         self._repair_semaphore = asyncio.Semaphore(self._repair_concurrency)
         self._active_repair_tasks: Dict[str, asyncio.Task] = {}
+        self._run_timeout_seconds = max(60, int(os.environ.get("HARNESS_RUN_TIMEOUT_SECONDS", "2400")))
+        self._repair_timeout_seconds = max(60, int(os.environ.get("HARNESS_REPAIR_TIMEOUT_SECONDS", "1800")))
+
+    def _parse_timestamp(self, value: Any) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except Exception:
+            return None
+
+    def _seconds_since(self, value: Any) -> Optional[float]:
+        parsed = self._parse_timestamp(value)
+        if parsed is None:
+            return None
+        delta = (datetime.now(timezone.utc) - parsed).total_seconds()
+        return max(0.0, float(delta))
+
+    def _apply_watchdogs(self) -> None:
+        now = _utc_now()
+        with self._file_lock:
+            state = self._load_state()
+            changed = False
+
+            for run in state.get("runs", []):
+                status = str(run.get("status", ""))
+                if status not in {"queued", "running"}:
+                    continue
+
+                anchor = run.get("started_at") if status == "running" else run.get("created_at")
+                if anchor is None:
+                    anchor = run.get("created_at") or run.get("started_at")
+                age_seconds = self._seconds_since(anchor)
+                if age_seconds is None or age_seconds < self._run_timeout_seconds:
+                    continue
+
+                scope = "execution" if status == "running" else "queue"
+                reason = f"Run watchdog timeout while {scope}"
+                run["status"] = "error"
+                run["finished_at"] = now
+                run["error"] = run.get("error") or reason
+                run["watchdog"] = {
+                    "timed_out": True,
+                    "scope": scope,
+                    "age_seconds": round(age_seconds, 2),
+                    "at": now,
+                }
+                changed = True
+
+            for repair in state.get("repairs", []):
+                status = str(repair.get("status", ""))
+                if status not in {"queued", "in_progress"}:
+                    continue
+
+                anchor = repair.get("started_at") if status == "in_progress" else repair.get("created_at")
+                if anchor is None:
+                    anchor = repair.get("created_at") or repair.get("started_at")
+                age_seconds = self._seconds_since(anchor)
+                if age_seconds is None or age_seconds < self._repair_timeout_seconds:
+                    continue
+
+                reason = f"Repair watchdog timeout while {status}"
+                repair["status"] = "blocked"
+                repair["finished_at"] = now
+                repair["blocked_reason"] = reason
+                repair["watchdog"] = {
+                    "timed_out": True,
+                    "scope": status,
+                    "age_seconds": round(age_seconds, 2),
+                    "at": now,
+                }
+                repair.setdefault("validation", {})
+                repair["validation"].update(
+                    {
+                        "status": "blocked",
+                        "improved": False,
+                        "reason": reason,
+                        "policy": {
+                            "timeout_seconds": self._repair_timeout_seconds,
+                        },
+                    }
+                )
+                repair.setdefault("transitions", []).append(
+                    {
+                        "status": "blocked",
+                        "at": now,
+                        "reason": "watchdog_timeout",
+                        "age_seconds": round(age_seconds, 2),
+                    }
+                )
+                changed = True
+
+            if changed:
+                self._save_state(state)
 
     def _default_state(self) -> Dict[str, Any]:
         return {
@@ -680,6 +777,7 @@ class HarnessControlPlane:
             return current
 
     def get_runs(self) -> Dict[str, Any]:
+        self._apply_watchdogs()
         state = self._load_state()
         runs = sorted(state.get("runs", []), key=lambda item: item.get("created_at", ""), reverse=True)
         active = next((run for run in runs if run.get("status") == "running"), None)
@@ -692,6 +790,7 @@ class HarnessControlPlane:
         }
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        self._apply_watchdogs()
         state = self._load_state()
         for run in state.get("runs", []):
             if run.get("id") == run_id:
@@ -728,6 +827,7 @@ class HarnessControlPlane:
         }
 
     def get_failure_insights(self) -> Dict[str, Any]:
+        self._apply_watchdogs()
         harness = _safe_read_json(LATEST_REPORTS_DIR / "harness_report.json", {})
         campaign = _safe_read_json(LATEST_REPORTS_DIR / "campaign_report.json", {})
         iteration = harness.get("campaign_iteration", {}) if isinstance(harness, dict) else {}
