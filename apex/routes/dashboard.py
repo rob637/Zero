@@ -197,6 +197,11 @@ async def get_runtime_diagnostics():
     return get_harness_control_plane().get_runtime_diagnostics()
 
 
+@router.get("/api/quality/gate")
+async def get_quality_gate():
+    return get_harness_control_plane().get_quality_gate_status()
+
+
 @router.post("/api/repairs")
 async def queue_repair(payload: RepairQueueRequest):
     try:
@@ -393,6 +398,12 @@ h2{{font-size:18px;margin:30px 0 15px;color:#bbb;text-transform:uppercase}}
 <div class="span-12">
 <h2>Runtime Diagnostics</h2>
 <div class="card" id="runtime-diagnostics">Loading...</div>
+</div>
+</div>
+<div class="grid">
+<div class="span-12">
+<h2>Scenario Readiness Gate</h2>
+<div class="card" id="quality-gate">Loading...</div>
 </div>
 </div>
 <div class="grid">
@@ -598,6 +609,25 @@ function renderRuntimeDiagnostics(payload) {{
     `;
 }}
 
+function renderQualityGate(payload) {{
+    const ready = !!payload.ready_for_scenario_testing;
+    const checks = payload.checks || [];
+    const checkRows = checks.map(check => `
+        <div style="display:flex;justify-content:space-between;margin-top:8px">
+            <span>${{check.name}}</span>
+            <span class="status-badge status-${{check.ok ? 'pass' : 'fail'}}">${{check.ok ? 'PASS' : 'FAIL'}}</span>
+        </div>
+        <div class="muted">${{check.details || ''}}</div>
+    `).join('');
+    document.getElementById('quality-gate').innerHTML = `
+        <div style="margin-bottom:8px">
+            <span class="status-badge status-${{ready ? 'pass' : 'fail'}}">${{ready ? 'READY FOR SCENARIO TESTING' : 'NOT READY'}}</span>
+        </div>
+        <div class="muted">This gate is computed from bounded concurrency, queue pressure, and recent watchdog timeout signals.</div>
+        ${{checkRows || '<div class="empty">No checks available</div>'}}
+    `;
+}}
+
 async function loadRepairDetail(repairId) {{
     const repair = await api(`/dashboard/api/repairs/${{repairId}}`);
     const transitions = (repair.transitions || []).map(t => `${{t.status}} @ ${{t.at}}`).join(' -> ');
@@ -687,13 +717,14 @@ function renderCatalog(payload) {{
 }}
 
 async function refreshDashboard() {{
-    const [connectors, runs, scenarios, failures, repairs, diagnostics, environment, safety] = await Promise.all([
+    const [connectors, runs, scenarios, failures, repairs, diagnostics, qualityGate, environment, safety] = await Promise.all([
         api('/dashboard/api/connectors/status'),
         api('/dashboard/api/runs'),
         api('/dashboard/api/scenarios'),
         api('/dashboard/api/failures/latest'),
         api('/dashboard/api/repairs'),
         api('/dashboard/api/runtime/diagnostics'),
+        api('/dashboard/api/quality/gate'),
         api('/dashboard/api/environment'),
         api('/dashboard/api/safety'),
     ]);
@@ -704,6 +735,7 @@ async function refreshDashboard() {{
     renderFailureInsights(failures);
     renderRepairs(repairs);
     renderRuntimeDiagnostics(diagnostics);
+    renderQualityGate(qualityGate);
     const defaultRun = runs.active?.id || runs.items?.[0]?.id;
     if (defaultRun) {{
       loadRunDetail(defaultRun).catch(error => console.error(error));

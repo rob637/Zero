@@ -43,6 +43,12 @@ jobs:
             test_orchestration_eval_store.py \
             test_orchestration_routes.py
 
+      - name: Run harness control-plane reliability tests
+        env:
+          PYTHONPATH: /home/runner/work/Zero/Zero:/home/runner/work/Zero/Zero/apex
+        run: |
+          pytest -q ../test_harness_control_plane.py ../test_harness_burnin.py
+
       - name: Start API for gate checks
         env:
           PYTHONPATH: /home/runner/work/Zero/Zero:/home/runner/work/Zero/Zero/apex

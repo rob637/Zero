@@ -67,6 +67,8 @@ class HarnessControlPlane:
         self._max_repairs_history = max(20, int(os.environ.get("HARNESS_MAX_REPAIR_HISTORY", "80")))
         self._run_timeout_seconds = max(60, int(os.environ.get("HARNESS_RUN_TIMEOUT_SECONDS", "2400")))
         self._repair_timeout_seconds = max(60, int(os.environ.get("HARNESS_REPAIR_TIMEOUT_SECONDS", "1800")))
+        self._quality_queue_depth_limit = max(4, int(os.environ.get("HARNESS_QUALITY_QUEUE_DEPTH_LIMIT", "30")))
+        self._quality_watchdog_horizon_seconds = max(300, int(os.environ.get("HARNESS_QUALITY_WATCHDOG_HORIZON_SECONDS", "86400")))
 
     def _parse_timestamp(self, value: Any) -> Optional[datetime]:
         if not value:
@@ -1025,6 +1027,66 @@ class HarnessControlPlane:
                 "queued_age_seconds": self._summarize_age(queued_repair_ages),
                 "in_progress_age_seconds": self._summarize_age(active_repair_ages),
                 "active_task_ids": list(self._active_repair_tasks.keys())[:8],
+            },
+        }
+
+    def _count_recent_watchdog_timeouts(self, runs: List[Dict[str, Any]], repairs: List[Dict[str, Any]]) -> int:
+        cutoff = datetime.now(timezone.utc).timestamp() - self._quality_watchdog_horizon_seconds
+        total = 0
+        for item in runs + repairs:
+            watchdog = item.get("watchdog") if isinstance(item, dict) else None
+            if not isinstance(watchdog, dict):
+                continue
+            if not bool(watchdog.get("timed_out", False)):
+                continue
+            at = self._parse_timestamp(watchdog.get("at"))
+            if at is None:
+                continue
+            if at.timestamp() >= cutoff:
+                total += 1
+        return total
+
+    def get_quality_gate_status(self) -> Dict[str, Any]:
+        diagnostics = self.get_runtime_diagnostics()
+        state = self._load_state()
+        repairs = state.get("repairs", [])
+        runs = state.get("runs", [])
+        insights = self.get_failure_insights()
+        metrics = insights.get("repair_metrics", {})
+
+        queue_depth = int(metrics.get("queue_depth", 0) or 0)
+        active_workers = int(metrics.get("active_workers", 0) or 0)
+        configured_workers = int(metrics.get("configured_workers", 0) or 0)
+        max_active_observed = int(metrics.get("max_active_observed", 0) or 0)
+        recent_watchdog_timeouts = self._count_recent_watchdog_timeouts(runs, repairs)
+
+        checks = [
+            {
+                "name": "worker_bound_respected",
+                "ok": active_workers <= max(1, configured_workers) and max_active_observed <= max(1, configured_workers),
+                "details": f"active={active_workers} max_observed={max_active_observed} configured={configured_workers}",
+            },
+            {
+                "name": "queue_depth_within_limit",
+                "ok": queue_depth <= self._quality_queue_depth_limit,
+                "details": f"queue_depth={queue_depth} limit={self._quality_queue_depth_limit}",
+            },
+            {
+                "name": "no_recent_watchdog_timeouts",
+                "ok": recent_watchdog_timeouts == 0,
+                "details": f"recent_timeouts={recent_watchdog_timeouts} horizon_seconds={self._quality_watchdog_horizon_seconds}",
+            },
+        ]
+        ready = all(bool(check.get("ok", False)) for check in checks)
+
+        return {
+            "generated_at": _utc_now(),
+            "ready_for_scenario_testing": ready,
+            "checks": checks,
+            "runtime": diagnostics,
+            "thresholds": {
+                "queue_depth_limit": self._quality_queue_depth_limit,
+                "watchdog_horizon_seconds": self._quality_watchdog_horizon_seconds,
             },
         }
 

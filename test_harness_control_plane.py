@@ -257,3 +257,46 @@ def test_repair_history_retention_keeps_in_progress_and_newest_terminal(tmp_path
     assert "repair-old-queued" in kept_ids
     assert "repair-new-progress" in kept_ids
     assert "repair-validated-new" in kept_ids
+
+
+def test_quality_gate_ready_when_invariants_hold(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+    plane = cp.HarnessControlPlane()
+    plane._quality_queue_depth_limit = 10
+
+    state = plane._default_state()
+    state["runs"] = [
+        {"id": "run-a", "status": "passed", "created_at": _iso_age(20)},
+    ]
+    state["repairs"] = [
+        {"id": "repair-a", "status": "validated", "created_at": _iso_age(20), "validation": {"improved": True}},
+    ]
+    plane._save_state(state)
+
+    gate = plane.get_quality_gate_status()
+    assert gate["ready_for_scenario_testing"] is True
+    assert all(check["ok"] is True for check in gate["checks"])
+
+
+def test_quality_gate_not_ready_on_queue_pressure_or_timeout(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+    plane = cp.HarnessControlPlane()
+    plane._quality_queue_depth_limit = 0
+    plane._quality_watchdog_horizon_seconds = 86400
+
+    state = plane._default_state()
+    state["runs"] = [
+        {
+            "id": "run-watchdog",
+            "status": "error",
+            "created_at": _iso_age(50),
+            "watchdog": {"timed_out": True, "at": _iso_age(20)},
+        }
+    ]
+    plane._save_state(state)
+    plane._repair_queue.put_nowait("repair-queued")
+
+    gate = plane.get_quality_gate_status()
+    assert gate["ready_for_scenario_testing"] is False
+    failed = [check for check in gate["checks"] if not check["ok"]]
+    assert failed
