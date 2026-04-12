@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -98,6 +99,7 @@ def test_repair_metrics_invariants_include_worker_and_queue_state(tmp_path: Path
         },
     ]
 
+    plane._repair_workers_in_flight = 1
     plane._active_repair_tasks["repair-active"] = object()  # type: ignore[assignment]
     plane._repair_queue.put_nowait("repair-queued")
 
@@ -154,3 +156,54 @@ def test_runtime_diagnostics_exposes_counts_ages_and_ids(tmp_path: Path, monkeyp
     assert "repair-active" in diagnostics["repairs"]["active_task_ids"]
     assert diagnostics["runs"]["running_age_seconds"]["max"] >= diagnostics["runs"]["running_age_seconds"]["avg"]
     assert diagnostics["repairs"]["in_progress_age_seconds"]["max"] >= diagnostics["repairs"]["in_progress_age_seconds"]["avg"]
+
+
+def test_repair_worker_never_exceeds_configured_concurrency(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+    plane = cp.HarnessControlPlane()
+    plane._repair_concurrency = 2
+    plane._repair_semaphore = asyncio.Semaphore(plane._repair_concurrency)
+
+    active = 0
+    max_active = 0
+    completed: list[str] = []
+
+    async def fake_execute(repair_id: str) -> None:
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.02)
+        completed.append(repair_id)
+        active -= 1
+
+    plane._execute_repair = fake_execute  # type: ignore[assignment]
+
+    async def run_test() -> None:
+        plane._ensure_repair_worker()
+        for idx in range(6):
+            await plane._repair_queue.put(f"repair-{idx}")
+
+        while len(completed) < 6:
+            await asyncio.sleep(0.01)
+
+        if plane._repair_worker_task is not None:
+            plane._repair_worker_task.cancel()
+            try:
+                await plane._repair_worker_task
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(run_test())
+
+    assert max_active <= plane._repair_concurrency
+    assert plane._repair_max_active_observed <= plane._repair_concurrency
+    assert len(completed) == 6
+
+
+def test_repair_metrics_include_peak_worker_observation(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+    plane = cp.HarnessControlPlane()
+    plane._repair_max_active_observed = 2
+
+    metrics = plane._compute_repair_metrics([])
+    assert metrics["max_active_observed"] == 2

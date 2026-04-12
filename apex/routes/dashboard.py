@@ -552,6 +552,7 @@ function renderFailureInsights(payload) {{
         document.getElementById('repair-metrics').innerHTML = `
             <div class="metric"><div class="metric-label">Queue Depth</div><div class="metric-value">${{metrics.queue_depth ?? 0}}</div></div>
             <div class="metric"><div class="metric-label">Active Workers</div><div class="metric-value">${{metrics.active_workers ?? 0}}/${{metrics.configured_workers ?? 0}}</div></div>
+            <div class="metric"><div class="metric-label">Peak Workers</div><div class="metric-value">${{metrics.max_active_observed ?? 0}}</div></div>
             <div class="metric"><div class="metric-label">Validated Rate</div><div class="metric-value">${{((metrics.validated_rate ?? 0) * 100).toFixed(1)}}%</div></div>
             <div class="metric"><div class="metric-label">Improvement Rate</div><div class="metric-value">${{((metrics.improvement_rate ?? 0) * 100).toFixed(1)}}%</div></div>
             <div class="metric"><div class="metric-label">Avg Completion</div><div class="metric-value">${{Number(metrics.avg_completion_seconds ?? 0).toFixed(1)}}s</div></div>

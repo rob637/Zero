@@ -61,6 +61,8 @@ class HarnessControlPlane:
         self._repair_concurrency = 3
         self._repair_semaphore = asyncio.Semaphore(self._repair_concurrency)
         self._active_repair_tasks: Dict[str, asyncio.Task] = {}
+        self._repair_workers_in_flight = 0
+        self._repair_max_active_observed = 0
         self._run_timeout_seconds = max(60, int(os.environ.get("HARNESS_RUN_TIMEOUT_SECONDS", "2400")))
         self._repair_timeout_seconds = max(60, int(os.environ.get("HARNESS_REPAIR_TIMEOUT_SECONDS", "1800")))
 
@@ -508,7 +510,12 @@ class HarnessControlPlane:
 
     async def _execute_repair_with_limit(self, repair_id: str) -> None:
         async with self._repair_semaphore:
-            await self._execute_repair(repair_id)
+            self._repair_workers_in_flight += 1
+            self._repair_max_active_observed = max(self._repair_max_active_observed, self._repair_workers_in_flight)
+            try:
+                await self._execute_repair(repair_id)
+            finally:
+                self._repair_workers_in_flight = max(0, self._repair_workers_in_flight - 1)
 
     async def _repair_worker_loop(self) -> None:
         while True:
@@ -893,7 +900,7 @@ class HarnessControlPlane:
                 except Exception:
                     pass
 
-        active_count = len(self._active_repair_tasks)
+        active_count = self._repair_workers_in_flight
         avg_duration = round(sum(durations) / len(durations), 2) if durations else 0.0
         validated_rate = round((counts["validated"] / completed), 4) if completed else 0.0
         improvement_rate = round((improved / completed), 4) if completed else 0.0
@@ -902,6 +909,7 @@ class HarnessControlPlane:
             "queue_depth": self._repair_queue.qsize(),
             "active_workers": active_count,
             "configured_workers": self._repair_concurrency,
+            "max_active_observed": self._repair_max_active_observed,
             "status_counts": counts,
             "completed": completed,
             "validated_rate": validated_rate,
