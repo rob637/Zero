@@ -1345,14 +1345,36 @@ async def get_session_agent(session: Optional[UserSession] = None, force_new: bo
     this maintains conversation context like ChatGPT/Gemini.
     If *session* is provided, the agent is scoped to that session.
     """
+    global _connectors_initialized
+
     if session is None:
         session = get_user_session()
 
     if force_new:
         session.agent = None
         session.messages = []
-    
+
+    # If the session already has an agent, refresh tool inventory in-place.
+    # This avoids long-lived sessions being stuck with an early, incomplete
+    # tool snapshot (for example before optional startup/index/connectors settle).
     if session.agent is not None:
+        engine = get_telic_engine()
+        if engine:
+            if not _connectors_initialized:
+                await _connect_engine_connectors(engine)
+                _connectors_initialized = True
+
+            refreshed_tools = primitives_to_tools(engine._primitives)
+            refreshed_names = {tool.name for tool in refreshed_tools}
+            existing_names = set(session.agent.tools.keys())
+            if refreshed_names != existing_names:
+                session.agent.tools = {tool.name: tool for tool in refreshed_tools}
+                session.agent.tool_schemas = session.agent._build_tool_schemas(refreshed_tools)
+                logger.info(
+                    "Refreshed session agent tools: %s -> %s",
+                    len(existing_names),
+                    len(refreshed_names),
+                )
         return session.agent
 
     _hydrate_llm_credentials_from_store()
@@ -1368,7 +1390,6 @@ async def get_session_agent(session: Optional[UserSession] = None, force_new: bo
         return None
     
     # Connect any connectors that need async initialization
-    global _connectors_initialized
     if not _connectors_initialized:
         await _connect_engine_connectors(engine)
         _connectors_initialized = True
