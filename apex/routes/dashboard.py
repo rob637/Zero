@@ -192,6 +192,11 @@ async def get_repair(repair_id: str):
     return repair
 
 
+@router.get("/api/runtime/diagnostics")
+async def get_runtime_diagnostics():
+    return get_harness_control_plane().get_runtime_diagnostics()
+
+
 @router.post("/api/repairs")
 async def queue_repair(payload: RepairQueueRequest):
     try:
@@ -386,6 +391,12 @@ h2{{font-size:18px;margin:30px 0 15px;color:#bbb;text-transform:uppercase}}
 </div>
 <div class="grid">
 <div class="span-12">
+<h2>Runtime Diagnostics</h2>
+<div class="card" id="runtime-diagnostics">Loading...</div>
+</div>
+</div>
+<div class="grid">
+<div class="span-12">
 <h2>Scenario Catalog</h2>
 <div class="card" id="scenario-catalog">Loading...</div>
 </div>
@@ -565,6 +576,27 @@ function renderRepairs(payload) {{
         document.getElementById('repair-items').innerHTML = html || '<div class="empty">No repair requests yet</div>';
 }}
 
+function renderRuntimeDiagnostics(payload) {{
+    const runs = payload.runs || {{}};
+    const repairs = payload.repairs || {{}};
+    const timeouts = payload.timeouts || {{}};
+    const runQueuedAge = runs.queued_age_seconds || {{}};
+    const runActiveAge = runs.running_age_seconds || {{}};
+    const repairQueuedAge = repairs.queued_age_seconds || {{}};
+    const repairActiveAge = repairs.in_progress_age_seconds || {{}};
+
+    document.getElementById('runtime-diagnostics').innerHTML = `
+        <div class="metric"><div class="metric-label">Run Queue</div><div class="metric-value">${{runs.queued ?? 0}}</div></div>
+        <div class="metric"><div class="metric-label">Running</div><div class="metric-value">${{runs.running ?? 0}}</div></div>
+        <div class="metric"><div class="metric-label">Repair Queue</div><div class="metric-value">${{repairs.queued ?? 0}}</div></div>
+        <div class="metric"><div class="metric-label">Repairs Active</div><div class="metric-value">${{repairs.in_progress ?? 0}}</div></div>
+        <div class="muted" style="margin-top:8px">run queued age (avg/max): ${{Number(runQueuedAge.avg ?? 0).toFixed(1)}}s / ${{Number(runQueuedAge.max ?? 0).toFixed(1)}}s · run active age (avg/max): ${{Number(runActiveAge.avg ?? 0).toFixed(1)}}s / ${{Number(runActiveAge.max ?? 0).toFixed(1)}}s</div>
+        <div class="muted" style="margin-top:6px">repair queued age (avg/max): ${{Number(repairQueuedAge.avg ?? 0).toFixed(1)}}s / ${{Number(repairQueuedAge.max ?? 0).toFixed(1)}}s · repair active age (avg/max): ${{Number(repairActiveAge.avg ?? 0).toFixed(1)}}s / ${{Number(repairActiveAge.max ?? 0).toFixed(1)}}s</div>
+        <div class="muted" style="margin-top:6px">timeouts: run=${{timeouts.run_seconds ?? 0}}s · repair=${{timeouts.repair_seconds ?? 0}}s</div>
+        <div class="muted" style="margin-top:6px">running ids: ${{(runs.running_ids || []).join(', ') || 'none'}} · active repair task ids: ${{(repairs.active_task_ids || []).join(', ') || 'none'}}</div>
+    `;
+}}
+
 async function loadRepairDetail(repairId) {{
     const repair = await api(`/dashboard/api/repairs/${{repairId}}`);
     const transitions = (repair.transitions || []).map(t => `${{t.status}} @ ${{t.at}}`).join(' -> ');
@@ -654,12 +686,13 @@ function renderCatalog(payload) {{
 }}
 
 async function refreshDashboard() {{
-    const [connectors, runs, scenarios, failures, repairs, environment, safety] = await Promise.all([
+    const [connectors, runs, scenarios, failures, repairs, diagnostics, environment, safety] = await Promise.all([
         api('/dashboard/api/connectors/status'),
         api('/dashboard/api/runs'),
         api('/dashboard/api/scenarios'),
         api('/dashboard/api/failures/latest'),
         api('/dashboard/api/repairs'),
+        api('/dashboard/api/runtime/diagnostics'),
         api('/dashboard/api/environment'),
         api('/dashboard/api/safety'),
     ]);
@@ -669,6 +702,7 @@ async function refreshDashboard() {{
     renderCatalog(scenarios);
     renderFailureInsights(failures);
     renderRepairs(repairs);
+    renderRuntimeDiagnostics(diagnostics);
     const defaultRun = runs.active?.id || runs.items?.[0]?.id;
     if (defaultRun) {{
       loadRunDetail(defaultRun).catch(error => console.error(error));

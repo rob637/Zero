@@ -108,3 +108,49 @@ def test_repair_metrics_invariants_include_worker_and_queue_state(tmp_path: Path
     assert 0.0 <= float(metrics["validated_rate"]) <= 1.0
     assert 0.0 <= float(metrics["improvement_rate"]) <= 1.0
     assert metrics["completed"] == 2
+
+
+def test_runtime_diagnostics_exposes_counts_ages_and_ids(tmp_path: Path, monkeypatch) -> None:
+    _configure_temp_paths(tmp_path, monkeypatch)
+    plane = cp.HarnessControlPlane()
+
+    state = plane._default_state()
+    state["runs"] = [
+        {
+            "id": "run-queued",
+            "status": "queued",
+            "created_at": _iso_age(90),
+        },
+        {
+            "id": "run-active",
+            "status": "running",
+            "created_at": _iso_age(120),
+            "started_at": _iso_age(60),
+        },
+    ]
+    state["repairs"] = [
+        {
+            "id": "repair-queued",
+            "status": "queued",
+            "created_at": _iso_age(45),
+        },
+        {
+            "id": "repair-active",
+            "status": "in_progress",
+            "created_at": _iso_age(90),
+            "started_at": _iso_age(30),
+        },
+    ]
+    plane._save_state(state)
+    plane._active_repair_tasks["repair-active"] = object()  # type: ignore[assignment]
+
+    diagnostics = plane.get_runtime_diagnostics()
+
+    assert diagnostics["runs"]["queued"] == 1
+    assert diagnostics["runs"]["running"] == 1
+    assert diagnostics["repairs"]["queued"] == 1
+    assert diagnostics["repairs"]["in_progress"] == 1
+    assert "run-active" in diagnostics["runs"]["running_ids"]
+    assert "repair-active" in diagnostics["repairs"]["active_task_ids"]
+    assert diagnostics["runs"]["running_age_seconds"]["max"] >= diagnostics["runs"]["running_age_seconds"]["avg"]
+    assert diagnostics["repairs"]["in_progress_age_seconds"]["max"] >= diagnostics["repairs"]["in_progress_age_seconds"]["avg"]

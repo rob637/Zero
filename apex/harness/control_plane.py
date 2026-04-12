@@ -909,6 +909,83 @@ class HarnessControlPlane:
             "avg_completion_seconds": avg_duration,
         }
 
+    def _summarize_age(self, values: List[float]) -> Dict[str, float]:
+        if not values:
+            return {
+                "max": 0.0,
+                "avg": 0.0,
+            }
+        return {
+            "max": round(max(values), 2),
+            "avg": round(sum(values) / len(values), 2),
+        }
+
+    def get_runtime_diagnostics(self) -> Dict[str, Any]:
+        self._apply_watchdogs()
+        state = self._load_state()
+
+        runs = state.get("runs", [])
+        repairs = state.get("repairs", [])
+
+        queued_run_ids = [item.get("id") for item in runs if item.get("status") == "queued" and item.get("id")]
+        running_run_ids = [item.get("id") for item in runs if item.get("status") == "running" and item.get("id")]
+        queued_repair_ids = [item.get("id") for item in repairs if item.get("status") == "queued" and item.get("id")]
+        active_repair_ids = [item.get("id") for item in repairs if item.get("status") == "in_progress" and item.get("id")]
+
+        queued_run_ages = [
+            age
+            for age in (self._seconds_since(item.get("created_at")) for item in runs if item.get("status") == "queued")
+            if age is not None
+        ]
+        running_run_ages = [
+            age
+            for age in (
+                self._seconds_since(item.get("started_at") or item.get("created_at"))
+                for item in runs
+                if item.get("status") == "running"
+            )
+            if age is not None
+        ]
+        queued_repair_ages = [
+            age
+            for age in (self._seconds_since(item.get("created_at")) for item in repairs if item.get("status") == "queued")
+            if age is not None
+        ]
+        active_repair_ages = [
+            age
+            for age in (
+                self._seconds_since(item.get("started_at") or item.get("created_at"))
+                for item in repairs
+                if item.get("status") == "in_progress"
+            )
+            if age is not None
+        ]
+
+        return {
+            "generated_at": _utc_now(),
+            "timeouts": {
+                "run_seconds": self._run_timeout_seconds,
+                "repair_seconds": self._repair_timeout_seconds,
+            },
+            "runs": {
+                "queued": len(queued_run_ids),
+                "running": len(running_run_ids),
+                "queued_ids": queued_run_ids[:8],
+                "running_ids": running_run_ids[:8],
+                "queued_age_seconds": self._summarize_age(queued_run_ages),
+                "running_age_seconds": self._summarize_age(running_run_ages),
+            },
+            "repairs": {
+                "queued": len(queued_repair_ids),
+                "in_progress": len(active_repair_ids),
+                "queued_ids": queued_repair_ids[:8],
+                "in_progress_ids": active_repair_ids[:8],
+                "queued_age_seconds": self._summarize_age(queued_repair_ages),
+                "in_progress_age_seconds": self._summarize_age(active_repair_ages),
+                "active_task_ids": list(self._active_repair_tasks.keys())[:8],
+            },
+        }
+
     def queue_repair(self, request: Dict[str, Any]) -> Dict[str, Any]:
         source_run_id = str(request.get("source_run_id") or "latest")
         strategy = str(request.get("strategy") or "generic-remediation")
